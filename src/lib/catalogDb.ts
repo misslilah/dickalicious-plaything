@@ -40,6 +40,9 @@ type DbTask = {
   xp_reward: number;
   frequency: TaskFrequency;
   duration_minutes: number | null;
+  timer_seconds: number | null;
+  open_url: string | null;
+  required_phrase: string | null;
 };
 
 type DbReward = {
@@ -103,6 +106,9 @@ function mapTask(row: DbTask): Task {
     xpReward: row.xp_reward,
     frequency: row.frequency,
     durationMinutes: row.duration_minutes ?? undefined,
+    timerSeconds: row.timer_seconds ?? undefined,
+    openUrl: row.open_url ?? undefined,
+    requiredPhrase: row.required_phrase ?? undefined,
   };
 }
 
@@ -278,6 +284,9 @@ export async function upsertTask(
     xp_reward: task.xpReward,
     frequency: task.frequency,
     duration_minutes: task.durationMinutes ?? null,
+    timer_seconds: task.timerSeconds ?? null,
+    open_url: task.openUrl?.trim() || null,
+    required_phrase: task.requiredPhrase?.trim() || null,
   };
 
   const { data, error } = task.id

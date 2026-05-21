@@ -865,7 +865,7 @@ function TaskAdmin() {
               key={t.id}
               selected={draft.id === t.id}
               title={t.title}
-              meta={`${categoryName(t.categoryId)} · L${t.minLevel} · ${t.xpReward} XP · ${t.frequency}`}
+              meta={`${categoryName(t.categoryId)} · L${t.minLevel} · ${t.xpReward} XP · ${t.frequency}${t.timerSeconds ? ` · ${t.timerSeconds}s` : ''}${t.openUrl ? ' · URL' : ''}${t.requiredPhrase ? ' · phrase' : ''}`}
               onEdit={() => {
                 setDraft(t);
                 setErrors({});
@@ -978,6 +978,98 @@ function TaskAdmin() {
                   : undefined,
               })
             }
+          />
+        </Field>
+      </FormBlock>
+
+      <FormBlock title="Completion requirements">
+        <p className="muted" style={{ marginTop: 0 }}>
+          Optional. Players must satisfy all configured requirements before marking
+          complete.
+        </p>
+        <Field
+          label="Timer"
+          hint="Countdown must finish before complete. Runs in the background if the tab is hidden."
+        >
+          <div className="form-inline">
+            <input
+              type="number"
+              min={0}
+              placeholder="Min"
+              aria-label="Timer minutes"
+              value={
+                draft.timerSeconds != null
+                  ? Math.floor(draft.timerSeconds / 60)
+                  : ''
+              }
+              onChange={(e) => {
+                const mins = e.target.value ? Number(e.target.value) : 0;
+                const secs =
+                  draft.timerSeconds != null ? draft.timerSeconds % 60 : 0;
+                const total = mins * 60 + secs;
+                setDraft({
+                  ...draft,
+                  timerSeconds: total > 0 ? total : undefined,
+                });
+              }}
+            />
+            <input
+              type="number"
+              min={0}
+              max={59}
+              placeholder="Sec"
+              aria-label="Timer seconds"
+              value={
+                draft.timerSeconds != null ? draft.timerSeconds % 60 : ''
+              }
+              onChange={(e) => {
+                const secs = e.target.value ? Number(e.target.value) : 0;
+                const mins =
+                  draft.timerSeconds != null
+                    ? Math.floor(draft.timerSeconds / 60)
+                    : 0;
+                const total = mins * 60 + secs;
+                setDraft({
+                  ...draft,
+                  timerSeconds: total > 0 ? total : undefined,
+                });
+              }}
+            />
+          </div>
+        </Field>
+        <Field
+          label="Page URL"
+          htmlFor="task-open-url"
+          hint="Player must open this link before completing."
+        >
+          <input
+            id="task-open-url"
+            type="url"
+            placeholder="https://…"
+            value={draft.openUrl ?? ''}
+            onChange={(e) =>
+              setDraft({
+                ...draft,
+                openUrl: e.target.value.trim() || undefined,
+              })
+            }
+          />
+        </Field>
+        <Field
+          label="Required phrase"
+          htmlFor="task-phrase"
+          hint="Exact match (case-sensitive). Leading and trailing spaces are ignored."
+        >
+          <input
+            id="task-phrase"
+            value={draft.requiredPhrase ?? ''}
+            onChange={(e) =>
+              setDraft({
+                ...draft,
+                requiredPhrase: e.target.value || undefined,
+              })
+            }
+            placeholder="Phrase to type"
           />
         </Field>
       </FormBlock>

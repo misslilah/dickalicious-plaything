@@ -61,11 +61,8 @@ export function DailyTasksSection() {
                 category={category}
                 completed={entry.completed}
                 disabled={plan.closed}
-                onToggle={() =>
-                  entry.completed
-                    ? uncompleteTask(entry.taskId)
-                    : completeTask(entry.taskId)
-                }
+                onComplete={() => completeTask(entry.taskId)}
+                onUncomplete={() => uncompleteTask(entry.taskId)}
               />
             </li>
           );

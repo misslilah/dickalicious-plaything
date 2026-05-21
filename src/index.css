@@ -353,6 +353,16 @@ select {
   cursor: not-allowed;
 }
 
+.form-inline {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.form-inline input {
+  flex: 1;
+  min-width: 0;
+}
+
 .btn-row {
   display: flex;
   flex-wrap: wrap;
@@ -382,6 +392,12 @@ select {
 
 .task-card--disabled {
   opacity: 0.5;
+}
+
+.task-card__shell {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.85rem;
 }
 
 .task-card__label {
@@ -445,6 +461,66 @@ select {
 .task-card__xp {
   color: var(--accent);
   font-weight: 600;
+}
+
+.task-card__req-badges {
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+}
+
+.task-card--gated .task-gate {
+  padding: 0 0.85rem 0.85rem;
+  margin-top: -0.25rem;
+}
+
+.task-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.task-gate__block {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.task-gate__label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.task-gate__countdown {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.task-gate__ok {
+  font-size: 0.75rem;
+  color: #4ade80;
+}
+
+.task-gate__phrase-hint {
+  font-family: ui-monospace, monospace;
+  color: var(--accent);
+}
+
+.task-gate__input {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(192, 132, 252, 0.25);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.task-gate__hint {
+  margin: 0;
+  font-size: 0.72rem;
 }
 
 .progress-summary {

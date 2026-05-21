@@ -323,6 +323,70 @@ export function CategoryDetail() {
                   })
                 }
               />
+              <input
+                type="number"
+                min={0}
+                placeholder="Timer min"
+                aria-label="Timer minutes"
+                value={
+                  taskDraft.timerSeconds != null
+                    ? Math.floor(taskDraft.timerSeconds / 60)
+                    : ''
+                }
+                onChange={(e) => {
+                  const mins = e.target.value ? Number(e.target.value) : 0;
+                  const secs =
+                    taskDraft.timerSeconds != null ? taskDraft.timerSeconds % 60 : 0;
+                  const total = mins * 60 + secs;
+                  setTaskDraft({
+                    ...taskDraft,
+                    timerSeconds: total > 0 ? total : undefined,
+                  });
+                }}
+              />
+              <input
+                type="number"
+                min={0}
+                max={59}
+                placeholder="Timer sec"
+                aria-label="Timer seconds"
+                value={
+                  taskDraft.timerSeconds != null ? taskDraft.timerSeconds % 60 : ''
+                }
+                onChange={(e) => {
+                  const secs = e.target.value ? Number(e.target.value) : 0;
+                  const mins =
+                    taskDraft.timerSeconds != null
+                      ? Math.floor(taskDraft.timerSeconds / 60)
+                      : 0;
+                  const total = mins * 60 + secs;
+                  setTaskDraft({
+                    ...taskDraft,
+                    timerSeconds: total > 0 ? total : undefined,
+                  });
+                }}
+              />
+              <input
+                type="url"
+                placeholder="Open URL (optional)"
+                value={taskDraft.openUrl ?? ''}
+                onChange={(e) =>
+                  setTaskDraft({
+                    ...taskDraft,
+                    openUrl: e.target.value.trim() || undefined,
+                  })
+                }
+              />
+              <input
+                placeholder="Required phrase (optional)"
+                value={taskDraft.requiredPhrase ?? ''}
+                onChange={(e) =>
+                  setTaskDraft({
+                    ...taskDraft,
+                    requiredPhrase: e.target.value || undefined,
+                  })
+                }
+              />
             </div>
             <button type="button" className="btn btn--primary" onClick={submitTask}>
               {taskDraft.id ? 'Update task' : 'Add task'}

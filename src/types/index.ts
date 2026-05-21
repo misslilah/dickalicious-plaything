@@ -47,6 +47,12 @@ export interface Task {
   xpReward: number;
   frequency: TaskFrequency;
   durationMinutes?: number;
+  /** Countdown must finish before the task can be completed. */
+  timerSeconds?: number;
+  /** User must open this URL before completing. */
+  openUrl?: string;
+  /** Exact phrase (trimmed) the user must type to complete. */
+  requiredPhrase?: string;
 }
 
 export interface UserProgress {

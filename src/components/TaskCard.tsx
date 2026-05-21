@@ -1,10 +1,14 @@
 import type { Category, Task } from '../types';
+import { TaskCompletionGate } from './TaskCompletionGate';
+import { taskHasRequirements } from '../lib/taskRequirements';
 
 interface TaskCardProps {
   task: Task;
   category?: Category;
   completed?: boolean;
   onToggle?: () => void;
+  onComplete?: () => void;
+  onUncomplete?: () => void;
   showXp?: boolean;
   disabled?: boolean;
 }
@@ -15,49 +19,98 @@ const frequencyLabels: Record<Task['frequency'], string> = {
   once: 'One-time',
 };
 
+function TaskCardBody({
+  task,
+  category,
+  showXp,
+  interactive,
+}: {
+  task: Task;
+  category?: Category;
+  showXp: boolean;
+  interactive: boolean;
+}) {
+  const requirementBadges: string[] = [];
+  if (task.timerSeconds) requirementBadges.push('Timer');
+  if (task.openUrl?.trim()) requirementBadges.push('Open page');
+  if (task.requiredPhrase?.trim()) requirementBadges.push('Phrase');
+
+  return (
+    <div className="task-card__body">
+      <div className="task-card__top">
+        {category && (
+          <span
+            className="task-card__badge"
+            style={{ borderColor: category.color, color: category.color }}
+          >
+            {category.icon} {category.name}
+          </span>
+        )}
+        <span className="task-card__freq">{frequencyLabels[task.frequency]}</span>
+      </div>
+      <h3 className="task-card__title">{task.title}</h3>
+      <p className="task-card__desc">{task.description}</p>
+      <div className="task-card__meta">
+        <span>Lvl. {task.minLevel}+</span>
+        {task.durationMinutes != null && <span>{task.durationMinutes} min</span>}
+        {task.timerSeconds != null && task.timerSeconds > 0 && (
+          <span>{Math.ceil(task.timerSeconds / 60)} min timer</span>
+        )}
+        {showXp && <span className="task-card__xp">+{task.xpReward} XP</span>}
+      </div>
+      {requirementBadges.length > 0 && !interactive && (
+        <p className="task-card__req-badges muted">
+          Requires: {requirementBadges.join(', ')}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function TaskCard({
   task,
   category,
   completed = false,
   onToggle,
+  onComplete,
+  onUncomplete,
   showXp = true,
   disabled = false,
 }: TaskCardProps) {
+  const handleComplete = onComplete ?? onToggle;
+  const handleUncomplete = onUncomplete ?? onToggle;
+  const interactive = Boolean(handleComplete);
+  const gated = interactive && taskHasRequirements(task);
+
   return (
     <article
-      className={`task-card${completed ? ' task-card--done' : ''}${disabled ? ' task-card--disabled' : ''}`}
+      className={`task-card${completed ? ' task-card--done' : ''}${disabled ? ' task-card--disabled' : ''}${gated ? ' task-card--gated' : ''}`}
     >
-      <label className="task-card__label">
-        {onToggle && (
-          <input
-            type="checkbox"
-            checked={completed}
-            disabled={disabled}
-            onChange={onToggle}
-            className="task-card__check"
+      {interactive && handleComplete ? (
+        <TaskCompletionGate
+          task={task}
+          completed={completed}
+          disabled={disabled}
+          onComplete={handleComplete}
+          onUncomplete={handleUncomplete}
+        >
+          <TaskCardBody
+            task={task}
+            category={category}
+            showXp={showXp}
+            interactive={interactive}
           />
-        )}
-        <div className="task-card__body">
-          <div className="task-card__top">
-            {category && (
-              <span
-                className="task-card__badge"
-                style={{ borderColor: category.color, color: category.color }}
-              >
-                {category.icon} {category.name}
-              </span>
-            )}
-            <span className="task-card__freq">{frequencyLabels[task.frequency]}</span>
-          </div>
-          <h3 className="task-card__title">{task.title}</h3>
-          <p className="task-card__desc">{task.description}</p>
-          <div className="task-card__meta">
-            <span>Lvl. {task.minLevel}+</span>
-            {task.durationMinutes && <span>{task.durationMinutes} min</span>}
-            {showXp && <span className="task-card__xp">+{task.xpReward} XP</span>}
-          </div>
+        </TaskCompletionGate>
+      ) : (
+        <div className="task-card__shell">
+          <TaskCardBody
+            task={task}
+            category={category}
+            showXp={showXp}
+            interactive={interactive}
+          />
         </div>
-      </label>
+      )}
     </article>
   );
 }
