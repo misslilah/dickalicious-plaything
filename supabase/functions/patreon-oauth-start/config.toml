@@ -1,3 +1,3 @@
-# Deploy with: supabase functions deploy patreon-oauth-start
-# (config.toml must live in this folder — not optional)
+# Browser / app calls without user JWT on some paths — keep public.
+# Deploy: supabase functions deploy patreon-oauth-start --no-verify-jwt
 verify_jwt = false

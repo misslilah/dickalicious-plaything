@@ -77,7 +77,7 @@ Until Patreon OAuth is live, admins assign tiers in **Admin → Users**. Users s
 
 #### Deploy Supabase Edge Functions (required for “Connect Patreon”)
 
-If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the functions are **not deployed** yet. If you see `UNAUTHORIZED_NO_AUTH_HEADER` on a **black JSON page**, the browser opened the Edge Function URL **without** `Authorization` / `apikey` headers (old app build with a direct link, or testing the URL manually). Fix: push the latest frontend, redeploy functions **from this repo** (so `config.toml` is included), and use **Settings → Connect Patreon** only.
+If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the functions are **not deployed** yet. If you see `{"code":"UNAUTHORIZED_NO_AUTH_HEADER","message":"Missing authorization header"}` after Patreon **Accept**, the **gateway** blocked `patreon-oauth-callback` before your code ran — JWT verification is still enabled on the deployed function. Fix: redeploy with `--no-verify-jwt` (below), or disable JWT in the Dashboard (step 3b).
 
 1. **Install Supabase CLI** — https://supabase.com/docs/guides/cli/getting-started
 2. **Log in and link** (from repo root):
@@ -87,18 +87,22 @@ If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the fun
    supabase link --project-ref <your-project-ref>
    ```
 
-3. **Deploy all three Patreon functions** from the **repository root** (required after changing any `config.toml`):
+3. **Deploy all three Patreon functions** from the **repository root** (required after changing any `config.toml`). Use **`--no-verify-jwt`** so the gateway does not require `Authorization` on Patreon’s browser redirect to the callback:
 
    ```bash
-   supabase functions deploy patreon-oauth-start patreon-oauth-callback patreon-webhook
+   supabase functions deploy patreon-oauth-callback --no-verify-jwt
+   supabase functions deploy patreon-oauth-start --no-verify-jwt
+   supabase functions deploy patreon-webhook --no-verify-jwt
    ```
 
-   Each function folder must contain its own `config.toml` (deploy picks it up from the folder, not from `supabase/config.toml` alone):
+   Config is duplicated on purpose:
 
-   - `supabase/functions/patreon-oauth-start/config.toml` → `verify_jwt = false`
-   - `supabase/functions/patreon-oauth-callback/config.toml` → `verify_jwt = false`
+   - Each function folder: `supabase/functions/<name>/config.toml` with `verify_jwt = false`
+   - Project root: `supabase/config.toml` with `[functions.<name>]` and `verify_jwt = false` (Supabase CLI v2)
 
-   If you deploy only `index.ts` or omit `config.toml`, the gateway may still require a JWT and **Connect Patreon** can fail. Use **Settings → Connect Patreon** — do not open the start/callback URLs in a browser to test.
+   If you deploy without `--no-verify-jwt` and without `config.toml`, the gateway may still require a JWT and Patreon **Accept** lands on `UNAUTHORIZED_NO_AUTH_HEADER` JSON instead of redirecting to Settings.
+
+   **3b. Dashboard alternative (no CLI):** **Supabase Dashboard → Edge Functions →** select each function → turn off **Enforce JWT verification** (same as `verify_jwt = false`). Do this for `patreon-oauth-callback`, `patreon-oauth-start`, and `patreon-webhook`.
 
    **One Supabase project ref everywhere.** Copy `<project-ref>` from **Supabase Dashboard → Project Settings → General** and use it in all of these:
 
@@ -106,9 +110,9 @@ If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the fun
    - `supabase link --project-ref <project-ref>`
    - Patreon app **Redirect URI** and optional `PATREON_REDIRECT_URI` → `https://<project-ref>.supabase.co/functions/v1/patreon-oauth-callback`
 
-   Typos are easy: e.g. `cfpbliagyimywwkvbjrw` vs `cfpbliagyimywwkvbjnv` — mixing projects causes wrong secrets, stale scopes (`invalid_scope`), or `UNAUTHORIZED_NO_AUTH_HEADER` if callback `verify_jwt` was not deployed on that ref.
+   **Project ref typos:** double-check the subdomain character-by-character. Examples: `cfpbliagyimywwkvbjrw` (correct) vs `cfpbliagymywwkvbjrw` (missing **`i`** in `liagy`) vs `cfpbliagyimywwkvbjnv` (different suffix). Mixing refs causes wrong secrets, `invalid_scope`, or `UNAUTHORIZED_NO_AUTH_HEADER` on the wrong project’s callback.
 
-   After scope or `config.toml` changes, redeploy all three Patreon functions.
+   After scope or `config.toml` changes, redeploy all three commands above with `--no-verify-jwt`.
 
 4. **Secrets** — **Dashboard → Edge Functions → Secrets** (names are **case-sensitive**; redeploy Patreon functions after changes):
 

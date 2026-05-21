@@ -1,0 +1,11 @@
+# Per-function JWT settings (Supabase CLI v2).
+# Also set verify_jwt in each function folder's config.toml and use --no-verify-jwt on deploy.
+
+[functions.patreon-oauth-start]
+verify_jwt = false
+
+[functions.patreon-oauth-callback]
+verify_jwt = false
+
+[functions.patreon-webhook]
+verify_jwt = false

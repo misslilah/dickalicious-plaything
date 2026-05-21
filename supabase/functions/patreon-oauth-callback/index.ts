@@ -12,20 +12,30 @@ const PATREON_TOKEN_URL = 'https://www.patreon.com/api/oauth2/token';
 const PATREON_API = 'https://www.patreon.com/api/oauth2/v2';
 
 Deno.serve(async (req) => {
+  const appOrigin = Deno.env.get('APP_ORIGIN') ?? 'http://localhost:5173';
+  const url = new URL(req.url);
+
+  // Patreon OAuth redirect: GET with ?code= or ?error= (no Authorization header).
+  if (req.method === 'GET') {
+    const oauthError = url.searchParams.get('error');
+    if (oauthError) {
+      return patreonSettingsErrorRedirect(appOrigin, oauthError);
+    }
+    const code = url.searchParams.get('code');
+    if (code && !url.searchParams.get('state')) {
+      return patreonSettingsErrorRedirect(appOrigin, 'missing_params');
+    }
+    if (!code && !oauthError) {
+      return patreonSettingsErrorRedirect(appOrigin, 'missing_params');
+    }
+  }
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
-  const url = new URL(req.url);
   const code = url.searchParams.get('code');
   const stateRaw = url.searchParams.get('state');
-  const oauthError = url.searchParams.get('error');
-
-  const appOrigin = Deno.env.get('APP_ORIGIN') ?? 'http://localhost:5173';
-
-  if (oauthError) {
-    return patreonSettingsErrorRedirect(appOrigin, oauthError);
-  }
 
   if (!code || !stateRaw) {
     return patreonSettingsErrorRedirect(appOrigin, 'missing_params');

@@ -1,0 +1,3 @@
+# Patreon webhook POST has no Supabase JWT — verify signature in handler instead.
+# Deploy: supabase functions deploy patreon-webhook --no-verify-jwt
+verify_jwt = false
