@@ -24,6 +24,15 @@ type DbProfilePatreon = {
   patreon_updated_at: string | null;
 };
 
+type DbAdminProfileRow = {
+  id: string;
+  username: string;
+  role: string;
+  patreon_user_id?: string | null;
+  patreon_tier?: PatreonMemberTier | null;
+  patreon_status?: PatreonStatus;
+};
+
 export async function fetchPatreonProfile(
   userId: string,
 ): Promise<{ ok: true; profile: PatreonProfile } | { ok: false; error: string }> {
@@ -75,7 +84,7 @@ export async function fetchAdminProfiles(): Promise<
     .select('id, username, role, patreon_user_id, patreon_tier, patreon_status')
     .order('username');
 
-  let data = withPatreon.data;
+  let data = withPatreon.data as DbAdminProfileRow[] | null;
   let error = withPatreon.error;
 
   if (error && isSupabaseColumnMissingError(error)) {
@@ -83,22 +92,19 @@ export async function fetchAdminProfiles(): Promise<
       .from('profiles')
       .select('id, username, role')
       .order('username');
-    data = base.data;
+    data = (base.data ?? []) as DbAdminProfileRow[];
     error = base.error;
   }
 
   if (error) return { ok: false, error: error.message };
 
   const profiles = (data ?? []).map((row) => ({
-    id: row.id as string,
-    username: row.username as string,
-    role: row.role as string,
-    patreonUserId: (row as { patreon_user_id?: string | null }).patreon_user_id ?? null,
-    patreonTier:
-      ((row as { patreon_tier?: PatreonMemberTier | null }).patreon_tier as PatreonMemberTier | null) ??
-      null,
-    patreonStatus:
-      ((row as { patreon_status?: PatreonStatus }).patreon_status as PatreonStatus) ?? 'none',
+    id: row.id,
+    username: row.username,
+    role: row.role,
+    patreonUserId: row.patreon_user_id ?? null,
+    patreonTier: row.patreon_tier ?? null,
+    patreonStatus: row.patreon_status ?? 'none',
   }));
 
   return { ok: true, profiles };
