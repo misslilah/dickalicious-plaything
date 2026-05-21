@@ -54,9 +54,14 @@ export function Settings() {
   useEffect(() => {
     if (!patreonOAuthAvailable) return;
     let cancelled = false;
-    void probePatreonOAuthStart().then((status) => {
+    void probePatreonOAuthStart().then((probe) => {
       if (cancelled) return;
-      const msg = patreonOAuthStatusMessage(status, session?.role === 'admin');
+      const msg = patreonOAuthStatusMessage(
+        probe.status,
+        session?.role === 'admin',
+        probe.missingSecrets,
+        probe.serverError,
+      );
       setPatreonDeployWarning(msg ?? '');
     });
     return () => {

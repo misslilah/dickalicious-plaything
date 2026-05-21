@@ -27,3 +27,22 @@ export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+/** Resolve Patreon OAuth start env; lists missing secret names for 503 responses. */
+export function getPatreonOAuthStartConfig(): {
+  clientId: string;
+  redirectUri: string;
+  missingSecrets: string[];
+} {
+  const clientId = Deno.env.get('PATREON_CLIENT_ID')?.trim() ?? '';
+  const redirectOverride = Deno.env.get('PATREON_REDIRECT_URI')?.trim() ?? '';
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')?.trim().replace(/\/$/, '') ?? '';
+  const defaultRedirect = supabaseUrl
+    ? `${supabaseUrl}/functions/v1/patreon-oauth-callback`
+    : '';
+  const redirectUri = redirectOverride || defaultRedirect;
+  const missingSecrets: string[] = [];
+  if (!clientId) missingSecrets.push('PATREON_CLIENT_ID');
+  if (!redirectUri) missingSecrets.push('PATREON_REDIRECT_URI');
+  return { clientId, redirectUri, missingSecrets };
+}

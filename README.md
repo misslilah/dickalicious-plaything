@@ -95,14 +95,14 @@ If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the fun
 
    `patreon-oauth-start` ships with `verify_jwt = false` so the gateway accepts the anon key; the app still sends the signed-in user JWT when starting OAuth. `user_id` is required in the query string.
 
-4. **Secrets** — **Dashboard → Edge Functions → Secrets**:
+4. **Secrets** — **Dashboard → Edge Functions → Secrets** (names are **case-sensitive**; redeploy Patreon functions after changes):
 
    | Secret | Value |
    |--------|--------|
    | `PATREON_CLIENT_ID` | From Patreon app |
    | `PATREON_CLIENT_SECRET` | From Patreon app |
    | `PATREON_CREATOR_CAMPAIGN_ID` | Your campaign ID |
-   | `PATREON_REDIRECT_URI` | `https://<project-ref>.supabase.co/functions/v1/patreon-oauth-callback` |
+   | `PATREON_REDIRECT_URI` | Optional on hosted Supabase: defaults to `https://<project-ref>.supabase.co/functions/v1/patreon-oauth-callback`. Set explicitly if Patreon app redirect URLs differ. |
    | `PATREON_WEBHOOK_SECRET` | From Patreon webhook settings |
    | `APP_ORIGIN` | e.g. `http://localhost:5173` or your Vercel URL |
 

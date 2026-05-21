@@ -1,23 +1,27 @@
-import { corsHeaders } from '../_shared/patreon.ts';
+import { corsHeaders, getPatreonOAuthStartConfig } from '../_shared/patreon.ts';
 
 const PATREON_AUTH_URL = 'https://www.patreon.com/oauth2/authorize';
+
+function notConfiguredResponse(missingSecrets: string[]): Response {
+  const missingList = missingSecrets.join(', ');
+  const error = missingSecrets.length
+    ? `Patreon OAuth is not configured. Missing Edge Function secret(s): ${missingList}.`
+    : 'Patreon OAuth is not configured.';
+  return new Response(JSON.stringify({ error, missing_secrets: missingSecrets }), {
+    status: 503,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
-  const clientId = Deno.env.get('PATREON_CLIENT_ID');
-  const redirectUri = Deno.env.get('PATREON_REDIRECT_URI');
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const { clientId, redirectUri, missingSecrets } = getPatreonOAuthStartConfig();
 
-  if (!clientId || !redirectUri) {
-    return new Response(
-      JSON.stringify({
-        error: 'Patreon OAuth is not configured. Set PATREON_CLIENT_ID and PATREON_REDIRECT_URI in Edge Function secrets.',
-      }),
-      { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-    );
+  if (missingSecrets.length > 0) {
+    return notConfiguredResponse(missingSecrets);
   }
 
   const url = new URL(req.url);
@@ -33,16 +37,10 @@ Deno.serve(async (req) => {
 
   const state = btoa(JSON.stringify({ userId, returnTo }));
 
-  const callback =
-    redirectUri ||
-    (supabaseUrl
-      ? `${supabaseUrl}/functions/v1/patreon-oauth-callback`
-      : '');
-
   const authUrl = new URL(PATREON_AUTH_URL);
   authUrl.searchParams.set('response_type', 'code');
   authUrl.searchParams.set('client_id', clientId);
-  authUrl.searchParams.set('redirect_uri', callback);
+  authUrl.searchParams.set('redirect_uri', redirectUri);
   authUrl.searchParams.set('scope', 'identity identity[email] campaigns members');
   authUrl.searchParams.set('state', state);
 
