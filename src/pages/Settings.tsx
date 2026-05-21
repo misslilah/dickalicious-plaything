@@ -4,7 +4,7 @@ import { useAppStore } from '../hooks/useAppStore';
 import {
   connectPatreonAccount,
   isPatreonOAuthConfigured,
-  patreonOAuthStatusMessage,
+  patreonOAuthStatusMessageFromProbe,
   probePatreonOAuthStart,
 } from '../lib/patreon';
 import { tierLabel } from '../lib/tiers';
@@ -56,11 +56,9 @@ export function Settings() {
     let cancelled = false;
     void probePatreonOAuthStart().then((probe) => {
       if (cancelled) return;
-      const msg = patreonOAuthStatusMessage(
-        probe.status,
+      const msg = patreonOAuthStatusMessageFromProbe(
+        probe,
         session?.role === 'admin',
-        probe.missingSecrets,
-        probe.serverError,
       );
       setPatreonDeployWarning(msg ?? '');
     });

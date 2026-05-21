@@ -46,3 +46,25 @@ export function getPatreonOAuthStartConfig(): {
   if (!redirectUri) missingSecrets.push('PATREON_REDIRECT_URI');
   return { clientId, redirectUri, missingSecrets };
 }
+
+/** Resolve Patreon OAuth callback env; lists missing secret names. */
+export function getPatreonOAuthCallbackConfig(): {
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  missingSecrets: string[];
+} {
+  const clientId = Deno.env.get('PATREON_CLIENT_ID')?.trim() ?? '';
+  const clientSecret = Deno.env.get('PATREON_CLIENT_SECRET')?.trim() ?? '';
+  const redirectOverride = Deno.env.get('PATREON_REDIRECT_URI')?.trim() ?? '';
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')?.trim().replace(/\/$/, '') ?? '';
+  const defaultRedirect = supabaseUrl
+    ? `${supabaseUrl}/functions/v1/patreon-oauth-callback`
+    : '';
+  const redirectUri = redirectOverride || defaultRedirect;
+  const missingSecrets: string[] = [];
+  if (!clientId) missingSecrets.push('PATREON_CLIENT_ID');
+  if (!clientSecret) missingSecrets.push('PATREON_CLIENT_SECRET');
+  if (!redirectUri) missingSecrets.push('PATREON_REDIRECT_URI');
+  return { clientId, clientSecret, redirectUri, missingSecrets };
+}

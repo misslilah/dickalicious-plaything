@@ -87,13 +87,15 @@ If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the fun
    supabase link --project-ref <your-project-ref>
    ```
 
-3. **Deploy** (required after changing `supabase/functions/patreon-oauth-start/config.toml`):
+3. **Deploy all three Patreon functions** (required after changing any `config.toml` under `supabase/functions/patreon-oauth-*`):
 
    ```bash
    supabase functions deploy patreon-oauth-start patreon-oauth-callback patreon-webhook
    ```
 
-   `patreon-oauth-start` ships with `verify_jwt = false` so the gateway accepts the anon key; the app still sends the signed-in user JWT when starting OAuth. `user_id` is required in the query string.
+   Both `patreon-oauth-start` and `patreon-oauth-callback` ship with `verify_jwt = false`. Use **Settings → Connect Patreon** — do not open the callback URL in a browser to test.
+
+   **Project ref must match everywhere.** `VITE_SUPABASE_URL` must use the same `<project-ref>` as `supabase link` and `PATREON_REDIRECT_URI` / Patreon redirect URLs (typos like `...vhjnv` vs `...vbjnv` break OAuth).
 
 4. **Secrets** — **Dashboard → Edge Functions → Secrets** (names are **case-sensitive**; redeploy Patreon functions after changes):
 
@@ -106,7 +108,14 @@ If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the fun
    | `PATREON_WEBHOOK_SECRET` | From Patreon webhook settings |
    | `APP_ORIGIN` | e.g. `http://localhost:5173` or your Vercel URL |
 
-5. **Verify**: in the app, click **Settings → Connect Patreon** (or probe with curl using `Authorization: Bearer <anon_key>` and `apikey: <anon_key>`). You should reach Patreon, not `UNAUTHORIZED_NO_AUTH_HEADER` JSON.
+5. **Verify**: **Settings** shows admin warnings. Probe:
+
+   ```bash
+   curl -s "https://<project-ref>.supabase.co/functions/v1/patreon-oauth-start?probe=1" \
+     -H "Authorization: Bearer <anon_key>" -H "apikey: <anon_key>"
+   ```
+
+   Expect `{"ok":true,"missing":[]}`. Then **Connect Patreon**. Patreon redirect URI must match `PATREON_REDIRECT_URI` (or default callback for your project ref).
 
 ## Admin
 

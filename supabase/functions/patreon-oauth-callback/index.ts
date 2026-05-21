@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
   corsHeaders,
+  getPatreonOAuthCallbackConfig,
   highestTier,
   mapPatreonTierTitle,
   type AppPatreonTier,
@@ -36,13 +37,12 @@ Deno.serve(async (req) => {
     return new Response('Invalid state.', { status: 400, headers: corsHeaders });
   }
 
-  const clientId = Deno.env.get('PATREON_CLIENT_ID');
-  const clientSecret = Deno.env.get('PATREON_CLIENT_SECRET');
-  const redirectUri = Deno.env.get('PATREON_REDIRECT_URI');
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  const { clientId, clientSecret, redirectUri, missingSecrets } =
+    getPatreonOAuthCallbackConfig();
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')?.trim() ?? '';
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')?.trim() ?? '';
 
-  if (!clientId || !clientSecret || !redirectUri || !supabaseUrl || !serviceKey) {
+  if (missingSecrets.length > 0 || !supabaseUrl || !serviceKey) {
     return Response.redirect(`${appOrigin}/settings?patreon=not_configured`, 302);
   }
 
