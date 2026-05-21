@@ -72,6 +72,16 @@ function getAnonKey(): string | null {
   return key || null;
 }
 
+const OAUTH_REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+type PatreonOAuthStartBody = {
+  redirectUrl?: string;
+  url?: string;
+  error?: string;
+  message?: string;
+  code?: string;
+};
+
 /** Headers required by the Supabase Edge Functions gateway. */
 function supabaseFunctionHeaders(accessToken?: string | null): HeadersInit {
   const anonKey = getAnonKey();
@@ -81,6 +91,29 @@ function supabaseFunctionHeaders(accessToken?: string | null): HeadersInit {
     Authorization: `Bearer ${bearer}`,
     apikey: anonKey,
   };
+}
+
+function oauthRedirectFromResponse(res: Response): string | null {
+  if (!OAUTH_REDIRECT_STATUSES.has(res.status)) return null;
+  const location = res.headers.get('Location')?.trim();
+  return location || null;
+}
+
+function parseOAuthStartRedirect(body: PatreonOAuthStartBody): string | null {
+  const target = body.redirectUrl?.trim() || body.url?.trim();
+  return target || null;
+}
+
+function messageForGatewayAuthFailure(
+  body: PatreonOAuthStartBody | null,
+  isAdmin = false,
+): string {
+  if (body?.code === 'UNAUTHORIZED_NO_AUTH_HEADER') {
+    return isAdmin
+      ? 'Supabase gateway rejected the request (missing Authorization). Redeploy from this repo so patreon-oauth-start/config.toml (verify_jwt = false) is applied, set VITE_SUPABASE_ANON_KEY on your host, and use Settings → Connect Patreon — never open the function URL in the browser.'
+      : 'Patreon connection is not available yet. Ask an admin to redeploy Edge Functions and retry Connect Patreon in Settings.';
+  }
+  return body?.message ?? body?.error ?? 'Session expired. Sign out and sign in again, then retry Connect Patreon.';
 }
 
 async function parsePatreonOAuthConfigError(
@@ -253,21 +286,40 @@ export async function connectPatreonAccount(
     };
   }
 
+  const headers = {
+    ...supabaseFunctionHeaders(session.access_token),
+    Accept: 'application/json',
+  };
+  if (!('Authorization' in headers)) {
+    const message =
+      'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env (and on your hosting provider).';
+    console.error('[connectPatreon]', message);
+    return { ok: false, message };
+  }
+
   try {
     const res = await fetch(startUrl, {
       method: 'GET',
       redirect: 'manual',
-      headers: {
-        ...supabaseFunctionHeaders(session.access_token),
-        Accept: 'application/json',
-      },
+      headers,
     });
 
+    const redirectLocation = oauthRedirectFromResponse(res);
+    if (redirectLocation) {
+      window.location.assign(redirectLocation);
+      return { ok: true };
+    }
+
     if (res.status === 401) {
-      return {
-        ok: false,
-        message: 'Session expired. Sign out and sign in again, then retry Connect Patreon.',
-      };
+      let errBody: PatreonOAuthStartBody | null = null;
+      try {
+        errBody = (await res.json()) as PatreonOAuthStartBody;
+      } catch {
+        /* ignore */
+      }
+      const message = messageForGatewayAuthFailure(errBody, options?.isAdmin);
+      console.error('[connectPatreon]', message, errBody?.code ?? res.status);
+      return { ok: false, message };
     }
 
     if (res.status === 503) {
@@ -279,41 +331,53 @@ export async function connectPatreonAccount(
           details.missingSecrets,
           details.serverError,
         );
-        return { ok: false, message: msg ?? 'Patreon OAuth is not configured on the server.' };
+        const message = msg ?? 'Patreon OAuth is not configured on the server.';
+        console.error('[connectPatreon]', message);
+        return { ok: false, message };
       }
-      return {
-        ok: false,
-        message:
-          details.serverError ??
-          `Patreon OAuth start failed (${res.status}). Check Edge Function logs and redeploy.`,
-      };
+      const message =
+        details.serverError ??
+        `Patreon OAuth start failed (${res.status}). Check Edge Function logs and redeploy.`;
+      console.error('[connectPatreon]', message);
+      return { ok: false, message };
     }
 
     if (!res.ok) {
       let detail = `Patreon OAuth start failed (${res.status}).`;
       try {
-        const errBody = (await res.json()) as { error?: string; message?: string };
+        const errBody = (await res.json()) as PatreonOAuthStartBody;
         detail = errBody.error ?? errBody.message ?? detail;
+        if (errBody.code === 'UNAUTHORIZED_NO_AUTH_HEADER') {
+          detail = messageForGatewayAuthFailure(errBody, options?.isAdmin);
+        }
       } catch {
         /* ignore */
       }
+      console.error('[connectPatreon]', detail);
       return { ok: false, message: detail };
     }
 
-    const body = (await res.json()) as { url?: string; error?: string };
-    if (body.url) {
-      window.location.assign(body.url);
+    let body: PatreonOAuthStartBody = {};
+    try {
+      body = (await res.json()) as PatreonOAuthStartBody;
+    } catch {
+      const message = 'Patreon OAuth start returned an invalid response. Redeploy patreon-oauth-start.';
+      console.error('[connectPatreon]', message);
+      return { ok: false, message };
+    }
+
+    const redirectUrl = parseOAuthStartRedirect(body);
+    if (redirectUrl) {
+      window.location.assign(redirectUrl);
       return { ok: true };
     }
 
-    return {
-      ok: false,
-      message: body.error ?? 'Could not start Patreon OAuth.',
-    };
-  } catch {
-    return {
-      ok: false,
-      message: 'Could not reach Patreon OAuth. Check your connection and try again.',
-    };
+    const message = body.error ?? body.message ?? 'Could not start Patreon OAuth.';
+    console.error('[connectPatreon]', message);
+    return { ok: false, message };
+  } catch (err) {
+    const message = 'Could not reach Patreon OAuth. Check your connection and try again.';
+    console.error('[connectPatreon]', message, err);
+    return { ok: false, message };
   }
 }

@@ -77,7 +77,7 @@ Until Patreon OAuth is live, admins assign tiers in **Admin → Users**. Users s
 
 #### Deploy Supabase Edge Functions (required for “Connect Patreon”)
 
-If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the functions are **not deployed** yet. If you see `UNAUTHORIZED_NO_AUTH_HEADER`, redeploy `patreon-oauth-start` after adding its `config.toml` (see below) and use the in-app **Connect Patreon** button (not a bare browser URL).
+If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the functions are **not deployed** yet. If you see `UNAUTHORIZED_NO_AUTH_HEADER` on a **black JSON page**, the browser opened the Edge Function URL **without** `Authorization` / `apikey` headers (old app build with a direct link, or testing the URL manually). Fix: push the latest frontend, redeploy functions **from this repo** (so `config.toml` is included), and use **Settings → Connect Patreon** only.
 
 1. **Install Supabase CLI** — https://supabase.com/docs/guides/cli/getting-started
 2. **Log in and link** (from repo root):
@@ -87,13 +87,18 @@ If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the fun
    supabase link --project-ref <your-project-ref>
    ```
 
-3. **Deploy all three Patreon functions** (required after changing any `config.toml` under `supabase/functions/patreon-oauth-*`):
+3. **Deploy all three Patreon functions** from the **repository root** (required after changing any `config.toml`):
 
    ```bash
    supabase functions deploy patreon-oauth-start patreon-oauth-callback patreon-webhook
    ```
 
-   Both `patreon-oauth-start` and `patreon-oauth-callback` ship with `verify_jwt = false`. Use **Settings → Connect Patreon** — do not open the callback URL in a browser to test.
+   Each function folder must contain its own `config.toml` (deploy picks it up from the folder, not from `supabase/config.toml` alone):
+
+   - `supabase/functions/patreon-oauth-start/config.toml` → `verify_jwt = false`
+   - `supabase/functions/patreon-oauth-callback/config.toml` → `verify_jwt = false`
+
+   If you deploy only `index.ts` or omit `config.toml`, the gateway may still require a JWT and **Connect Patreon** can fail. Use **Settings → Connect Patreon** — do not open the start/callback URLs in a browser to test.
 
    **Project ref must match everywhere.** `VITE_SUPABASE_URL` must use the same `<project-ref>` as `supabase link` and `PATREON_REDIRECT_URI` / Patreon redirect URLs (typos like `...vhjnv` vs `...vbjnv` break OAuth).
 
@@ -115,7 +120,7 @@ If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the fun
      -H "Authorization: Bearer <anon_key>" -H "apikey: <anon_key>"
    ```
 
-   Expect `{"ok":true,"missing":[]}`. Then **Connect Patreon**. Patreon redirect URI must match `PATREON_REDIRECT_URI` (or default callback for your project ref).
+   Expect `{"ok":true,"missing":[]}`. Opening the probe URL in a browser **without** those headers will still show `UNAUTHORIZED_NO_AUTH_HEADER` — that is normal. Then **Connect Patreon** in the app (authenticated `fetch` with `Accept: application/json` → `{ "redirectUrl": "..." }`). Patreon redirect URI must match `PATREON_REDIRECT_URI` (or default callback for your project ref).
 
 ## Admin
 

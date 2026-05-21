@@ -76,6 +76,7 @@ export function Settings() {
     });
     setPatreonConnecting(false);
     if (!result.ok) {
+      console.error('[connectPatreon]', result.message);
       setPatreonConnectError(result.message);
     }
   };

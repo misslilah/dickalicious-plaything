@@ -1,2 +1,3 @@
-# Patreon redirects the browser here without an Authorization header.
+# Deploy with: supabase functions deploy patreon-oauth-callback
+# Patreon redirects here without Authorization — verify_jwt must stay false
 verify_jwt = false

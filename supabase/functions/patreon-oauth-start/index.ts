@@ -67,7 +67,7 @@ Deno.serve(async (req) => {
   authUrl.searchParams.set('state', state);
 
   if (wantsJson) {
-    return new Response(JSON.stringify({ url: authUrl.toString() }), {
+    return new Response(JSON.stringify({ redirectUrl: authUrl.toString() }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }

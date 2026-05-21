@@ -1,2 +1,3 @@
-# OAuth start is opened via fetch (not a browser link). Gateway still needs apikey/Authorization.
+# Deploy with: supabase functions deploy patreon-oauth-start
+# (config.toml must live in this folder — not optional)
 verify_jwt = false
