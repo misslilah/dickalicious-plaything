@@ -13,6 +13,7 @@ Progressive web app (PWA) for gamified task tracking. **Shared catalog data** (c
 1. Create a project at [supabase.com](https://supabase.com).
 2. Open **SQL Editor** and run:
    - `supabase/migrations/001_initial.sql`
+   - `supabase/migrations/002_patreon_tiers.sql`
    - `supabase/storage_setup.sql`
 3. Under **Authentication → Providers**, enable Email. For production, disable public sign-ups and create users from the Dashboard or Admin panel.
 4. Create the first admin:
@@ -28,9 +29,14 @@ VITE_SUPABASE_URL=https://xxxx.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
 # Optional: client max upload size in bytes (default 2GB)
 VITE_MAX_VIDEO_BYTES=2147483648
+VITE_PATREON_PAGE_URL=https://www.patreon.com/your-creator-page
 ```
 
-Find URL and anon key under **Project Settings → API**.
+Find values under **Project Settings → API**:
+
+- **Project URL** → `VITE_SUPABASE_URL` (must be `https://`, no trailing slash)
+- **anon public** (legacy JWT, `eyJ…`) **or** **publishable** (`sb_publishable_…`) → `VITE_SUPABASE_ANON_KEY`
+- Never put the **service role / secret** key in the client `.env`
 
 > **Video size:** The client defaults to a 2 GB limit, but Supabase free tier often caps a single file around **50 MB**. Lower `VITE_MAX_VIDEO_BYTES` (e.g. `52428800`) if uploads fail.
 
@@ -54,6 +60,51 @@ Open the URL shown (usually `http://localhost:5173`). Sign in with the admin ema
 | Loop button preference | `sessionStorage` (device only) |
 
 Old `localStorage` keys (`sissy-training-state`, `sissy-training-auth`) are **not** used after this migration.
+
+## Patreon tier video access
+
+Videos and categories can require a **tier**: Public, Sweetie, Princess, or Slut (cumulative — higher tiers include lower ones).
+
+Until Patreon OAuth is live, admins assign tiers in **Admin → Users**. Users see their tier under **Settings → Patreon membership**.
+
+### Patreon app (OAuth + webhooks)
+
+1. Create an app at [Patreon Developers](https://www.patreon.com/portal/registration/register-clients).
+2. **Redirect URI** (must match exactly):  
+   `https://<project-ref>.supabase.co/functions/v1/patreon-oauth-callback`
+3. **Webhook URL**:  
+   `https://<project-ref>.supabase.co/functions/v1/patreon-webhook`
+
+#### Deploy Supabase Edge Functions (required for “Connect Patreon”)
+
+If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the functions are **not deployed** yet.
+
+1. **Install Supabase CLI** — https://supabase.com/docs/guides/cli/getting-started
+2. **Log in and link** (from repo root):
+
+   ```bash
+   supabase login
+   supabase link --project-ref <your-project-ref>
+   ```
+
+3. **Deploy**:
+
+   ```bash
+   supabase functions deploy patreon-oauth-start patreon-oauth-callback patreon-webhook
+   ```
+
+4. **Secrets** — **Dashboard → Edge Functions → Secrets**:
+
+   | Secret | Value |
+   |--------|--------|
+   | `PATREON_CLIENT_ID` | From Patreon app |
+   | `PATREON_CLIENT_SECRET` | From Patreon app |
+   | `PATREON_CREATOR_CAMPAIGN_ID` | Your campaign ID |
+   | `PATREON_REDIRECT_URI` | `https://<project-ref>.supabase.co/functions/v1/patreon-oauth-callback` |
+   | `PATREON_WEBHOOK_SECRET` | From Patreon webhook settings |
+   | `APP_ORIGIN` | e.g. `http://localhost:5173` or your Vercel URL |
+
+5. **Verify**: open the `patreon-oauth-start` URL in a browser — you should be **redirected to Patreon**, not JSON.
 
 ## Admin
 
@@ -94,7 +145,9 @@ npm run build
 | File | Purpose |
 |------|---------|
 | `supabase/migrations/001_initial.sql` | Tables, RLS, profile trigger |
+| `supabase/migrations/002_patreon_tiers.sql` | Patreon columns, tier RLS |
 | `supabase/storage_setup.sql` | Storage buckets and policies |
+| `supabase/functions/patreon-*` | OAuth + webhook Edge Functions |
 
 ## License
 
