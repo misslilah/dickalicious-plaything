@@ -20,7 +20,14 @@ import {
   updateProfilePatreon,
   type AdminProfileRow,
 } from '../lib/profileDb';
-import { PATREON_MEMBER_TIER_OPTIONS, TIER_CHIP_OPTIONS } from '../lib/tiers';
+import {
+  PATREON_MEMBER_TIER_OPTIONS,
+  TIER_CHIP_OPTIONS,
+  tierAccessHint,
+  VIDEO_ACCESS_CUMULATIVE_NOTE,
+  VIDEO_ACCESS_OPTIONS,
+} from '../lib/tiers';
+import { TierBadge } from '../components/TierBadge';
 import {
   formatMb,
   formatVideoSizeError,
@@ -228,7 +235,7 @@ function AdminLibraryItem({
 }: {
   selected?: boolean;
   title: string;
-  meta?: string;
+  meta?: ReactNode;
   onEdit: () => void;
   onDelete: () => void;
   deleteLabel?: string;
@@ -1809,14 +1816,14 @@ function VideoCategoryAdmin() {
           />
         </Field>
         <Field
-          label="Default required tier"
-          hint="Optional default for videos in this category (videos can override)."
+          label="Who can watch? (category default)"
+          hint={`Optional default for videos in this category. ${VIDEO_ACCESS_CUMULATIVE_NOTE}`}
         >
           <ChipSelect
-            label="Category default tier"
+            label="Category default access"
             options={[
-              { value: '' as const, label: 'None (public)' },
-              ...TIER_CHIP_OPTIONS,
+              { value: '' as const, label: 'Public (everyone)' },
+              ...VIDEO_ACCESS_OPTIONS.filter((o) => o.value !== 'public'),
             ]}
             value={draft.requiredTier ?? ''}
             onChange={(v) =>
@@ -1951,7 +1958,13 @@ function VideoUploadAdmin() {
               key={v.id}
               selected={false}
               title={v.title}
-              meta={`${categoryName(v.categoryId)} · ${v.requiredTier ?? 'sweetie'} · ${formatMb(v.sizeBytes)}`}
+              meta={
+                <>
+                  {categoryName(v.categoryId)} ·{' '}
+                  <TierBadge tier={v.requiredTier ?? 'sweetie'} accessStyle /> ·{' '}
+                  {formatMb(v.sizeBytes)}
+                </>
+              }
               onEdit={() => {}}
               onDelete={() => remove(v.id)}
               hideEdit
@@ -1998,13 +2011,19 @@ function VideoUploadAdmin() {
             onChange={(e) => setDescription(e.target.value)}
           />
         </Field>
-        <Field label="Required tier" hint="Who can watch this video (cumulative tiers).">
+        <Field
+          label="Who can watch?"
+          hint={VIDEO_ACCESS_CUMULATIVE_NOTE}
+        >
           <ChipSelect
-            label="Required tier"
-            options={TIER_CHIP_OPTIONS}
+            label="Minimum Patreon tier"
+            options={VIDEO_ACCESS_OPTIONS}
             value={requiredTier}
             onChange={setRequiredTier}
           />
+          <p className="muted tier-access-hint" aria-live="polite">
+            {tierAccessHint(requiredTier)}
+          </p>
         </Field>
         <Field
           label="Video file"

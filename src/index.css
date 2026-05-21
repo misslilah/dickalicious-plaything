@@ -1446,6 +1446,48 @@ select {
   color: var(--success);
 }
 
+.tier-badge--public {
+  background: rgba(148, 163, 184, 0.15);
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+.tier-badge--tier {
+  background: rgba(192, 132, 252, 0.2);
+  border-color: rgba(192, 132, 252, 0.35);
+}
+
+.tier-badge--slut {
+  background: rgba(251, 113, 133, 0.15);
+  border-color: rgba(251, 113, 133, 0.4);
+}
+
+.video-list-item__tier {
+  margin-top: 0.2rem;
+}
+
+.tier-access-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.88rem;
+}
+
+.video-category-tier {
+  margin: 0.35rem 0 0;
+  font-size: 0.9rem;
+}
+
+.video-watch-card__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.video-watch-card__header .section-title {
+  margin: 0;
+  flex: 1 1 auto;
+}
+
 .tier-upgrade-banner {
   display: flex;
   flex-direction: column;

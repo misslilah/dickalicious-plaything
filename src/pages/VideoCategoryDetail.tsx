@@ -3,11 +3,11 @@ import { Link, useParams } from 'react-router-dom';
 import { useAppStore } from '../hooks/useAppStore';
 import { useVideoPlaybackUrl } from '../hooks/useVideoBlobUrl';
 import { getPatreonPageUrl } from '../lib/patreon';
+import { TierBadge } from '../components/TierBadge';
 import {
   canAccessTier,
   effectiveVideoTier,
   requiresTierMessage,
-  tierLabel,
 } from '../lib/tiers';
 import type { ContentTier, Video, VideoCategory } from '../types';
 
@@ -127,6 +127,9 @@ function VideoListItem({
       </span>
       <span className="video-list-item__body">
         <strong>{video.title}</strong>
+        <span className="video-list-item__tier">
+          <TierBadge tier={required} accessStyle />
+        </span>
         {locked ? (
           <span className="muted video-list-item__desc">
             {requiresTierMessage(required)}
@@ -208,11 +211,13 @@ export function VideoCategoryDetail() {
         {category.description && (
           <p className="muted">{category.description}</p>
         )}
-        {category.requiredTier && category.requiredTier !== 'public' && (
-          <p className="muted tier-badge">
-            Category tier: {tierLabel(category.requiredTier)}
-          </p>
-        )}
+        <p className="video-category-tier">
+          Category access:{' '}
+          <TierBadge
+            tier={category.requiredTier ?? 'public'}
+            accessStyle
+          />
+        </p>
       </header>
 
       {categoryLocked && (
@@ -229,7 +234,16 @@ export function VideoCategoryDetail() {
         <>
           {playing && (
             <section className="card video-watch-card">
-              <h3 className="section-title">{playing.title}</h3>
+              <div className="video-watch-card__header">
+                <h3 className="section-title">{playing.title}</h3>
+                <TierBadge
+                  tier={effectiveVideoTier(
+                    playing.requiredTier,
+                    category.requiredTier,
+                  )}
+                  accessStyle
+                />
+              </div>
               {playingLocked ? (
                 <TierUpgradeBanner
                   requiredTier={effectiveVideoTier(

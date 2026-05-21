@@ -57,6 +57,34 @@ export const TIER_CHIP_OPTIONS: { value: ContentTier; label: string }[] = [
   { value: 'slut', label: 'Slut' },
 ];
 
+/** Minimum Patreon tier for upload / access (cumulative). */
+export const VIDEO_ACCESS_OPTIONS: { value: ContentTier; label: string }[] = [
+  { value: 'public', label: 'Public' },
+  { value: 'sweetie', label: 'Sweetie+' },
+  { value: 'princess', label: 'Princess+' },
+  { value: 'slut', label: 'Slut only' },
+];
+
+const ACCESS_DESCRIPTIONS: Record<ContentTier, string> = {
+  public: 'Everyone with an account can watch.',
+  sweetie: 'Sweetie, Princess, and Slut patrons can watch.',
+  princess: 'Princess and Slut patrons can watch.',
+  slut: 'Only Slut-tier patrons can watch.',
+};
+
+export function tierAccessLabel(tier: ContentTier | null | undefined): string {
+  const t = tier ?? 'public';
+  const opt = VIDEO_ACCESS_OPTIONS.find((o) => o.value === t);
+  return opt?.label ?? tierLabel(t);
+}
+
+export function tierAccessHint(tier: ContentTier | null | undefined): string {
+  return ACCESS_DESCRIPTIONS[tier ?? 'public'];
+}
+
+export const VIDEO_ACCESS_CUMULATIVE_NOTE =
+  'Access is cumulative: choosing a tier also includes all higher Patreon tiers.';
+
 export const PATREON_MEMBER_TIER_OPTIONS: { value: PatreonMemberTier | ''; label: string }[] = [
   { value: '', label: 'None (public only)' },
   { value: 'sweetie', label: 'Sweetie' },
