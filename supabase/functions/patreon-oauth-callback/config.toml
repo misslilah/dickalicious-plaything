@@ -1,0 +1,2 @@
+# Patreon redirects the browser here without an Authorization header.
+verify_jwt = false
