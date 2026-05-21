@@ -7,7 +7,7 @@ import type {
 import {
   formatSupabaseAuthError,
   getSupabase,
-  getSupabaseConfigStatus,
+  isSupabaseColumnMissingError,
   isSupabaseConfigured,
 } from './supabase';
 
@@ -21,6 +21,18 @@ export interface AuthSession {
   patreonUserId: string | null;
 }
 
+const PROFILE_SELECT_WITH_PATREON =
+  'username, role, patreon_tier, patreon_status, patreon_user_id';
+const PROFILE_SELECT_BASE = 'username, role';
+
+type ProfileRow = {
+  username?: string | null;
+  role?: string | null;
+  patreon_tier?: PatreonMemberTier | null;
+  patreon_status?: PatreonStatus | null;
+  patreon_user_id?: string | null;
+};
+
 /** Map username to internal email for legacy-style usernames. */
 export function usernameToEmail(username: string): string {
   const trimmed = username.trim().toLowerCase();
@@ -28,31 +40,69 @@ export function usernameToEmail(username: string): string {
   return `${trimmed}@local.app`;
 }
 
+function profileRowToSession(
+  userId: string,
+  email: string,
+  row: ProfileRow,
+): AuthSession {
+  return {
+    userId,
+    email,
+    username: row.username?.trim() || 'User',
+    role: (row.role as UserRole) ?? 'user',
+    patreonTier: row.patreon_tier ?? null,
+    patreonStatus: row.patreon_status ?? 'none',
+    patreonUserId: row.patreon_user_id ?? null,
+  };
+}
+
+async function fetchProfileRow(
+  userId: string,
+): Promise<{ ok: true; row: ProfileRow } | { ok: false; error: string }> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const full = await supabase
+    .from('profiles')
+    .select(PROFILE_SELECT_WITH_PATREON)
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (!full.error && full.data) {
+    return { ok: true, row: full.data as ProfileRow };
+  }
+
+  if (full.error && isSupabaseColumnMissingError(full.error)) {
+    const base = await supabase
+      .from('profiles')
+      .select(PROFILE_SELECT_BASE)
+      .eq('id', userId)
+      .maybeSingle();
+    if (base.error) return { ok: false, error: base.error.message };
+    if (!base.data) return { ok: false, error: 'Profile not found.' };
+    return { ok: true, row: base.data as ProfileRow };
+  }
+
+  if (full.error) return { ok: false, error: full.error.message };
+  return { ok: false, error: 'Profile not found.' };
+}
+
 export async function getCurrentSession(): Promise<AuthSession | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
 
-  const { data: sessionData } = await supabase.auth.getSession();
-  const user = sessionData.session?.user;
-  if (!user) return null;
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const user = sessionData.session?.user;
+    if (!user) return null;
 
-  const { data: profile, error } = await supabase
-    .from('profiles')
-    .select('username, role, patreon_tier, patreon_status, patreon_user_id')
-    .eq('id', user.id)
-    .maybeSingle();
+    const profile = await fetchProfileRow(user.id);
+    if (!profile.ok) return null;
 
-  if (error || !profile) return null;
-
-  return {
-    userId: user.id,
-    email: user.email ?? '',
-    username: profile.username,
-    role: profile.role as UserRole,
-    patreonTier: (profile.patreon_tier as PatreonMemberTier | null) ?? null,
-    patreonStatus: (profile.patreon_status as PatreonStatus) ?? 'none',
-    patreonUserId: (profile.patreon_user_id as string | null) ?? null,
-  };
+    return profileRowToSession(user.id, user.email ?? '', profile.row);
+  } catch {
+    return null;
+  }
 }
 
 export function sessionToApp(session: AuthSession): AppSession {
@@ -164,7 +214,9 @@ export function onAuthStateChange(
       callback(null);
       return;
     }
-    void getCurrentSession().then(callback);
+    void getCurrentSession()
+      .then(callback)
+      .catch(() => callback(null));
   });
 
   return () => data.subscription.unsubscribe();

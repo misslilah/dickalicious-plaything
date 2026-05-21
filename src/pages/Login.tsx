@@ -15,7 +15,15 @@ export function Login() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  if (authReady && session) {
+  if (!authReady) {
+    return (
+      <div className="auth-loading">
+        <p className="muted">Loading…</p>
+      </div>
+    );
+  }
+
+  if (session) {
     return <Navigate to={from} replace />;
   }
 

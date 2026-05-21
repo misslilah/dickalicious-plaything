@@ -1,5 +1,5 @@
 import type { PatreonMemberTier, PatreonStatus } from './tiers';
-import { getSupabase } from './supabase';
+import { getSupabase, isSupabaseColumnMissingError } from './supabase';
 
 export interface PatreonProfile {
   patreonUserId: string | null;
@@ -30,11 +30,23 @@ export async function fetchPatreonProfile(
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('profiles')
     .select('patreon_user_id, patreon_tier, patreon_status, patreon_updated_at')
     .eq('id', userId)
     .maybeSingle();
+
+  if (error && isSupabaseColumnMissingError(error)) {
+    return {
+      ok: true,
+      profile: {
+        patreonUserId: null,
+        patreonTier: null,
+        patreonStatus: 'none',
+        patreonUpdatedAt: null,
+      },
+    };
+  }
 
   if (error || !data) {
     return { ok: false, error: error?.message ?? 'Profile not found.' };
@@ -58,10 +70,22 @@ export async function fetchAdminProfiles(): Promise<
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
 
-  const { data, error } = await supabase
+  const withPatreon = await supabase
     .from('profiles')
     .select('id, username, role, patreon_user_id, patreon_tier, patreon_status')
     .order('username');
+
+  let data = withPatreon.data;
+  let error = withPatreon.error;
+
+  if (error && isSupabaseColumnMissingError(error)) {
+    const base = await supabase
+      .from('profiles')
+      .select('id, username, role')
+      .order('username');
+    data = base.data;
+    error = base.error;
+  }
 
   if (error) return { ok: false, error: error.message };
 
@@ -69,9 +93,12 @@ export async function fetchAdminProfiles(): Promise<
     id: row.id as string,
     username: row.username as string,
     role: row.role as string,
-    patreonUserId: row.patreon_user_id as string | null,
-    patreonTier: row.patreon_tier as PatreonMemberTier | null,
-    patreonStatus: (row.patreon_status as PatreonStatus) ?? 'none',
+    patreonUserId: (row as { patreon_user_id?: string | null }).patreon_user_id ?? null,
+    patreonTier:
+      ((row as { patreon_tier?: PatreonMemberTier | null }).patreon_tier as PatreonMemberTier | null) ??
+      null,
+    patreonStatus:
+      ((row as { patreon_status?: PatreonStatus }).patreon_status as PatreonStatus) ?? 'none',
   }));
 
   return { ok: true, profiles };

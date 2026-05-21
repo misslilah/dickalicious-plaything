@@ -132,6 +132,15 @@ export function formatSupabaseFetchError(
   ].join(' ');
 }
 
+/** True when PostgREST reports a missing column (e.g. Patreon migration not applied). */
+export function isSupabaseColumnMissingError(
+  error: { code?: string; message?: string } | null | undefined,
+): boolean {
+  if (!error) return false;
+  if (error.code === '42703') return true;
+  return /column .* does not exist/i.test(error.message ?? '');
+}
+
 export function formatSupabaseAuthError(
   error: { message?: string } | null | undefined,
   status: SupabaseConfigStatus = getSupabaseConfigStatus(),

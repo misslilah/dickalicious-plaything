@@ -162,43 +162,55 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     setDataLoading(true);
     setDataError(null);
 
-    const [catalogResult, progressResult] = await Promise.all([
-      fetchSharedCatalog(),
-      fetchUserProgress(userId),
-    ]);
+    try {
+      const [catalogResult, progressResult] = await Promise.all([
+        fetchSharedCatalog(),
+        fetchUserProgress(userId),
+      ]);
 
-    if (!catalogResult.ok) {
-      setDataError(catalogResult.error);
-      setDataLoading(false);
-      return;
-    }
-    if (!progressResult.ok) {
-      setDataError(progressResult.error);
-      setDataLoading(false);
-      return;
-    }
+      if (!catalogResult.ok) {
+        setDataError(catalogResult.error);
+        return;
+      }
+      if (!progressResult.ok) {
+        setDataError(progressResult.error);
+        return;
+      }
 
-    let merged = mergeCatalogIntoState(progressResult.state, catalogResult.catalog);
-    merged = processDayRollover(merged);
-    merged = ensureDailyPlan(merged);
-    setState(merged);
-    setDataLoading(false);
-    void persistUserProgress(merged);
+      let merged = mergeCatalogIntoState(progressResult.state, catalogResult.catalog);
+      merged = processDayRollover(merged);
+      merged = ensureDailyPlan(merged);
+      setState(merged);
+      void persistUserProgress(merged);
+    } catch (err) {
+      setDataError(
+        err instanceof Error ? err.message : 'Failed to load app data from Supabase.',
+      );
+    } finally {
+      setDataLoading(false);
+    }
   }, [persistUserProgress]);
 
   useEffect(() => {
     void (async () => {
-      if (!isSupabaseConfigured()) {
+      try {
+        if (!isSupabaseConfigured()) {
+          setAuthReady(true);
+          return;
+        }
+        const current = await getCurrentSession();
+        if (current) {
+          userIdRef.current = current.userId;
+          setSession(sessionToApp(current));
+          await loadAllData(current.userId);
+        }
+      } catch (err) {
+        setDataError(
+          err instanceof Error ? err.message : 'Failed to initialize the app.',
+        );
+      } finally {
         setAuthReady(true);
-        return;
       }
-      const current = await getCurrentSession();
-      if (current) {
-        userIdRef.current = current.userId;
-        setSession(sessionToApp(current));
-        await loadAllData(current.userId);
-      }
-      setAuthReady(true);
     })();
 
     const unsub = onAuthStateChange((authSession) => {
