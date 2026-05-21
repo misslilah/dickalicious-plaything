@@ -278,7 +278,8 @@ export async function connectPatreonAccount(
     return { ok: false, message: 'You must be signed in to connect Patreon.' };
   }
 
-  if (!getAnonKey()) {
+  const anonKey = getAnonKey();
+  if (!anonKey) {
     return {
       ok: false,
       message:
@@ -286,16 +287,11 @@ export async function connectPatreonAccount(
     };
   }
 
-  const headers = {
-    ...supabaseFunctionHeaders(session.access_token),
+  const headers: Record<string, string> = {
     Accept: 'application/json',
+    Authorization: `Bearer ${session.access_token}`,
+    apikey: anonKey,
   };
-  if (!('Authorization' in headers)) {
-    const message =
-      'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env (and on your hosting provider).';
-    console.error('[connectPatreon]', message);
-    return { ok: false, message };
-  }
 
   try {
     const res = await fetch(startUrl, {
