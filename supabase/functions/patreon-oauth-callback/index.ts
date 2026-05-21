@@ -4,6 +4,7 @@ import {
   getPatreonOAuthCallbackConfig,
   highestTier,
   mapPatreonTierTitle,
+  patreonSettingsErrorRedirect,
   type AppPatreonTier,
 } from '../_shared/patreon.ts';
 
@@ -23,18 +24,18 @@ Deno.serve(async (req) => {
   const appOrigin = Deno.env.get('APP_ORIGIN') ?? 'http://localhost:5173';
 
   if (oauthError) {
-    return Response.redirect(`${appOrigin}/settings?patreon=error`, 302);
+    return patreonSettingsErrorRedirect(appOrigin, oauthError);
   }
 
   if (!code || !stateRaw) {
-    return new Response('Missing code or state.', { status: 400, headers: corsHeaders });
+    return patreonSettingsErrorRedirect(appOrigin, 'missing_params');
   }
 
   let state: { userId: string; returnTo: string };
   try {
     state = JSON.parse(atob(stateRaw));
   } catch {
-    return new Response('Invalid state.', { status: 400, headers: corsHeaders });
+    return patreonSettingsErrorRedirect(appOrigin, 'invalid_state');
   }
 
   const { clientId, clientSecret, redirectUri, missingSecrets } =

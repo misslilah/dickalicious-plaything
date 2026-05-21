@@ -100,7 +100,15 @@ If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the fun
 
    If you deploy only `index.ts` or omit `config.toml`, the gateway may still require a JWT and **Connect Patreon** can fail. Use **Settings → Connect Patreon** — do not open the start/callback URLs in a browser to test.
 
-   **Project ref must match everywhere.** `VITE_SUPABASE_URL` must use the same `<project-ref>` as `supabase link` and `PATREON_REDIRECT_URI` / Patreon redirect URLs (typos like `...vhjnv` vs `...vbjnv` break OAuth).
+   **One Supabase project ref everywhere.** Copy `<project-ref>` from **Supabase Dashboard → Project Settings → General** and use it in all of these:
+
+   - `VITE_SUPABASE_URL` → `https://<project-ref>.supabase.co`
+   - `supabase link --project-ref <project-ref>`
+   - Patreon app **Redirect URI** and optional `PATREON_REDIRECT_URI` → `https://<project-ref>.supabase.co/functions/v1/patreon-oauth-callback`
+
+   Typos are easy: e.g. `cfpbliagyimywwkvbjrw` vs `cfpbliagyimywwkvbjnv` — mixing projects causes wrong secrets, stale scopes (`invalid_scope`), or `UNAUTHORIZED_NO_AUTH_HEADER` if callback `verify_jwt` was not deployed on that ref.
+
+   After scope or `config.toml` changes, redeploy all three Patreon functions.
 
 4. **Secrets** — **Dashboard → Edge Functions → Secrets** (names are **case-sensitive**; redeploy Patreon functions after changes):
 

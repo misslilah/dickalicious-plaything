@@ -28,6 +28,24 @@ export const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+/** Patreon API v2 OAuth scopes for /identity + memberships (space-separated). */
+export const PATREON_OAUTH_SCOPES =
+  'identity identity[email] identity.memberships';
+
+/** Redirect browser to Settings after Patreon OAuth errors (never gateway JSON). */
+export function patreonSettingsErrorRedirect(
+  appOrigin: string,
+  detail?: string,
+): Response {
+  const target = new URL('/settings', appOrigin);
+  target.searchParams.set('patreon', 'error');
+  if (detail) {
+    const safe = detail.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+    if (safe) target.searchParams.set('detail', safe);
+  }
+  return Response.redirect(target.toString(), 302);
+}
+
 /** Resolve Patreon OAuth start env; lists missing secret names for 503 responses. */
 export function getPatreonOAuthStartConfig(): {
   clientId: string;

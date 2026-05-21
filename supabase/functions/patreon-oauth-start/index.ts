@@ -1,4 +1,8 @@
-import { corsHeaders, getPatreonOAuthStartConfig } from '../_shared/patreon.ts';
+import {
+  corsHeaders,
+  getPatreonOAuthStartConfig,
+  PATREON_OAUTH_SCOPES,
+} from '../_shared/patreon.ts';
 
 const PATREON_AUTH_URL = 'https://www.patreon.com/oauth2/authorize';
 
@@ -63,7 +67,7 @@ Deno.serve(async (req) => {
   authUrl.searchParams.set('response_type', 'code');
   authUrl.searchParams.set('client_id', clientId);
   authUrl.searchParams.set('redirect_uri', redirectUri);
-  authUrl.searchParams.set('scope', 'identity identity[email] campaigns members');
+  authUrl.searchParams.set('scope', PATREON_OAUTH_SCOPES);
   authUrl.searchParams.set('state', state);
 
   if (wantsJson) {
