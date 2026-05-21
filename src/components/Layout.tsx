@@ -2,8 +2,8 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAppStore } from '../hooks/useAppStore';
 
 const baseNavItems = [
-  { to: '/', label: 'Home', icon: '🏠' },
   { to: '/videos', label: 'Videos', icon: '🎬' },
+  { to: '/', label: 'Home', icon: '🏠' },
   { to: '/rewards', label: 'Rewards', icon: '🏆' },
   { to: '/punishments', label: 'Punishments', icon: '⚡' },
   { to: '/settings', label: 'Settings', icon: '⚙️' },
