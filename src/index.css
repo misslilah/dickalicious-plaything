@@ -12,6 +12,7 @@
   --radius: 14px;
   --nav-h: 64px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --pad-inline: 1rem;
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   color: var(--text);
@@ -85,9 +86,9 @@ select {
 .app-header {
   flex-shrink: 0;
   width: 100%;
-  max-width: 30rem;
-  margin-inline: auto;
-  padding: 1rem 1.25rem 0.5rem;
+  padding: 1rem var(--pad-inline) 0.5rem;
+  padding-left: max(var(--pad-inline), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--pad-inline), env(safe-area-inset-right, 0px));
   text-align: center;
 }
 
@@ -110,12 +111,17 @@ select {
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
-  max-width: 30rem;
-  margin-inline: auto;
-  padding: 0 1rem calc(var(--nav-h) + var(--safe-bottom) + 1rem);
+  padding: 0 var(--pad-inline) calc(var(--nav-h) + var(--safe-bottom) + 1rem);
+  padding-left: max(var(--pad-inline), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--pad-inline), env(safe-area-inset-right, 0px));
   overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+.app-content {
+  width: 100%;
+  min-width: 0;
 }
 
 .bottom-nav {
@@ -187,9 +193,12 @@ select {
   flex: 1 1 auto;
   min-height: 100vh;
   min-height: 100dvh;
-  max-width: 30rem;
-  margin-inline: auto;
-  padding: 1rem;
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+  padding: 1rem var(--pad-inline);
+  padding-left: max(var(--pad-inline), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--pad-inline), env(safe-area-inset-right, 0px));
   padding-bottom: calc(1rem + var(--safe-bottom));
   overflow-x: hidden;
   overflow-y: auto;
@@ -791,11 +800,27 @@ select {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.65rem;
+  width: 100%;
 }
 
-@media (min-width: 380px) {
+@media (min-width: 768px) {
+  :root {
+    --pad-inline: 1.5rem;
+  }
+
   .category-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.85rem;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --pad-inline: 2rem;
   }
 }
 

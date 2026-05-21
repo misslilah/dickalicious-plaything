@@ -1,4 +1,4 @@
-import { normalizeSupabaseUrl, getSupabaseConfigStatus } from './supabase';
+import { normalizeSupabaseUrl, getSupabaseConfigStatus, getSupabase } from './supabase';
 
 /** Patreon page for upgrades (marketing link). */
 export function getPatreonPageUrl(): string {
@@ -33,12 +33,19 @@ export type PatreonOAuthProbeStatus =
   | 'no_supabase'
   | 'unknown';
 
-function supabaseFunctionHeaders(): HeadersInit {
+function getAnonKey(): string | null {
   const key = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim();
-  if (!key) return {};
+  return key || null;
+}
+
+/** Headers required by the Supabase Edge Functions gateway. */
+function supabaseFunctionHeaders(accessToken?: string | null): HeadersInit {
+  const anonKey = getAnonKey();
+  if (!anonKey) return {};
+  const bearer = accessToken?.trim() || anonKey;
   return {
-    Authorization: `Bearer ${key}`,
-    apikey: key,
+    Authorization: `Bearer ${bearer}`,
+    apikey: anonKey,
   };
 }
 
@@ -83,7 +90,7 @@ export function patreonOAuthStatusMessage(
   }
 }
 
-/** Probe then navigate to OAuth start (redirects to Patreon when deployed). */
+/** Probe, then fetch OAuth start with auth and redirect to Patreon. */
 export async function connectPatreonAccount(
   userId: string,
   returnTo = '/settings',
@@ -104,6 +111,77 @@ export async function connectPatreonAccount(
     return { ok: false, message: blockMessage };
   }
 
-  window.location.assign(startUrl);
-  return { ok: true };
+  const supabase = getSupabase();
+  if (!supabase) {
+    return {
+      ok: false,
+      message:
+        'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.',
+    };
+  }
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) {
+    return { ok: false, message: 'You must be signed in to connect Patreon.' };
+  }
+
+  if (!getAnonKey()) {
+    return {
+      ok: false,
+      message:
+        'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.',
+    };
+  }
+
+  try {
+    const res = await fetch(startUrl, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: {
+        ...supabaseFunctionHeaders(session.access_token),
+        Accept: 'application/json',
+      },
+    });
+
+    if (res.status === 401) {
+      return {
+        ok: false,
+        message: 'Session expired. Sign out and sign in again, then retry Connect Patreon.',
+      };
+    }
+
+    if (res.status === 503) {
+      const msg = patreonOAuthStatusMessage('server_not_configured', options?.isAdmin);
+      return { ok: false, message: msg ?? 'Patreon OAuth is not configured on the server.' };
+    }
+
+    if (!res.ok) {
+      let detail = `Patreon OAuth start failed (${res.status}).`;
+      try {
+        const errBody = (await res.json()) as { error?: string; message?: string };
+        detail = errBody.error ?? errBody.message ?? detail;
+      } catch {
+        /* ignore */
+      }
+      return { ok: false, message: detail };
+    }
+
+    const body = (await res.json()) as { url?: string; error?: string };
+    if (body.url) {
+      window.location.assign(body.url);
+      return { ok: true };
+    }
+
+    return {
+      ok: false,
+      message: body.error ?? 'Could not start Patreon OAuth.',
+    };
+  } catch {
+    return {
+      ok: false,
+      message: 'Could not reach Patreon OAuth. Check your connection and try again.',
+    };
+  }
 }

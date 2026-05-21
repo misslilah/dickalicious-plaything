@@ -35,7 +35,9 @@ export function Layout() {
         </p>
       </header>
       <main className="app-main">
-        <Outlet />
+        <div className="app-content">
+          <Outlet />
+        </div>
       </main>
       <nav className="bottom-nav" aria-label="Main navigation">
         {navItems.map((item) => (

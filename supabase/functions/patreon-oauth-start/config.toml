@@ -1,0 +1,2 @@
+# OAuth start is opened via fetch (not a browser link). Gateway still needs apikey/Authorization.
+verify_jwt = false

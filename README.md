@@ -77,7 +77,7 @@ Until Patreon OAuth is live, admins assign tiers in **Admin → Users**. Users s
 
 #### Deploy Supabase Edge Functions (required for “Connect Patreon”)
 
-If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the functions are **not deployed** yet.
+If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the functions are **not deployed** yet. If you see `UNAUTHORIZED_NO_AUTH_HEADER`, redeploy `patreon-oauth-start` after adding its `config.toml` (see below) and use the in-app **Connect Patreon** button (not a bare browser URL).
 
 1. **Install Supabase CLI** — https://supabase.com/docs/guides/cli/getting-started
 2. **Log in and link** (from repo root):
@@ -87,11 +87,13 @@ If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the fun
    supabase link --project-ref <your-project-ref>
    ```
 
-3. **Deploy**:
+3. **Deploy** (required after changing `supabase/functions/patreon-oauth-start/config.toml`):
 
    ```bash
    supabase functions deploy patreon-oauth-start patreon-oauth-callback patreon-webhook
    ```
+
+   `patreon-oauth-start` ships with `verify_jwt = false` so the gateway accepts the anon key; the app still sends the signed-in user JWT when starting OAuth. `user_id` is required in the query string.
 
 4. **Secrets** — **Dashboard → Edge Functions → Secrets**:
 
@@ -104,7 +106,7 @@ If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the fun
    | `PATREON_WEBHOOK_SECRET` | From Patreon webhook settings |
    | `APP_ORIGIN` | e.g. `http://localhost:5173` or your Vercel URL |
 
-5. **Verify**: open the `patreon-oauth-start` URL in a browser — you should be **redirected to Patreon**, not JSON.
+5. **Verify**: in the app, click **Settings → Connect Patreon** (or probe with curl using `Authorization: Bearer <anon_key>` and `apikey: <anon_key>`). You should reach Patreon, not `UNAUTHORIZED_NO_AUTH_HEADER` JSON.
 
 ## Admin
 

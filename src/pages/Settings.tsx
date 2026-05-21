@@ -1,7 +1,12 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAppStore } from '../hooks/useAppStore';
-import { getPatreonOAuthStartUrl } from '../lib/patreon';
+import {
+  connectPatreonAccount,
+  isPatreonOAuthConfigured,
+  patreonOAuthStatusMessage,
+  probePatreonOAuthStart,
+} from '../lib/patreon';
 import { tierLabel } from '../lib/tiers';
 
 export function Settings() {
@@ -18,6 +23,9 @@ export function Settings() {
   } = useAppStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const [patreonNotice, setPatreonNotice] = useState('');
+  const [patreonConnectError, setPatreonConnectError] = useState('');
+  const [patreonConnecting, setPatreonConnecting] = useState(false);
+  const [patreonDeployWarning, setPatreonDeployWarning] = useState('');
 
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -41,10 +49,33 @@ export function Settings() {
     setSearchParams(searchParams, { replace: true });
   }, [searchParams, setSearchParams, refreshPatreonProfile]);
 
-  const patreonOAuthUrl =
-    session?.userId != null
-      ? getPatreonOAuthStartUrl(session.userId, '/settings')
-      : null;
+  const patreonOAuthAvailable = isPatreonOAuthConfigured();
+
+  useEffect(() => {
+    if (!patreonOAuthAvailable) return;
+    let cancelled = false;
+    void probePatreonOAuthStart().then((status) => {
+      if (cancelled) return;
+      const msg = patreonOAuthStatusMessage(status, session?.role === 'admin');
+      setPatreonDeployWarning(msg ?? '');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [patreonOAuthAvailable, session?.role]);
+
+  const handleConnectPatreon = async () => {
+    if (!session?.userId) return;
+    setPatreonConnectError('');
+    setPatreonConnecting(true);
+    const result = await connectPatreonAccount(session.userId, '/settings', {
+      isAdmin: session.role === 'admin',
+    });
+    setPatreonConnecting(false);
+    if (!result.ok) {
+      setPatreonConnectError(result.message);
+    }
+  };
 
   const patreonTierLabel =
     session?.patreonStatus === 'active' && session.patreonTier
@@ -130,14 +161,25 @@ export function Settings() {
           <p className="muted">Patreon linked (ID: {session.patreonUserId})</p>
         )}
         {patreonNotice && <p className="notice">{patreonNotice}</p>}
-        {patreonOAuthUrl ? (
-          <a
-            href={patreonOAuthUrl}
+        {patreonDeployWarning && (
+          <p className="login-error" role="alert">
+            {patreonDeployWarning}
+          </p>
+        )}
+        {patreonConnectError && (
+          <p className="login-error" role="alert">
+            {patreonConnectError}
+          </p>
+        )}
+        {patreonOAuthAvailable ? (
+          <button
+            type="button"
             className="btn btn--primary btn--block"
-            rel="noopener noreferrer"
+            disabled={patreonConnecting}
+            onClick={() => void handleConnectPatreon()}
           >
-            Connect Patreon
-          </a>
+            {patreonConnecting ? 'Connecting…' : 'Connect Patreon'}
+          </button>
         ) : (
           <p className="muted">
             Patreon OAuth is not configured. An admin can set your tier manually
