@@ -2,6 +2,10 @@ export type TaskFrequency = 'daily' | 'weekly' | 'once';
 
 export type UserRole = 'user' | 'admin';
 
+export type ContentTier = 'public' | 'sweetie' | 'princess' | 'slut';
+export type PatreonMemberTier = 'sweetie' | 'princess' | 'slut';
+export type PatreonStatus = 'active' | 'cancelled' | 'none';
+
 export interface User {
   id: string;
   username: string;
@@ -13,6 +17,9 @@ export interface Session {
   userId: string;
   username: string;
   role: UserRole;
+  patreonTier: PatreonMemberTier | null;
+  patreonStatus: PatreonStatus;
+  patreonUserId: string | null;
 }
 
 export interface Category {
@@ -113,6 +120,7 @@ export interface VideoCategory {
   description?: string;
   color?: string;
   icon?: string;
+  requiredTier?: ContentTier | null;
 }
 
 /** Video metadata; file in Supabase Storage at `storagePath`. */
@@ -125,6 +133,7 @@ export interface Video {
   mimeType: string;
   sizeBytes: number;
   createdAt: string;
+  requiredTier?: ContentTier | null;
 }
 
 export interface AppState {

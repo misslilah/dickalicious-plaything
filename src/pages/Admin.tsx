@@ -1,7 +1,10 @@
-import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type {
   Category,
+  ContentTier,
+  PatreonMemberTier,
+  PatreonStatus,
   PunishmentTemplate,
   PunishmentTrigger,
   Reward,
@@ -12,6 +15,12 @@ import type {
   Video,
   VideoCategory,
 } from '../types';
+import {
+  fetchAdminProfiles,
+  updateProfilePatreon,
+  type AdminProfileRow,
+} from '../lib/profileDb';
+import { PATREON_MEMBER_TIER_OPTIONS, TIER_CHIP_OPTIONS } from '../lib/tiers';
 import {
   formatMb,
   formatVideoSizeError,
@@ -1441,6 +1450,29 @@ function UserAdmin() {
   const [role, setRole] = useState<UserRole>('user');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [profiles, setProfiles] = useState<AdminProfileRow[]>([]);
+  const [profilesLoading, setProfilesLoading] = useState(true);
+  const [profilesError, setProfilesError] = useState('');
+  const [tierMessage, setTierMessage] = useState('');
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [editTier, setEditTier] = useState<PatreonMemberTier | ''>('');
+  const [editStatus, setEditStatus] = useState<PatreonStatus>('none');
+
+  const loadProfiles = async () => {
+    setProfilesLoading(true);
+    setProfilesError('');
+    const result = await fetchAdminProfiles();
+    setProfilesLoading(false);
+    if (!result.ok) {
+      setProfilesError(result.error);
+      return;
+    }
+    setProfiles(result.profiles);
+  };
+
+  useEffect(() => {
+    void loadProfiles();
+  }, []);
 
   const submit = async () => {
     setError('');
@@ -1450,72 +1482,170 @@ function UserAdmin() {
       setMessage(`User "${username.trim()}" created. They can sign in with ${username.includes('@') ? username.trim() : `${username.trim()}@local.app`}.`);
       setUsername('');
       setPassword('');
+      void loadProfiles();
     } else {
       setError(result.error);
     }
   };
 
-  const form = (
-    <section className="card">
-      <h3 className="section-title">New user</h3>
-      <p className="muted">
-        Create accounts for regular users or additional admins.
-      </p>
-      <StatusMessage message={error} variant="err" />
-      <StatusMessage message={message} />
+  const selectUserForTier = (row: AdminProfileRow) => {
+    setSelectedUserId(row.id);
+    setEditTier(row.patreonTier ?? '');
+    setEditStatus(row.patreonStatus);
+    setTierMessage('');
+  };
 
-      <FormBlock title="Account">
-        <Field label="Username" htmlFor="user-name" required>
-          <input
-            id="user-name"
-            autoComplete="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-          />
-        </Field>
-        <Field
-          label="Password"
-          htmlFor="user-pass"
-          hint="At least 6 characters."
-          required
-        >
-          <input
-            id="user-pass"
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </Field>
-        <Field label="Role">
-          <ChipSelect
-            label="User role"
-            options={[
-              { value: 'user' as const, label: 'User' },
-              { value: 'admin' as const, label: 'Admin' },
-            ]}
-            value={role}
-            onChange={setRole}
-          />
-        </Field>
-      </FormBlock>
+  const savePatreonTier = async () => {
+    if (!selectedUserId) return;
+    setTierMessage('');
+    const tier = editTier === '' ? null : editTier;
+    const status: PatreonStatus =
+      tier != null ? 'active' : editStatus === 'active' ? 'none' : editStatus;
+    const result = await updateProfilePatreon(
+      selectedUserId,
+      tier,
+      tier != null ? 'active' : status,
+    );
+    if (!result.ok) {
+      setTierMessage(result.error);
+      return;
+    }
+    setTierMessage('Patreon tier saved.');
+    void loadProfiles();
+  };
 
-      <FormActions
-        editing={false}
-        entityLabel="user"
-        onSubmit={submit}
-        onClear={() => {
-          setUsername('');
-          setPassword('');
-          setRole('user');
-          setMessage('');
-          setError('');
-        }}
-      />
-    </section>
+  const list = (
+    <AdminListCard
+      title="Users & Patreon tiers"
+      count={profiles.length}
+      intro="Assign Sweetie / Princess / Slut manually until OAuth is live. Set status to Active for tier access."
+      search=""
+      onSearchChange={() => {}}
+    >
+      {profilesLoading && <p className="muted">Loading users…</p>}
+      <StatusMessage message={profilesError} variant="err" />
+      {!profilesLoading && profiles.length === 0 && (
+        <AdminEmpty title="No users" hint="Create a user below or in Supabase Auth." />
+      )}
+      <ul className="admin-library">
+        {profiles.map((p) => (
+          <AdminLibraryItem
+            key={p.id}
+            selected={selectedUserId === p.id}
+            title={p.username}
+            meta={`${p.role} · Patreon: ${p.patreonTier ?? 'none'} (${p.patreonStatus})`}
+            onEdit={() => selectUserForTier(p)}
+            onDelete={() =>
+              window.alert('Remove users from Supabase Dashboard → Authentication.')
+            }
+            deleteLabel="—"
+          />
+        ))}
+      </ul>
+    </AdminListCard>
   );
 
-  return <AdminSection form={form} />;
+  const form = (
+    <>
+      <section className="card">
+        <h3 className="section-title">Manual Patreon tier</h3>
+        <p className="muted">
+          Until Patreon OAuth is connected, set each user&apos;s membership tier here.
+          They must sign out and back in (or refresh) to see updated video access.
+        </p>
+        <StatusMessage message={tierMessage} />
+        {!selectedUserId ? (
+          <p className="muted">Select a user from the list to assign a tier.</p>
+        ) : (
+          <>
+            <Field label="Patreon tier">
+              <ChipSelect
+                label="Patreon tier"
+                options={PATREON_MEMBER_TIER_OPTIONS.map((o) => ({
+                  value: o.value,
+                  label: o.label,
+                }))}
+                value={editTier}
+                onChange={(v) => {
+                  setEditTier(v);
+                  if (v) setEditStatus('active');
+                }}
+              />
+            </Field>
+            <div className="btn-row">
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => void savePatreonTier()}
+              >
+                Save Patreon tier
+              </button>
+            </div>
+          </>
+        )}
+      </section>
+
+      <section className="card">
+        <h3 className="section-title">New user</h3>
+        <p className="muted">
+          Create accounts for regular users or additional admins.
+        </p>
+        <StatusMessage message={error} variant="err" />
+        <StatusMessage message={message} />
+
+        <FormBlock title="Account">
+          <Field label="Username" htmlFor="user-name" required>
+            <input
+              id="user-name"
+              autoComplete="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+            />
+          </Field>
+          <Field
+            label="Password"
+            htmlFor="user-pass"
+            hint="At least 6 characters."
+            required
+          >
+            <input
+              id="user-pass"
+              type="password"
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </Field>
+          <Field label="Role">
+            <ChipSelect
+              label="User role"
+              options={[
+                { value: 'user' as const, label: 'User' },
+                { value: 'admin' as const, label: 'Admin' },
+              ]}
+              value={role}
+              onChange={setRole}
+            />
+          </Field>
+        </FormBlock>
+
+        <FormActions
+          editing={false}
+          entityLabel="user"
+          onSubmit={submit}
+          onClear={() => {
+            setUsername('');
+            setPassword('');
+            setRole('user');
+            setMessage('');
+            setError('');
+          }}
+        />
+      </section>
+    </>
+  );
+
+  return <AdminSection list={list} form={form} />;
 }
 
 function emptyVideoCategoryDraft(): VideoCategory {
@@ -1678,6 +1808,25 @@ function VideoCategoryAdmin() {
             onChange={(e) => setDraft({ ...draft, description: e.target.value })}
           />
         </Field>
+        <Field
+          label="Default required tier"
+          hint="Optional default for videos in this category (videos can override)."
+        >
+          <ChipSelect
+            label="Category default tier"
+            options={[
+              { value: '' as const, label: 'None (public)' },
+              ...TIER_CHIP_OPTIONS,
+            ]}
+            value={draft.requiredTier ?? ''}
+            onChange={(v) =>
+              setDraft({
+                ...draft,
+                requiredTier: v === '' ? undefined : v,
+              })
+            }
+          />
+        </Field>
       </FormBlock>
 
       <FormActions
@@ -1697,6 +1846,7 @@ function VideoUploadAdmin() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [requiredTier, setRequiredTier] = useState<ContentTier>('sweetie');
   const [file, setFile] = useState<File | null>(null);
   const [search, setSearch] = useState('');
   const [message, setMessage] = useState('');
@@ -1745,6 +1895,7 @@ function VideoUploadAdmin() {
       mimeType: file.type || 'video/mp4',
       sizeBytes: file.size,
       createdAt: new Date().toISOString(),
+      requiredTier,
     };
 
     setUploading(true);
@@ -1800,7 +1951,7 @@ function VideoUploadAdmin() {
               key={v.id}
               selected={false}
               title={v.title}
-              meta={`${categoryName(v.categoryId)} · ${formatMb(v.sizeBytes)}`}
+              meta={`${categoryName(v.categoryId)} · ${v.requiredTier ?? 'sweetie'} · ${formatMb(v.sizeBytes)}`}
               onEdit={() => {}}
               onDelete={() => remove(v.id)}
               hideEdit
@@ -1847,6 +1998,14 @@ function VideoUploadAdmin() {
             onChange={(e) => setDescription(e.target.value)}
           />
         </Field>
+        <Field label="Required tier" hint="Who can watch this video (cumulative tiers).">
+          <ChipSelect
+            label="Required tier"
+            options={TIER_CHIP_OPTIONS}
+            value={requiredTier}
+            onChange={setRequiredTier}
+          />
+        </Field>
         <Field
           label="Video file"
           htmlFor="vid-file"
@@ -1875,6 +2034,7 @@ function VideoUploadAdmin() {
           setTitle('');
           setDescription('');
           setCategoryId('');
+          setRequiredTier('sweetie');
           setFile(null);
           setError('');
           setMessage('');

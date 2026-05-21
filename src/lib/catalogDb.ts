@@ -1,5 +1,6 @@
 import type {
   Category,
+  ContentTier,
   PunishmentTemplate,
   PunishmentTrigger,
   Reward,
@@ -66,6 +67,7 @@ type DbVideoCategory = {
   description: string | null;
   color: string | null;
   icon: string | null;
+  required_tier: ContentTier | null;
 };
 
 type DbVideo = {
@@ -77,6 +79,7 @@ type DbVideo = {
   mime_type: string;
   size_bytes: number;
   created_at: string;
+  required_tier: ContentTier | null;
 };
 
 function mapCategory(row: DbCategory): Category {
@@ -140,6 +143,7 @@ function mapVideoCategory(row: DbVideoCategory): VideoCategory {
     description: row.description ?? undefined,
     color: row.color ?? undefined,
     icon: row.icon ?? undefined,
+    requiredTier: row.required_tier ?? undefined,
   };
 }
 
@@ -153,6 +157,7 @@ function mapVideo(row: DbVideo): Video {
     mimeType: row.mime_type,
     sizeBytes: row.size_bytes,
     createdAt: row.created_at,
+    requiredTier: row.required_tier ?? undefined,
   };
 }
 
@@ -369,6 +374,7 @@ export async function upsertVideoCategory(
     description: category.description ?? null,
     color: category.color ?? null,
     icon: category.icon ?? null,
+    required_tier: category.requiredTier ?? null,
   };
 
   const { data, error } = category.id
@@ -408,6 +414,7 @@ export async function insertVideoRow(
     storage_path: video.storagePath,
     mime_type: video.mimeType,
     size_bytes: video.sizeBytes,
+    required_tier: video.requiredTier ?? 'sweetie',
   };
 
   const { data, error } = await supabase

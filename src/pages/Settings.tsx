@@ -1,6 +1,8 @@
-import { FormEvent, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { FormEvent, useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAppStore } from '../hooks/useAppStore';
+import { getPatreonOAuthStartUrl } from '../lib/patreon';
+import { tierLabel } from '../lib/tiers';
 
 export function Settings() {
   const {
@@ -12,7 +14,10 @@ export function Settings() {
     changePassword,
     lastSaveError,
     clearSaveError,
+    refreshPatreonProfile,
   } = useAppStore();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [patreonNotice, setPatreonNotice] = useState('');
 
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -20,6 +25,31 @@ export function Settings() {
   const [passwordError, setPasswordError] = useState('');
   const [resetMessage, setResetMessage] = useState('');
   const [resetError, setResetError] = useState('');
+
+  useEffect(() => {
+    const patreon = searchParams.get('patreon');
+    if (!patreon) return;
+    if (patreon === 'connected') {
+      setPatreonNotice('Patreon account linked successfully.');
+      void refreshPatreonProfile();
+    } else if (patreon === 'not_configured') {
+      setPatreonNotice('Patreon OAuth is not configured on the server yet.');
+    } else if (patreon === 'error' || patreon === 'token_error' || patreon === 'identity_error') {
+      setPatreonNotice('Could not connect Patreon. Try again or ask an admin.');
+    }
+    searchParams.delete('patreon');
+    setSearchParams(searchParams, { replace: true });
+  }, [searchParams, setSearchParams, refreshPatreonProfile]);
+
+  const patreonOAuthUrl =
+    session?.userId != null
+      ? getPatreonOAuthStartUrl(session.userId, '/settings')
+      : null;
+
+  const patreonTierLabel =
+    session?.patreonStatus === 'active' && session.patreonTier
+      ? tierLabel(session.patreonTier)
+      : 'None (public videos only)';
 
   const handlePasswordChange = async (e: FormEvent) => {
     e.preventDefault();
@@ -85,6 +115,36 @@ export function Settings() {
           </Link>
         </section>
       )}
+
+      <section className="card">
+        <h3 className="section-title">Patreon membership</h3>
+        <p className="muted">
+          Video access is based on your Patreon tier: Sweetie, Princess, or Slut
+          (higher tiers include lower tiers).
+        </p>
+        <p>
+          Current tier:{' '}
+          <span className="tier-badge tier-badge--active">{patreonTierLabel}</span>
+        </p>
+        {session?.patreonUserId && (
+          <p className="muted">Patreon linked (ID: {session.patreonUserId})</p>
+        )}
+        {patreonNotice && <p className="notice">{patreonNotice}</p>}
+        {patreonOAuthUrl ? (
+          <a
+            href={patreonOAuthUrl}
+            className="btn btn--primary btn--block"
+            rel="noopener noreferrer"
+          >
+            Connect Patreon
+          </a>
+        ) : (
+          <p className="muted">
+            Patreon OAuth is not configured. An admin can set your tier manually
+            until OAuth is enabled.
+          </p>
+        )}
+      </section>
 
       <section className="card">
         <h3 className="section-title">Daily rules</h3>

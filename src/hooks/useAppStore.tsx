@@ -75,6 +75,7 @@ interface AppStoreValue {
   supabaseConfigured: boolean;
   lastSaveError: string | null;
   refresh: () => Promise<void>;
+  refreshPatreonProfile: () => Promise<void>;
   login: (
     emailOrUsername: string,
     password: string,
@@ -221,6 +222,13 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     await loadAllData(userId);
   }, [loadAllData]);
 
+  const refreshPatreonProfile = useCallback(async () => {
+    const current = await getCurrentSession();
+    if (current) {
+      setSession(sessionToApp(current));
+    }
+  }, []);
+
   const requireAdmin = useCallback((): MutateResult | null => {
     if (session?.role !== 'admin') {
       return { ok: false, error: 'Admin access required.' };
@@ -238,6 +246,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       supabaseConfigured: isSupabaseConfigured(),
       lastSaveError,
       refresh,
+      refreshPatreonProfile,
       clearSaveError: () => setLastSaveError(null),
       login: async (emailOrUsername, password) => {
         const result = await authLogin(emailOrUsername, password);
@@ -509,6 +518,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       dataError,
       lastSaveError,
       refresh,
+      refreshPatreonProfile,
       loadAllData,
       applyUserState,
       requireAdmin,

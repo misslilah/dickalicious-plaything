@@ -1397,6 +1397,41 @@ select {
   background: var(--bg-elevated);
 }
 
+.video-list-item--locked {
+  opacity: 0.85;
+  border-style: dashed;
+}
+
+.video-tier-lock {
+  color: var(--warn);
+}
+
+.tier-badge {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  background: rgba(192, 132, 252, 0.2);
+  border: 1px solid rgba(192, 132, 252, 0.35);
+}
+
+.tier-badge--active {
+  background: rgba(74, 222, 128, 0.15);
+  border-color: rgba(74, 222, 128, 0.4);
+  color: var(--success);
+}
+
+.tier-upgrade-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.75rem 0;
+}
+
+.tier-upgrade-banner p {
+  margin: 0;
+}
+
 .video-list-item__icon {
   font-size: 1.25rem;
   flex-shrink: 0;

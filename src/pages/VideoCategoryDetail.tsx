@@ -2,7 +2,14 @@ import { useCallback, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAppStore } from '../hooks/useAppStore';
 import { useVideoPlaybackUrl } from '../hooks/useVideoBlobUrl';
-import type { Video } from '../types';
+import { getPatreonPageUrl } from '../lib/patreon';
+import {
+  canAccessTier,
+  effectiveVideoTier,
+  requiresTierMessage,
+  tierLabel,
+} from '../lib/tiers';
+import type { ContentTier, Video, VideoCategory } from '../types';
 
 const VIDEO_LOOP_SESSION_KEY = 'video-loop-enabled';
 
@@ -20,6 +27,28 @@ function writeLoopPreference(enabled: boolean): void {
   } catch {
     // sessionStorage unavailable
   }
+}
+
+function TierUpgradeBanner({ requiredTier }: { requiredTier: ContentTier }) {
+  const patreonUrl = getPatreonPageUrl();
+  return (
+    <div className="tier-upgrade-banner" role="alert">
+      <p>
+        <strong>{requiresTierMessage(requiredTier)}</strong> to watch this video.
+      </p>
+      <p className="muted">
+        Link your Patreon account in Settings or upgrade your membership.
+      </p>
+      <a
+        href={patreonUrl}
+        className="btn btn--primary"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        View Patreon tiers
+      </a>
+    </div>
+  );
 }
 
 function VideoPlayer({ video }: { video: Video }) {
@@ -67,28 +96,45 @@ function VideoPlayer({ video }: { video: Video }) {
 
 function VideoListItem({
   video,
+  category,
   selected,
+  locked,
   onSelect,
 }: {
   video: Video;
+  category: VideoCategory | undefined;
   selected: boolean;
+  locked: boolean;
   onSelect: () => void;
 }) {
+  const required = effectiveVideoTier(video.requiredTier, category?.requiredTier);
+
   return (
     <button
       type="button"
       className={
-        selected ? 'video-list-item video-list-item--active' : 'video-list-item'
+        selected
+          ? 'video-list-item video-list-item--active'
+          : locked
+            ? 'video-list-item video-list-item--locked'
+            : 'video-list-item'
       }
       onClick={onSelect}
+      aria-disabled={locked}
     >
       <span className="video-list-item__icon" aria-hidden>
-        🎬
+        {locked ? '🔒' : '🎬'}
       </span>
       <span className="video-list-item__body">
         <strong>{video.title}</strong>
-        {video.description && (
-          <span className="muted video-list-item__desc">{video.description}</span>
+        {locked ? (
+          <span className="muted video-list-item__desc">
+            {requiresTierMessage(required)}
+          </span>
+        ) : (
+          video.description && (
+            <span className="muted video-list-item__desc">{video.description}</span>
+          )
         )}
       </span>
     </button>
@@ -97,10 +143,12 @@ function VideoListItem({
 
 export function VideoCategoryDetail() {
   const { categoryId } = useParams<{ categoryId: string }>();
-  const { state } = useAppStore();
+  const { state, session } = useAppStore();
   const [playingId, setPlayingId] = useState<string | null>(null);
 
   const category = state.videoCategories.find((c) => c.id === categoryId);
+  const isAdmin = session?.role === 'admin';
+
   const videos = useMemo(
     () =>
       state.videos
@@ -112,7 +160,21 @@ export function VideoCategoryDetail() {
     [state.videos, categoryId],
   );
 
-  const playing = videos.find((v) => v.id === playingId) ?? videos[0] ?? null;
+  const canWatch = useCallback(
+    (video: Video) =>
+      canAccessTier(
+        effectiveVideoTier(video.requiredTier, category?.requiredTier),
+        session?.patreonTier,
+        session?.patreonStatus,
+        isAdmin,
+      ),
+    [category?.requiredTier, session?.patreonTier, session?.patreonStatus, isAdmin],
+  );
+
+  const playing =
+    videos.find((v) => v.id === playingId) ?? videos.find((v) => canWatch(v)) ?? null;
+
+  const playingLocked = playing != null && !canWatch(playing);
 
   if (!category) {
     return (
@@ -127,6 +189,13 @@ export function VideoCategoryDetail() {
     );
   }
 
+  const categoryLocked = !canAccessTier(
+    category.requiredTier ?? 'public',
+    session?.patreonTier,
+    session?.patreonStatus,
+    isAdmin,
+  );
+
   return (
     <div className="page">
       <header className="page-header">
@@ -139,7 +208,18 @@ export function VideoCategoryDetail() {
         {category.description && (
           <p className="muted">{category.description}</p>
         )}
+        {category.requiredTier && category.requiredTier !== 'public' && (
+          <p className="muted tier-badge">
+            Category tier: {tierLabel(category.requiredTier)}
+          </p>
+        )}
       </header>
+
+      {categoryLocked && (
+        <section className="card">
+          <TierUpgradeBanner requiredTier={category.requiredTier ?? 'sweetie'} />
+        </section>
+      )}
 
       {videos.length === 0 ? (
         <section className="card">
@@ -150,9 +230,20 @@ export function VideoCategoryDetail() {
           {playing && (
             <section className="card video-watch-card">
               <h3 className="section-title">{playing.title}</h3>
-              <VideoPlayer video={playing} />
-              {playing.description && (
-                <p className="muted video-watch-card__desc">{playing.description}</p>
+              {playingLocked ? (
+                <TierUpgradeBanner
+                  requiredTier={effectiveVideoTier(
+                    playing.requiredTier,
+                    category.requiredTier,
+                  )}
+                />
+              ) : (
+                <>
+                  <VideoPlayer video={playing} />
+                  {playing.description && (
+                    <p className="muted video-watch-card__desc">{playing.description}</p>
+                  )}
+                </>
               )}
             </section>
           )}
@@ -160,14 +251,19 @@ export function VideoCategoryDetail() {
           <section>
             <h3 className="section-title">All videos</h3>
             <div className="video-list">
-              {videos.map((v) => (
-                <VideoListItem
-                  key={v.id}
-                  video={v}
-                  selected={playing?.id === v.id}
-                  onSelect={() => setPlayingId(v.id)}
-                />
-              ))}
+              {videos.map((v) => {
+                const locked = !canWatch(v);
+                return (
+                  <VideoListItem
+                    key={v.id}
+                    video={v}
+                    category={category}
+                    selected={playing?.id === v.id}
+                    locked={locked}
+                    onSelect={() => setPlayingId(v.id)}
+                  />
+                );
+              })}
             </div>
           </section>
         </>

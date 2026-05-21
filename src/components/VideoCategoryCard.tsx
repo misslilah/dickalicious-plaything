@@ -5,11 +5,13 @@ import type { VideoCategory } from '../types';
 interface VideoCategoryCardProps {
   category: VideoCategory;
   videoCount: number;
+  lockedHint?: string;
 }
 
 export function VideoCategoryCard({
   category,
   videoCount,
+  lockedHint,
 }: VideoCategoryCardProps) {
   const color = category.color ?? '#c084fc';
   const icon = category.icon ?? '🎬';
@@ -29,6 +31,14 @@ export function VideoCategoryCard({
         <h3 className="category-card__name">{category.name}</h3>
         <p className="category-card__meta muted">
           {videoCount} {videoCount === 1 ? 'video' : 'videos'}
+          {lockedHint && (
+            <>
+              {' '}
+              <span className="video-tier-lock" aria-label={lockedHint}>
+                🔒 {lockedHint}
+              </span>
+            </>
+          )}
         </p>
       </div>
     </Link>

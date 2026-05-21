@@ -1,11 +1,24 @@
-import type { Session as AppSession, UserRole } from '../types';
-import { getSupabase, isSupabaseConfigured } from './supabase';
+import type {
+  PatreonMemberTier,
+  PatreonStatus,
+  Session as AppSession,
+  UserRole,
+} from '../types';
+import {
+  formatSupabaseAuthError,
+  getSupabase,
+  getSupabaseConfigStatus,
+  isSupabaseConfigured,
+} from './supabase';
 
 export interface AuthSession {
   userId: string;
   email: string;
   username: string;
   role: UserRole;
+  patreonTier: PatreonMemberTier | null;
+  patreonStatus: PatreonStatus;
+  patreonUserId: string | null;
 }
 
 /** Map username to internal email for legacy-style usernames. */
@@ -25,7 +38,7 @@ export async function getCurrentSession(): Promise<AuthSession | null> {
 
   const { data: profile, error } = await supabase
     .from('profiles')
-    .select('username, role')
+    .select('username, role, patreon_tier, patreon_status, patreon_user_id')
     .eq('id', user.id)
     .maybeSingle();
 
@@ -36,6 +49,9 @@ export async function getCurrentSession(): Promise<AuthSession | null> {
     email: user.email ?? '',
     username: profile.username,
     role: profile.role as UserRole,
+    patreonTier: (profile.patreon_tier as PatreonMemberTier | null) ?? null,
+    patreonStatus: (profile.patreon_status as PatreonStatus) ?? 'none',
+    patreonUserId: (profile.patreon_user_id as string | null) ?? null,
   };
 }
 
@@ -44,6 +60,9 @@ export function sessionToApp(session: AuthSession): AppSession {
     userId: session.userId,
     username: session.username,
     role: session.role,
+    patreonTier: session.patreonTier,
+    patreonStatus: session.patreonStatus,
+    patreonUserId: session.patreonUserId,
   };
 }
 
@@ -60,9 +79,18 @@ export async function login(
     ? emailOrUsername.trim().toLowerCase()
     : usernameToEmail(emailOrUsername);
 
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) {
-    return { ok: false, error: error.message };
+  try {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      return { ok: false, error: formatSupabaseAuthError(error) };
+    }
+  } catch (err) {
+    return {
+      ok: false,
+      error: formatSupabaseAuthError(
+        err instanceof Error ? err : { message: String(err) },
+      ),
+    };
   }
 
   const session = await getCurrentSession();

@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { VideoCategoryCard } from '../components/VideoCategoryCard';
 import { useAppStore } from '../hooks/useAppStore';
+import { canAccessTier, effectiveVideoTier, requiresTierMessage } from '../lib/tiers';
+import type { Video, VideoCategory } from '../types';
 
 export function Videos() {
   const { state, session } = useAppStore();
@@ -18,8 +20,25 @@ export function Videos() {
     );
   }, [state.videoCategories, search]);
 
-  const videoCountByCategory = (categoryId: string) =>
-    state.videos.filter((v) => v.categoryId === categoryId).length;
+  const canWatchVideo = (video: Video, category: VideoCategory | undefined) =>
+    canAccessTier(
+      effectiveVideoTier(video.requiredTier, category?.requiredTier),
+      session?.patreonTier,
+      session?.patreonStatus,
+      isAdmin,
+    );
+
+  const videoCountByCategory = (categoryId: string) => {
+    const cat = state.videoCategories.find((c) => c.id === categoryId);
+    const inCategory = state.videos.filter((v) => v.categoryId === categoryId);
+    return inCategory.filter((v) => canWatchVideo(v, cat)).length;
+  };
+
+  const lockedCountByCategory = (categoryId: string) => {
+    const cat = state.videoCategories.find((c) => c.id === categoryId);
+    const inCategory = state.videos.filter((v) => v.categoryId === categoryId);
+    return inCategory.filter((v) => !canWatchVideo(v, cat)).length;
+  };
 
   return (
     <div className="page">
@@ -62,13 +81,30 @@ export function Videos() {
         <section>
           <h2 className="section-title">Categories</h2>
           <div className="category-grid">
-            {filtered.map((cat) => (
-              <VideoCategoryCard
-                key={cat.id}
-                category={cat}
-                videoCount={videoCountByCategory(cat.id)}
-              />
-            ))}
+            {filtered.map((cat) => {
+              const locked = lockedCountByCategory(cat.id);
+              const categoryLocked =
+                !isAdmin &&
+                !canAccessTier(
+                  cat.requiredTier ?? 'public',
+                  session?.patreonTier,
+                  session?.patreonStatus,
+                );
+              return (
+                <VideoCategoryCard
+                  key={cat.id}
+                  category={cat}
+                  videoCount={videoCountByCategory(cat.id)}
+                  lockedHint={
+                    categoryLocked
+                      ? requiresTierMessage(cat.requiredTier ?? 'sweetie')
+                      : locked > 0
+                        ? `${locked} locked`
+                        : undefined
+                  }
+                />
+              );
+            })}
           </div>
         </section>
       )}

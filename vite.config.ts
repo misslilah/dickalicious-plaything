@@ -13,6 +13,7 @@ export default defineConfig({
         name: 'Dickalicious Plaything',
         short_name: 'Dickalicious',
         description: 'Gamified Dickalicious Plaything task tracker',
+        start_url: '/',
         theme_color: '#1a1024',
         background_color: '#0d0812',
         display: 'standalone',
