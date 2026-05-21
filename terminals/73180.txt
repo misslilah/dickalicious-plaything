@@ -1,0 +1,12 @@
+---
+cwd: "C:\\Users\\pc"
+command: "cd \"C:\\Users\\pc\\.cursor\\projects\\empty-window\" && npx vite --port 5173 2>&1"
+started_at: 2026-05-21T16:25:31.408Z
+running_for_ms: 2        
+---
+
+---
+error: "Sandbox policy 'workspace_readwrite' is not supported on this system. Ensure the sandbox helper binary is available, or use 'insecure_none'. Reason: Windows sandbox helper only provides network proxy, not filesystem isolation"
+elapsed_ms: 12
+ended_at: 2026-05-21T16:25:31.420Z
+---

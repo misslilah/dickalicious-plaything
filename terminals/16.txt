@@ -1,0 +1,6 @@
+---
+pid: 38664
+cwd: |
+  C:\Users\pc
+---
+PS C:\Users\pc> 
