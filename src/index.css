@@ -2017,3 +2017,104 @@ select {
   background: var(--ok, #4ade80);
   flex-shrink: 0;
 }
+
+.online-users-list__name {
+  flex: 1;
+  min-width: 0;
+}
+
+.online-users-list__message {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.online-panel__admin-actions {
+  margin: 0 0 0.75rem;
+}
+
+.admin-message-modal,
+.admin-compose-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.admin-message-modal__backdrop,
+.admin-compose-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.admin-message-modal__backdrop {
+  pointer-events: none;
+}
+
+.admin-message-modal__panel,
+.admin-compose-modal__panel {
+  position: relative;
+  width: min(100%, 26rem);
+  padding: 1.25rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(192, 132, 252, 0.35);
+  background: var(--surface);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.admin-message-modal__title,
+.admin-compose-modal__title {
+  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+}
+
+.admin-message-modal__body {
+  margin: 0 0 1rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.admin-message-modal__ok {
+  width: 100%;
+}
+
+.admin-compose-modal__target {
+  margin: 0 0 0.85rem;
+  font-size: 0.85rem;
+}
+
+.admin-compose-modal__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.admin-compose-modal__label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.admin-compose-modal__textarea {
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(192, 132, 252, 0.25);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 6rem;
+}
+
+.admin-compose-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}

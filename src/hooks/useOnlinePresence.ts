@@ -20,6 +20,15 @@ export type OnlinePresenceState = {
 
 const CHANNEL_NAME = 'room:online-users';
 const TRACK_REFRESH_MS = 30_000;
+const ADMIN_MESSAGE_EVENT = 'admin-message';
+
+export type AdminMessagePayload = {
+  message: string;
+  targetUserId: string | null;
+  senderUserId: string;
+};
+
+const broadcastListeners = new Set<(payload: AdminMessagePayload) => void>();
 
 let sharedState: OnlinePresenceState = {
   onlineUsers: [],
@@ -127,10 +136,24 @@ async function ensureChannel(userId: string, username: string) {
       presence: {
         key: userId,
       },
+      broadcast: {
+        self: false,
+      },
     },
   });
 
   nextChannel
+    .on('broadcast', { event: ADMIN_MESSAGE_EVENT }, ({ payload }) => {
+      const data = payload as AdminMessagePayload | undefined;
+      if (!data?.message?.trim() || !data.senderUserId) return;
+      for (const listener of broadcastListeners) {
+        listener({
+          message: data.message.trim(),
+          targetUserId: data.targetUserId ?? null,
+          senderUserId: data.senderUserId,
+        });
+      }
+    })
     .on('presence', { event: 'sync' }, () => syncUsersFromChannel())
     .on('presence', { event: 'join' }, () => syncUsersFromChannel())
     .on('presence', { event: 'leave' }, () => syncUsersFromChannel())
@@ -198,4 +221,34 @@ export function useOnlinePresence(
   }, [userId, username]);
 
   return sharedState;
+}
+
+/** Subscribe to admin broadcast messages on the shared online-users channel. */
+export function subscribeAdminMessages(
+  listener: (payload: AdminMessagePayload) => void,
+): () => void {
+  broadcastListeners.add(listener);
+  return () => {
+    broadcastListeners.delete(listener);
+  };
+}
+
+/** Send an admin message to one user or all online users (null = everyone). */
+export async function sendAdminMessage(
+  message: string,
+  targetUserId: string | null,
+  senderUserId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!channel) {
+    return { ok: false, error: 'Not connected to realtime. Open Home first.' };
+  }
+  const status = await channel.send({
+    type: 'broadcast',
+    event: ADMIN_MESSAGE_EVENT,
+    payload: { message, targetUserId, senderUserId },
+  });
+  if (status !== 'ok') {
+    return { ok: false, error: 'Failed to send message.' };
+  }
+  return { ok: true };
 }
