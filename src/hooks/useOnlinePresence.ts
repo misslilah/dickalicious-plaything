@@ -28,7 +28,7 @@ let sharedState: OnlinePresenceState = {
 };
 
 let channel: RealtimeChannel | null = null;
-let trackIntervalId: ReturnType<typeof setInterval> | undefined;
+let trackIntervalId: ReturnType<typeof window.setInterval> | undefined;
 let refCount = 0;
 let activeUser: { userId: string; username: string } | null = null;
 const listeners = new Set<() => void>();
