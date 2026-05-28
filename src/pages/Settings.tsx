@@ -11,7 +11,6 @@ import { tierLabel } from '../lib/tiers';
 
 export function Settings() {
   const {
-    state,
     session,
     resetAll,
     logout,

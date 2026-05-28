@@ -21,6 +21,7 @@ export function userSliceFromState(state: AppState): Omit<AppState, 'categories'
   return {
     progress: state.progress,
     dailyPlans: state.dailyPlans,
+    punishmentCategories: state.punishmentCategories,
     punishments: state.punishments,
     settings: state.settings,
     unlockedRewardIds: state.unlockedRewardIds,

@@ -10,7 +10,6 @@ import type {
   Task,
   TaskFrequency,
   TaskScope,
-  UserRole,
   Video,
   VideoCategory,
 } from '../types';

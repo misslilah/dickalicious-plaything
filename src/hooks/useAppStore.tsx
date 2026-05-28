@@ -344,7 +344,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
         const supabase = getSupabase();
         const { data } = supabase ? await supabase.auth.getSession() : { data: null };
-        if (!data.session?.user) {
+        if (!data?.session?.user) {
           return { ok: true, needsEmailConfirmation: true };
         }
 
