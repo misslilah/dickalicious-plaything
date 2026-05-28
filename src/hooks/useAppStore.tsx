@@ -49,6 +49,7 @@ import {
   signUp as authSignUp,
 } from '../lib/auth';
 import { updateProfileLastSeen } from '../lib/profileDb';
+import { useOnlinePresence } from './useOnlinePresence';
 import { fetchCategoryMemberIds, joinCategoryDb } from '../lib/categoryMembersDb';
 import {
   acceptPunishment,
@@ -297,16 +298,12 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  useOnlinePresence(session?.userId, session?.username);
+
   useEffect(() => {
     const userId = session?.userId;
     if (!userId || !isSupabaseConfigured()) return;
-
-    const heartbeat = () => {
-      void updateProfileLastSeen(userId);
-    };
-    heartbeat();
-    const intervalId = window.setInterval(heartbeat, 30_000);
-    return () => window.clearInterval(intervalId);
+    void updateProfileLastSeen(userId);
   }, [session?.userId]);
 
   const requireAdmin = useCallback((): MutateResult | null => {

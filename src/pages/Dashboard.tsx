@@ -1,39 +1,21 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CategoryCard } from '../components/CategoryCard';
 import { DailyTasksSection } from '../components/DailyTasksSection';
 import { XpBar } from '../components/XpBar';
 import { useAppStore } from '../hooks/useAppStore';
+import { useOnlinePresence } from '../hooks/useOnlinePresence';
 import { formatLevelDisplay } from '../lib/levels';
 import { completionStats, getTodayPlan } from '../lib/gameLogic';
-import {
-  fetchOnlineProfiles,
-  type OnlineProfileRow,
-} from '../lib/profileDb';
 
 export function Dashboard() {
   const { state, session } = useAppStore();
+  const {
+    onlineUsers,
+    loading: onlineLoading,
+    error: onlineError,
+  } = useOnlinePresence(session?.userId, session?.username);
   const [onlineOpen, setOnlineOpen] = useState(false);
-  const [onlineUsers, setOnlineUsers] = useState<OnlineProfileRow[]>([]);
-  const [onlineLoading, setOnlineLoading] = useState(true);
-  const [onlineError, setOnlineError] = useState('');
-
-  const loadOnline = useCallback(async () => {
-    setOnlineError('');
-    const result = await fetchOnlineProfiles();
-    setOnlineLoading(false);
-    if (!result.ok) {
-      setOnlineError(result.error);
-      return;
-    }
-    setOnlineUsers(result.profiles);
-  }, []);
-
-  useEffect(() => {
-    void loadOnline();
-    const id = window.setInterval(() => void loadOnline(), 30_000);
-    return () => window.clearInterval(id);
-  }, [loadOnline]);
   const { progress } = state;
   const plan = getTodayPlan(state);
   const stats = completionStats(plan);
@@ -102,9 +84,9 @@ export function Dashboard() {
         </button>
         <div id="online-users-panel" className="online-panel">
           <p className="muted online-panel__hint">
-            Players active in the last 2 minutes.
+            Live — updates instantly when players join or leave.
           </p>
-          {onlineLoading && <p className="muted">Loading…</p>}
+          {onlineLoading && <p className="muted">Connecting…</p>}
           {onlineError && (
             <p className="login-error" role="alert">
               {onlineError}

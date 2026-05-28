@@ -58,7 +58,11 @@ Open the URL shown (usually `http://localhost:5173`). Sign in with the admin ema
 | Video files, category images | Supabase Storage buckets `videos`, `category-images` |
 | XP, level, streak, points, daily plans, settings, active punishments, unlocked rewards | Supabase `user_progress` (per user) |
 | Auth session | Supabase Auth (browser session) |
+| Online users list (Home) | Supabase Realtime **Presence** on channel `room:online-users` (ephemeral; not stored in Postgres) |
+| `profiles.last_seen_at` | Optional DB fallback written once per login (not used for the live list) |
 | Loop button preference | `sessionStorage` (device only) |
+
+**Online users:** The Home accordion uses [Realtime Presence](https://supabase.com/docs/guides/realtime/presence) (enabled by default on Supabase projects). No extra dashboard toggle is required. If the list stays empty while users are signed in, confirm the project is not paused and that the browser can open a WebSocket to your Supabase URL.
 
 Old `localStorage` keys (`sissy-training-state`, `sissy-training-auth`) are **not** used after this migration.
 
