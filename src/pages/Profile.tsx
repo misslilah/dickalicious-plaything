@@ -1,11 +1,7 @@
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useAppStore } from '../hooks/useAppStore';
 import { getUserStage, getStageLabel, formatLevelDisplay } from '../lib/levels';
-import {
-  fetchOnlineProfiles,
-  updateProfileUsername,
-  type OnlineProfileRow,
-} from '../lib/profileDb';
+import { updateProfileUsername } from '../lib/profileDb';
 import { getSupabase } from '../lib/supabase';
 import { tierLabel } from '../lib/tiers';
 
@@ -19,10 +15,6 @@ export function Profile() {
   const [usernameError, setUsernameError] = useState('');
   const [usernameSaving, setUsernameSaving] = useState(false);
 
-  const [onlineUsers, setOnlineUsers] = useState<OnlineProfileRow[]>([]);
-  const [onlineLoading, setOnlineLoading] = useState(true);
-  const [onlineError, setOnlineError] = useState('');
-
   const stage = getUserStage(progress.currentLevel);
   const badges = state.rewards.filter((r) => r.autoTrigger);
 
@@ -30,18 +22,6 @@ export function Profile() {
     session?.patreonStatus === 'active' && session.patreonTier
       ? tierLabel(session.patreonTier)
       : 'None';
-
-  const loadOnline = useCallback(async () => {
-    setOnlineLoading(true);
-    setOnlineError('');
-    const result = await fetchOnlineProfiles();
-    setOnlineLoading(false);
-    if (!result.ok) {
-      setOnlineError(result.error);
-      return;
-    }
-    setOnlineUsers(result.profiles);
-  }, []);
 
   useEffect(() => {
     setUsername(session?.username ?? '');
@@ -54,12 +34,6 @@ export function Profile() {
       setEmail(data.user?.email ?? '');
     });
   }, [session?.userId]);
-
-  useEffect(() => {
-    void loadOnline();
-    const id = window.setInterval(() => void loadOnline(), 30_000);
-    return () => window.clearInterval(id);
-  }, [loadOnline]);
 
   const handleUsernameSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -189,33 +163,6 @@ export function Profile() {
                 </li>
               );
             })}
-          </ul>
-        )}
-      </section>
-
-      <section className="card">
-        <h3 className="section-title">Online now</h3>
-        <p className="muted">Players active in the last 2 minutes.</p>
-        {onlineLoading && <p className="muted">Loading…</p>}
-        {onlineError && (
-          <p className="login-error" role="alert">
-            {onlineError}
-          </p>
-        )}
-        {!onlineLoading && !onlineError && onlineUsers.length === 0 && (
-          <p className="muted">No one else online right now.</p>
-        )}
-        {!onlineLoading && onlineUsers.length > 0 && (
-          <ul className="online-users-list">
-            {onlineUsers.map((user) => (
-              <li key={user.id} className="online-users-list__item">
-                <span className="online-users-list__dot" aria-hidden />
-                <span>{user.username}</span>
-                {user.id === session?.userId && (
-                  <span className="tag tag--ok">You</span>
-                )}
-              </li>
-            ))}
           </ul>
         )}
       </section>

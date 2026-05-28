@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CategoryCard } from '../components/CategoryCard';
 import { DailyTasksSection } from '../components/DailyTasksSection';
@@ -5,9 +6,34 @@ import { XpBar } from '../components/XpBar';
 import { useAppStore } from '../hooks/useAppStore';
 import { formatLevelDisplay } from '../lib/levels';
 import { completionStats, getTodayPlan } from '../lib/gameLogic';
+import {
+  fetchOnlineProfiles,
+  type OnlineProfileRow,
+} from '../lib/profileDb';
 
 export function Dashboard() {
-  const { state } = useAppStore();
+  const { state, session } = useAppStore();
+  const [onlineOpen, setOnlineOpen] = useState(false);
+  const [onlineUsers, setOnlineUsers] = useState<OnlineProfileRow[]>([]);
+  const [onlineLoading, setOnlineLoading] = useState(true);
+  const [onlineError, setOnlineError] = useState('');
+
+  const loadOnline = useCallback(async () => {
+    setOnlineError('');
+    const result = await fetchOnlineProfiles();
+    setOnlineLoading(false);
+    if (!result.ok) {
+      setOnlineError(result.error);
+      return;
+    }
+    setOnlineUsers(result.profiles);
+  }, []);
+
+  useEffect(() => {
+    void loadOnline();
+    const id = window.setInterval(() => void loadOnline(), 30_000);
+    return () => window.clearInterval(id);
+  }, [loadOnline]);
   const { progress } = state;
   const plan = getTodayPlan(state);
   const stats = completionStats(plan);
@@ -49,6 +75,59 @@ export function Dashboard() {
           </p>
         </section>
       )}
+
+      <section
+        className={`card online-section${onlineOpen ? ' online-section--expanded' : ''}`}
+      >
+        <button
+          type="button"
+          className="online-section__toggle"
+          aria-expanded={onlineOpen}
+          aria-controls="online-users-panel"
+          onClick={() => setOnlineOpen((open) => !open)}
+        >
+          <h2 className="section-title">👥 Online users</h2>
+          <span className="online-section__meta">
+            {!onlineLoading && !onlineError && (
+              <span className="online-section__count">
+                {onlineUsers.length === 0
+                  ? 'None'
+                  : `${onlineUsers.length} online`}
+              </span>
+            )}
+            <span className="online-section__chevron" aria-hidden>
+              ▾
+            </span>
+          </span>
+        </button>
+        <div id="online-users-panel" className="online-panel">
+          <p className="muted online-panel__hint">
+            Players active in the last 2 minutes.
+          </p>
+          {onlineLoading && <p className="muted">Loading…</p>}
+          {onlineError && (
+            <p className="login-error" role="alert">
+              {onlineError}
+            </p>
+          )}
+          {!onlineLoading && !onlineError && onlineUsers.length === 0 && (
+            <p className="muted">No one else online right now.</p>
+          )}
+          {!onlineLoading && onlineUsers.length > 0 && (
+            <ul className="online-users-list">
+              {onlineUsers.map((user) => (
+                <li key={user.id} className="online-users-list__item">
+                  <span className="online-users-list__dot" aria-hidden />
+                  <span>{user.username}</span>
+                  {user.id === session?.userId && (
+                    <span className="tag tag--ok">You</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
 
       <DailyTasksSection />
 
