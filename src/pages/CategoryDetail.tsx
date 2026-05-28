@@ -1,13 +1,36 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { CategoryImagePicker } from '../components/CategoryImagePicker';
 import { TaskCard } from '../components/TaskCard';
 import { useAppStore } from '../hooks/useAppStore';
 import {
+  canJoinCategory,
+  joinRequirementMessage,
+} from '../lib/categoryMembership';
+import {
   isCategoryImagePreview,
   MAX_CATEGORY_IMAGE_BYTES,
 } from '../lib/categoryImage';
-import type { Task, TaskFrequency } from '../types';
+import {
+  getStageLabel,
+  getUserStage,
+  USER_STAGE_OPTIONS,
+  type TaskUserStage,
+} from '../lib/levels';
+import type { Task, TaskFrequency, TaskScope } from '../types';
+import { isCategoryScopeTask, TASK_SCOPE_OPTIONS } from '../lib/taskScope';
+import {
+  fetchAdminProfiles,
+  type AdminProfileRow,
+} from '../lib/profileDb';
+
+const STAGE_GROUP_ORDER: TaskUserStage[] = [
+  'beginner',
+  'intermediate',
+  'trained',
+  'mindless',
+  'any',
+];
 
 function newId(prefix: string): string {
   return `${prefix}-${Date.now()}`;
@@ -15,24 +38,48 @@ function newId(prefix: string): string {
 
 export function CategoryDetail() {
   const { categoryId } = useParams<{ categoryId: string }>();
-  const { state, session, updateCategory, addTask, updateTask, deleteTask } =
-    useAppStore();
+  const {
+    state,
+    session,
+    updateCategory,
+    addTask,
+    updateTask,
+    deleteTask,
+    joinCategory,
+    markTaskStarted,
+    completeTask,
+    uncompleteTask,
+  } = useAppStore();
   const isAdmin = session?.role === 'admin';
 
   const category = state.categories.find((c) => c.id === categoryId);
+  const isMember =
+    isAdmin ||
+    (categoryId != null && state.joinedCategoryIds.includes(categoryId));
+  const joinBlocked =
+    category != null &&
+    !isMember &&
+    !canJoinCategory(category, state.progress.currentLevel);
+
   const categoryTasks = useMemo(
-    () => state.tasks.filter((t) => t.categoryId === categoryId),
+    () =>
+      state.tasks.filter(
+        (t) => categoryId != null && isCategoryScopeTask(t, categoryId),
+      ),
     [state.tasks, categoryId],
   );
 
   const grouped = useMemo(() => {
-    const map = new Map<number, Task[]>();
+    const map = new Map<TaskUserStage, Task[]>();
     for (const t of categoryTasks) {
-      const list = map.get(t.minLevel) ?? [];
+      const key = t.userStage ?? 'any';
+      const list = map.get(key) ?? [];
       list.push(t);
-      map.set(t.minLevel, list);
+      map.set(key, list);
     }
-    return [...map.entries()].sort((a, b) => a[0] - b[0]);
+    return STAGE_GROUP_ORDER.filter((stage) => map.has(stage)).map(
+      (stage) => [stage, map.get(stage)!] as const,
+    );
   }, [categoryTasks]);
 
   const [imageUrlInput, setImageUrlInput] = useState(
@@ -40,17 +87,34 @@ export function CategoryDetail() {
   );
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [imageMessage, setImageMessage] = useState('');
+  const [joinMessage, setJoinMessage] = useState('');
+  const [joinError, setJoinError] = useState('');
+  const [joining, setJoining] = useState(false);
 
+  const [profiles, setProfiles] = useState<AdminProfileRow[]>([]);
   const [taskDraft, setTaskDraft] = useState<Task>({
     id: '',
     title: '',
     description: '',
+    taskScope: 'category',
     categoryId: categoryId ?? '',
-    minLevel: 1,
+    assignedUserId: null,
+    userStage: 'any',
     xpReward: 10,
     frequency: 'daily',
+    malusPointsOnFail: 0,
   });
   const [taskMessage, setTaskMessage] = useState('');
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    void (async () => {
+      const result = await fetchAdminProfiles();
+      if (result.ok) setProfiles(result.profiles);
+    })();
+  }, [isAdmin]);
+
+  const taskScope = taskDraft.taskScope ?? 'category';
 
   if (!category) {
     return (
@@ -63,8 +127,19 @@ export function CategoryDetail() {
     );
   }
 
-  const levelName = (n: number) =>
-    state.levels.find((l) => l.number === n)?.name ?? '';
+  const handleJoin = async () => {
+    if (!categoryId) return;
+    setJoinError('');
+    setJoinMessage('');
+    setJoining(true);
+    const result = await joinCategory(categoryId);
+    setJoining(false);
+    if (!result.ok) {
+      setJoinError(result.error);
+      return;
+    }
+    setJoinMessage('You joined this category. Tasks are now available.');
+  };
 
   const saveImageUrl = (url: string) => {
     updateCategory({ ...category, imageUrl: url || undefined });
@@ -97,10 +172,18 @@ export function CategoryDetail() {
 
   const submitTask = () => {
     if (!taskDraft.title.trim()) return;
-    const task = {
+    const scope = taskDraft.taskScope ?? 'category';
+    if (scope === 'category' && !category.id) return;
+    if (scope === 'custom' && !taskDraft.assignedUserId) {
+      setTaskMessage('Select a user for custom tasks.');
+      return;
+    }
+    const task: Task = {
       ...taskDraft,
       id: taskDraft.id || newId('task'),
-      categoryId: category.id,
+      taskScope: scope,
+      categoryId: scope === 'category' ? category.id : null,
+      assignedUserId: scope === 'custom' ? taskDraft.assignedUserId ?? null : null,
     };
     if (state.tasks.some((t) => t.id === task.id)) updateTask(task);
     else addTask(task);
@@ -108,10 +191,13 @@ export function CategoryDetail() {
       id: '',
       title: '',
       description: '',
+      taskScope: 'category',
       categoryId: category.id,
-      minLevel: 1,
+      assignedUserId: null,
+      userStage: 'any',
       xpReward: 10,
       frequency: 'daily',
+      malusPointsOnFail: 0,
     });
     setTaskMessage('Task saved.');
   };
@@ -124,10 +210,13 @@ export function CategoryDetail() {
         id: '',
         title: '',
         description: '',
+        taskScope: 'category',
         categoryId: category.id,
-        minLevel: 1,
+        assignedUserId: null,
+        userStage: 'any',
         xpReward: 10,
         frequency: 'daily',
+        malusPointsOnFail: 0,
       });
     }
     setTaskMessage('Task deleted.');
@@ -161,38 +250,93 @@ export function CategoryDetail() {
           {category.description && (
             <p className="muted">{category.description}</p>
           )}
+          {category.requiredStage && (
+            <p className="muted">
+              Join requirement: {getStageLabel(category.requiredStage)}
+            </p>
+          )}
         </div>
       </header>
 
-      {grouped.length === 0 ? (
+      {!isAdmin && !isMember && (
         <section className="card">
-          <p className="muted">
-            No tasks in this category yet.
-            {isAdmin ? ' Add tasks below by level.' : ' Ask an admin to add tasks.'}
-          </p>
+          {joinBlocked ? (
+            <>
+              <p className="login-error" role="alert">
+                {joinRequirementMessage(category)}
+              </p>
+              <p className="muted">
+                Your current stage:{' '}
+                {getStageLabel(getUserStage(state.progress.currentLevel))}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="muted">
+                Join this category to view and complete its tasks.
+              </p>
+              {joinError && (
+                <p className="login-error" role="alert">
+                  {joinError}
+                </p>
+              )}
+              {joinMessage && <p className="notice">{joinMessage}</p>}
+              <button
+                type="button"
+                className="btn btn--primary btn--block"
+                disabled={joining}
+                onClick={() => void handleJoin()}
+              >
+                {joining ? 'Joining…' : 'Join category'}
+              </button>
+            </>
+          )}
         </section>
-      ) : (
-        grouped.map(([level, tasks]) => (
-          <section key={level} className="library-section">
-            <h3 className="library-level">
-              Level {level}
-              {levelName(level) ? ` — ${levelName(level)}` : ''}
-            </h3>
-            <ul className="task-list">
-              {tasks.map((task) => {
-                const locked = task.minLevel > state.progress.currentLevel;
-                return (
+      )}
+
+      {!isAdmin && isMember && (
+        <p className="notice">You are a member of this category.</p>
+      )}
+
+      {isMember ? (
+        grouped.length === 0 ? (
+          <section className="card">
+            <p className="muted">
+              No tasks in this category yet.
+              {isAdmin ? ' Add tasks below by audience.' : ' Ask an admin to add tasks.'}
+            </p>
+          </section>
+        ) : (
+          grouped.map(([stage, tasks]) => (
+            <section key={stage} className="library-section">
+              <h3 className="library-level">{getStageLabel(stage)}</h3>
+              <ul className="task-list">
+                {tasks.map((task) => (
                   <li key={task.id}>
-                    <TaskCard task={task} showXp disabled={locked} />
-                    {locked && (
-                      <p className="locked-hint">Unlocks at level {task.minLevel}</p>
+                    <TaskCard
+                      task={task}
+                      showXp
+                      onStart={() => markTaskStarted(task.id)}
+                      onComplete={() => completeTask(task.id)}
+                      onUncomplete={() => uncompleteTask(task.id)}
+                    />
+                    {(task.malusPointsOnFail ?? 0) > 0 && (
+                      <p className="muted task-malus-hint">
+                        +{task.malusPointsOnFail} malus if started and not completed today
+                      </p>
                     )}
                   </li>
-                );
-              })}
-            </ul>
+                ))}
+              </ul>
+            </section>
+          ))
+        )
+      ) : (
+        !isAdmin && (
+          <section className="card">
+            <p className="muted">Tasks are hidden until you join this category.</p>
           </section>
-        ))
+        )
       )}
 
       {isAdmin && (
@@ -251,7 +395,7 @@ export function CategoryDetail() {
                     className="edit-list__btn"
                     onClick={() => setTaskDraft(t)}
                   >
-                    Lvl {t.minLevel}: {t.title}
+                    {getStageLabel(t.userStage ?? 'any')}: {t.title}
                   </button>
                   <button
                     type="button"
@@ -264,6 +408,54 @@ export function CategoryDetail() {
               ))}
             </ul>
             <div className="form-grid">
+              <div className="form-grid__full">
+                <span className="muted">Task type</span>
+                <div className="chip-row chip-row--scroll" role="group" aria-label="Task type">
+                  {TASK_SCOPE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      className={
+                        taskScope === opt.value ? 'chip chip--active' : 'chip'
+                      }
+                      aria-pressed={taskScope === opt.value}
+                      onClick={() =>
+                        setTaskDraft({
+                          ...taskDraft,
+                          taskScope: opt.value as TaskScope,
+                          categoryId:
+                            opt.value === 'category' ? category.id : null,
+                          assignedUserId:
+                            opt.value === 'custom'
+                              ? taskDraft.assignedUserId ?? null
+                              : null,
+                        })
+                      }
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {taskScope === 'custom' && (
+                <select
+                  aria-label="Assigned user"
+                  value={taskDraft.assignedUserId ?? ''}
+                  onChange={(e) =>
+                    setTaskDraft({
+                      ...taskDraft,
+                      assignedUserId: e.target.value || null,
+                    })
+                  }
+                >
+                  <option value="">Select user…</option>
+                  {profiles.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.username} ({p.role})
+                    </option>
+                  ))}
+                </select>
+              )}
               <input
                 placeholder="Title"
                 value={taskDraft.title}
@@ -276,16 +468,22 @@ export function CategoryDetail() {
                   setTaskDraft({ ...taskDraft, description: e.target.value })
                 }
               />
-              <input
-                type="number"
-                min={1}
-                max={5}
-                aria-label="Minimum level"
-                value={taskDraft.minLevel}
+              <select
+                aria-label="User stage"
+                value={taskDraft.userStage ?? 'any'}
                 onChange={(e) =>
-                  setTaskDraft({ ...taskDraft, minLevel: Number(e.target.value) })
+                  setTaskDraft({
+                    ...taskDraft,
+                    userStage: e.target.value as TaskUserStage,
+                  })
                 }
-              />
+              >
+                {USER_STAGE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
               <input
                 type="number"
                 min={5}
@@ -293,6 +491,19 @@ export function CategoryDetail() {
                 value={taskDraft.xpReward}
                 onChange={(e) =>
                   setTaskDraft({ ...taskDraft, xpReward: Number(e.target.value) })
+                }
+              />
+              <input
+                type="number"
+                min={0}
+                aria-label="Malus if not completed"
+                placeholder="Malus if not completed"
+                value={taskDraft.malusPointsOnFail ?? 0}
+                onChange={(e) =>
+                  setTaskDraft({
+                    ...taskDraft,
+                    malusPointsOnFail: Number(e.target.value),
+                  })
                 }
               />
               <select
@@ -326,8 +537,9 @@ export function CategoryDetail() {
               <input
                 type="number"
                 min={0}
-                placeholder="Timer min"
+                placeholder="Timer min (resets on leave)"
                 aria-label="Timer minutes"
+                title="Timer: resets if player leaves the page"
                 value={
                   taskDraft.timerSeconds != null
                     ? Math.floor(taskDraft.timerSeconds / 60)
@@ -367,6 +579,54 @@ export function CategoryDetail() {
                 }}
               />
               <input
+                type="number"
+                min={0}
+                placeholder="Duration min (persists)"
+                aria-label="Duration minutes"
+                title="Duration: keeps counting after browser close"
+                value={
+                  taskDraft.durationSeconds != null
+                    ? Math.floor(taskDraft.durationSeconds / 60)
+                    : ''
+                }
+                onChange={(e) => {
+                  const mins = e.target.value ? Number(e.target.value) : 0;
+                  const secs =
+                    taskDraft.durationSeconds != null
+                      ? taskDraft.durationSeconds % 60
+                      : 0;
+                  const total = mins * 60 + secs;
+                  setTaskDraft({
+                    ...taskDraft,
+                    durationSeconds: total > 0 ? total : undefined,
+                  });
+                }}
+              />
+              <input
+                type="number"
+                min={0}
+                max={59}
+                placeholder="Duration sec"
+                aria-label="Duration seconds"
+                value={
+                  taskDraft.durationSeconds != null
+                    ? taskDraft.durationSeconds % 60
+                    : ''
+                }
+                onChange={(e) => {
+                  const secs = e.target.value ? Number(e.target.value) : 0;
+                  const mins =
+                    taskDraft.durationSeconds != null
+                      ? Math.floor(taskDraft.durationSeconds / 60)
+                      : 0;
+                  const total = mins * 60 + secs;
+                  setTaskDraft({
+                    ...taskDraft,
+                    durationSeconds: total > 0 ? total : undefined,
+                  });
+                }}
+              />
+              <input
                 type="url"
                 placeholder="Open URL (optional)"
                 value={taskDraft.openUrl ?? ''}
@@ -384,6 +644,19 @@ export function CategoryDetail() {
                   setTaskDraft({
                     ...taskDraft,
                     requiredPhrase: e.target.value || undefined,
+                  })
+                }
+              />
+              <input
+                type="number"
+                min={1}
+                placeholder="Times to write (default 1)"
+                title="Times to write phrase"
+                value={taskDraft.requiredPhraseRepeatCount ?? 1}
+                onChange={(e) =>
+                  setTaskDraft({
+                    ...taskDraft,
+                    requiredPhraseRepeatCount: Math.max(1, Number(e.target.value) || 1),
                   })
                 }
               />

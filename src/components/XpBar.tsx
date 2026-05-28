@@ -1,14 +1,13 @@
 import { xpProgressInLevel } from '../lib/levels';
-import type { Level } from '../types';
 
 interface XpBarProps {
   totalXp: number;
-  levels: Level[];
+  currentLevel: number;
   levelName: string;
 }
 
-export function XpBar({ totalXp, levels, levelName }: XpBarProps) {
-  const { current, max, percent } = xpProgressInLevel(totalXp, levels);
+export function XpBar({ totalXp, currentLevel, levelName }: XpBarProps) {
+  const { current, max, percent } = xpProgressInLevel(totalXp, currentLevel);
 
   return (
     <div className="xp-bar">

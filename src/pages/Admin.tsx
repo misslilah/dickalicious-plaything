@@ -5,12 +5,11 @@ import type {
   ContentTier,
   PatreonMemberTier,
   PatreonStatus,
-  PunishmentTemplate,
-  PunishmentTrigger,
   Reward,
   RewardTrigger,
   Task,
   TaskFrequency,
+  TaskScope,
   UserRole,
   Video,
   VideoCategory,
@@ -22,7 +21,6 @@ import {
 } from '../lib/profileDb';
 import {
   PATREON_MEMBER_TIER_OPTIONS,
-  TIER_CHIP_OPTIONS,
   tierAccessHint,
   VIDEO_ACCESS_CUMULATIVE_NOTE,
   VIDEO_ACCESS_OPTIONS,
@@ -36,6 +34,8 @@ import {
 } from '../lib/videoStorage';
 import { CategoryImagePicker } from '../components/CategoryImagePicker';
 import { useAppStore } from '../hooks/useAppStore';
+import { getStageLabel, USER_STAGE_OPTIONS, type TaskUserStage } from '../lib/levels';
+import { TASK_SCOPE_LABELS, TASK_SCOPE_OPTIONS } from '../lib/taskScope';
 import {
   isCategoryImagePreview,
   MAX_CATEGORY_IMAGE_BYTES,
@@ -65,7 +65,7 @@ const ADMIN_SECTIONS = [
     id: 'punishments' as const,
     label: 'Punishments',
     icon: '⚡',
-    hint: 'Auto templates',
+    hint: 'Categories & templates',
   },
   {
     id: 'users' as const,
@@ -92,7 +92,6 @@ const CATEGORY_COLORS = [
   '#f87171',
 ];
 
-const LEVELS = [1, 2, 3, 4, 5] as const;
 const FREQUENCIES: { value: TaskFrequency; label: string }[] = [
   { value: 'daily', label: 'Daily' },
   { value: 'weekly', label: 'Weekly' },
@@ -147,7 +146,7 @@ export function Admin() {
           {section === 'categories' && <CategoryAdmin />}
           {section === 'tasks' && <TaskAdmin />}
           {section === 'rewards' && <RewardAdmin />}
-          {section === 'punishments' && <PunishmentTemplateAdmin />}
+          {section === 'punishments' && <PunishmentsAdminLink />}
           {section === 'users' && <UserAdmin />}
           {section === 'videos' && <VideosAdmin />}
         </div>
@@ -520,6 +519,7 @@ function emptyCategoryDraft(): Category {
     color: '#f9a8d4',
     description: '',
     imageUrl: undefined,
+    requiredStage: null,
   };
 }
 
@@ -697,6 +697,28 @@ function CategoryAdmin() {
           />
         </Field>
         <Field
+          label="Minimum stage to join"
+          hint="Leave empty for anyone. Users must reach this stage before they can join."
+        >
+          <select
+            aria-label="Required stage to join"
+            value={draft.requiredStage ?? ''}
+            onChange={(e) =>
+              setDraft({
+                ...draft,
+                requiredStage: (e.target.value || null) as Category['requiredStage'],
+              })
+            }
+          >
+            <option value="">Anyone</option>
+            {USER_STAGE_OPTIONS.filter((o) => o.value !== 'any').map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field
           label="Presentation image"
           hint={`Optional. Choose a file (max ${Math.round(MAX_CATEGORY_IMAGE_BYTES / 1024)} KB) or paste a URL. Uploaded to Supabase when you save.`}
         >
@@ -749,10 +771,13 @@ function emptyTaskDraft(categoryId: string): Task {
     id: '',
     title: '',
     description: '',
+    taskScope: 'category',
     categoryId,
-    minLevel: 1,
+    assignedUserId: null,
+    userStage: 'any',
     xpReward: 10,
     frequency: 'daily',
+    malusPointsOnFail: 0,
   };
 }
 
@@ -764,6 +789,16 @@ function TaskAdmin() {
   const [filterCategory, setFilterCategory] = useState('');
   const [message, setMessage] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [profiles, setProfiles] = useState<AdminProfileRow[]>([]);
+
+  useEffect(() => {
+    void (async () => {
+      const result = await fetchAdminProfiles();
+      if (result.ok) setProfiles(result.profiles);
+    })();
+  }, []);
+
+  const taskScope = draft.taskScope ?? 'category';
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -777,16 +812,26 @@ function TaskAdmin() {
     });
   }, [state.tasks, search, filterCategory]);
 
-  const categoryName = (id: string) =>
-    state.categories.find((c) => c.id === id)?.name ?? 'Unknown';
+  const categoryName = (id: string | null | undefined) =>
+    id ? state.categories.find((c) => c.id === id)?.name ?? 'Unknown' : '—';
+
+  const profileName = (id: string | null | undefined) =>
+    id ? profiles.find((p) => p.id === id)?.username ?? 'Unknown user' : '—';
 
   const resolvedCategoryId =
-    draft.categoryId || state.categories[0]?.id || '';
+    taskScope === 'category'
+      ? draft.categoryId || state.categories[0]?.id || ''
+      : null;
 
   const validate = () => {
     const next: Record<string, string> = {};
     if (!draft.title.trim()) next.title = 'Title is required.';
-    if (!resolvedCategoryId) next.categoryId = 'Select a category.';
+    if (taskScope === 'category' && !resolvedCategoryId) {
+      next.categoryId = 'Select a category.';
+    }
+    if (taskScope === 'custom' && !draft.assignedUserId) {
+      next.assignedUserId = 'Select a user.';
+    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -799,10 +844,12 @@ function TaskAdmin() {
   const submit = async () => {
     if (!validate()) return;
     setMessage('');
-    const task = {
+    const task: Task = {
       ...draft,
       id: draft.id || '',
-      categoryId: resolvedCategoryId,
+      taskScope,
+      categoryId: taskScope === 'category' ? resolvedCategoryId : null,
+      assignedUserId: taskScope === 'custom' ? draft.assignedUserId ?? null : null,
     };
     const result = draft.id ? await updateTask(task) : await addTask(task);
     if (!result.ok) {
@@ -845,7 +892,7 @@ function TaskAdmin() {
     >
       {state.categories.length === 0 && (
         <StatusMessage
-          message="Create at least one category before tasks can be saved."
+          message="Create at least one category before category-scoped tasks can be saved."
           variant="err"
         />
       )}
@@ -865,7 +912,7 @@ function TaskAdmin() {
               key={t.id}
               selected={draft.id === t.id}
               title={t.title}
-              meta={`${categoryName(t.categoryId)} · L${t.minLevel} · ${t.xpReward} XP · ${t.frequency}${t.timerSeconds ? ` · ${t.timerSeconds}s` : ''}${t.openUrl ? ' · URL' : ''}${t.requiredPhrase ? ' · phrase' : ''}`}
+              meta={`${TASK_SCOPE_LABELS[t.taskScope ?? 'category']}${(t.taskScope ?? 'category') === 'category' ? ` · ${categoryName(t.categoryId)}` : ''}${(t.taskScope ?? 'category') === 'custom' ? ` · ${profileName(t.assignedUserId)}` : ''} · ${getStageLabel(t.userStage ?? 'any')} · ${t.xpReward} XP · malus ${t.malusPointsOnFail ?? 0} · ${t.frequency}${t.timerSeconds ? ` · timer ${t.timerSeconds}s` : ''}${t.durationSeconds ? ` · duration ${t.durationSeconds}s` : ''}${t.openUrl ? ' · URL' : ''}${t.requiredPhrase ? ` · phrase${(t.requiredPhraseRepeatCount ?? 1) > 1 ? ` ×${t.requiredPhraseRepeatCount}` : ''}` : ''}`}
               onEdit={() => {
                 setDraft(t);
                 setErrors({});
@@ -884,6 +931,30 @@ function TaskAdmin() {
       <StatusMessage message={message} />
 
       <FormBlock title="Basics">
+        <Field
+          label="Task type"
+          hint="Category tasks appear on category pages. Daily tasks appear on the home daily plan. Custom tasks are assigned to one user."
+        >
+          <ChipSelect
+            label="Task type"
+            options={TASK_SCOPE_OPTIONS}
+            value={taskScope}
+            onChange={(scope) => {
+              const nextScope = scope as TaskScope;
+              setDraft({
+                ...draft,
+                taskScope: nextScope,
+                categoryId:
+                  nextScope === 'category'
+                    ? draft.categoryId || state.categories[0]?.id || ''
+                    : null,
+                assignedUserId:
+                  nextScope === 'custom' ? draft.assignedUserId ?? null : null,
+              });
+              setErrors({});
+            }}
+          />
+        </Field>
         <Field label="Title" htmlFor="task-title" required error={errors.title}>
           <input
             id="task-title"
@@ -902,41 +973,79 @@ function TaskAdmin() {
             onChange={(e) => setDraft({ ...draft, description: e.target.value })}
           />
         </Field>
-        <Field
-          label="Category"
-          required
-          error={errors.categoryId}
-          hint={
-            state.categories.length === 0
-              ? 'Create a category first.'
-              : 'Scroll and tap a category to assign this task.'
-          }
-        >
-          {state.categories.length === 0 ? (
-            <p className="muted">No categories available.</p>
-          ) : (
-            <CategoryChips
-              label="Task category"
-              categories={state.categories}
-              value={resolvedCategoryId}
-              disabled={state.categories.length === 0}
-              onChange={(categoryId) => {
-                setDraft({ ...draft, categoryId });
-                if (errors.categoryId) setErrors((p) => ({ ...p, categoryId: '' }));
-              }}
-            />
-          )}
-        </Field>
+        {taskScope === 'category' && (
+          <Field
+            label="Category"
+            required
+            error={errors.categoryId}
+            hint={
+              state.categories.length === 0
+                ? 'Create a category first.'
+                : 'Scroll and tap a category to assign this task.'
+            }
+          >
+            {state.categories.length === 0 ? (
+              <p className="muted">No categories available.</p>
+            ) : (
+              <CategoryChips
+                label="Task category"
+                categories={state.categories}
+                value={resolvedCategoryId ?? ''}
+                disabled={state.categories.length === 0}
+                onChange={(categoryId) => {
+                  setDraft({ ...draft, categoryId });
+                  if (errors.categoryId) setErrors((p) => ({ ...p, categoryId: '' }));
+                }}
+              />
+            )}
+          </Field>
+        )}
+        {taskScope === 'custom' && (
+          <Field
+            label="Assigned user"
+            required
+            error={errors.assignedUserId}
+            hint="This task appears only on that user's home daily plan."
+          >
+            {profiles.length === 0 ? (
+              <p className="muted">No users found.</p>
+            ) : (
+              <ChipSelect
+                label="Assigned user"
+                scroll
+                options={profiles.map((p) => ({
+                  value: p.id,
+                  label: `${p.username} (${p.role})`,
+                }))}
+                value={draft.assignedUserId ?? ''}
+                onChange={(userId) => {
+                  setDraft({ ...draft, assignedUserId: userId || null });
+                  if (errors.assignedUserId) {
+                    setErrors((p) => ({ ...p, assignedUserId: '' }));
+                  }
+                }}
+              />
+            )}
+          </Field>
+        )}
       </FormBlock>
 
       <FormBlock title="Rules">
-        <Field label="Minimum level" hint="Players must reach this level to unlock the task.">
+        <Field
+          label="User stage"
+          hint="Who this task is for. Daily plans include tasks for the user's current stage or All users."
+        >
           <ChipSelect
-            label="Minimum level"
+            label="User stage"
             scroll
-            options={LEVELS.map((n) => ({ value: n, label: `L${n}` }))}
-            value={draft.minLevel}
-            onChange={(minLevel) => setDraft({ ...draft, minLevel })}
+            options={USER_STAGE_OPTIONS.map((opt) => ({
+              value: opt.value,
+              label: opt.label,
+            }))}
+            value={draft.userStage ?? 'any'}
+            onChange={(userStage) =>
+              setDraft({ ...draft, userStage: userStage as TaskUserStage })
+            }
           />
         </Field>
         <Field label="XP reward" htmlFor="task-xp">
@@ -947,6 +1056,24 @@ function TaskAdmin() {
             value={draft.xpReward}
             onChange={(e) =>
               setDraft({ ...draft, xpReward: Number(e.target.value) })
+            }
+          />
+        </Field>
+        <Field
+          label="Malus if not completed"
+          htmlFor="task-malus"
+          hint="Added at day end if the task is on the plan (daily/custom) or was started (category)."
+        >
+          <input
+            id="task-malus"
+            type="number"
+            min={0}
+            value={draft.malusPointsOnFail ?? 0}
+            onChange={(e) =>
+              setDraft({
+                ...draft,
+                malusPointsOnFail: Number(e.target.value),
+              })
             }
           />
         </Field>
@@ -988,8 +1115,8 @@ function TaskAdmin() {
           complete.
         </p>
         <Field
-          label="Timer"
-          hint="Countdown must finish before complete. Runs in the background if the tab is hidden."
+          label="Timer (resets on leave)"
+          hint="Player clicks Start timer. Countdown resets if they leave this page before completing. Runs while the tab is hidden."
         >
           <div className="form-inline">
             <input
@@ -1038,6 +1165,56 @@ function TaskAdmin() {
           </div>
         </Field>
         <Field
+          label="Duration (persists)"
+          hint="Player clicks Start duration. Countdown continues after closing the browser until it finishes or the task is completed."
+        >
+          <div className="form-inline">
+            <input
+              type="number"
+              min={0}
+              placeholder="Min"
+              aria-label="Duration minutes"
+              value={
+                draft.durationSeconds != null
+                  ? Math.floor(draft.durationSeconds / 60)
+                  : ''
+              }
+              onChange={(e) => {
+                const mins = e.target.value ? Number(e.target.value) : 0;
+                const secs =
+                  draft.durationSeconds != null ? draft.durationSeconds % 60 : 0;
+                const total = mins * 60 + secs;
+                setDraft({
+                  ...draft,
+                  durationSeconds: total > 0 ? total : undefined,
+                });
+              }}
+            />
+            <input
+              type="number"
+              min={0}
+              max={59}
+              placeholder="Sec"
+              aria-label="Duration seconds"
+              value={
+                draft.durationSeconds != null ? draft.durationSeconds % 60 : ''
+              }
+              onChange={(e) => {
+                const secs = e.target.value ? Number(e.target.value) : 0;
+                const mins =
+                  draft.durationSeconds != null
+                    ? Math.floor(draft.durationSeconds / 60)
+                    : 0;
+                const total = mins * 60 + secs;
+                setDraft({
+                  ...draft,
+                  durationSeconds: total > 0 ? total : undefined,
+                });
+              }}
+            />
+          </div>
+        </Field>
+        <Field
           label="Page URL"
           htmlFor="task-open-url"
           hint="Player must open this link before completing."
@@ -1070,6 +1247,24 @@ function TaskAdmin() {
               })
             }
             placeholder="Phrase to type"
+          />
+        </Field>
+        <Field
+          label="Times to write"
+          htmlFor="task-phrase-repeat"
+          hint="How many times the player must type the phrase correctly (min 1)."
+        >
+          <input
+            id="task-phrase-repeat"
+            type="number"
+            min={1}
+            value={draft.requiredPhraseRepeatCount ?? 1}
+            onChange={(e) =>
+              setDraft({
+                ...draft,
+                requiredPhraseRepeatCount: Math.max(1, Number(e.target.value) || 1),
+              })
+            }
           />
         </Field>
       </FormBlock>
@@ -1319,11 +1514,12 @@ function RewardAdmin() {
               </Field>
             ) : (
               <Field label="Target level">
-                <ChipSelect
-                  label="Target level"
-                  options={LEVELS.map((n) => ({ value: n, label: `Level ${n}` }))}
+                <input
+                  id="reward-level"
+                  type="number"
+                  min={1}
                   value={levelTarget}
-                  onChange={setLevelTarget}
+                  onChange={(e) => setLevelTarget(Number(e.target.value) || 1)}
                 />
               </Field>
             )}
@@ -1346,207 +1542,35 @@ function RewardAdmin() {
   return <AdminSection list={list} form={form} />;
 }
 
-function emptyPunishmentDraft(): PunishmentTemplate {
-  return {
-    id: '',
-    title: '',
-    description: '',
-    trigger: { type: 'quota_miss' },
-    pointsLost: 10,
-  };
-}
+function PunishmentsAdminLink() {
+  const { state } = useAppStore();
+  const categoryCount = state.punishmentCategories.length;
+  const templateCount = state.punishmentTemplates.length;
 
-function PunishmentTemplateAdmin() {
-  const {
-    state,
-    addPunishmentTemplate,
-    updatePunishmentTemplate,
-    deletePunishmentTemplate,
-  } = useAppStore();
-  const [draft, setDraft] = useState<PunishmentTemplate>(emptyPunishmentDraft());
-  const [search, setSearch] = useState('');
-  const [message, setMessage] = useState('');
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return state.punishmentTemplates;
-    return state.punishmentTemplates.filter(
-      (t) =>
-        t.title.toLowerCase().includes(q) ||
-        t.description.toLowerCase().includes(q),
-    );
-  }, [state.punishmentTemplates, search]);
-
-  const validate = () => {
-    const next: Record<string, string> = {};
-    if (!draft.title.trim()) next.title = 'Title is required.';
-    setErrors(next);
-    return Object.keys(next).length === 0;
-  };
-
-  const clearForm = () => {
-    setDraft(emptyPunishmentDraft());
-    setErrors({});
-  };
-
-  const submit = async () => {
-    if (!validate()) return;
-    setMessage('');
-    const tpl = { ...draft, id: draft.id || '' };
-    const result = draft.id
-      ? await updatePunishmentTemplate(tpl)
-      : await addPunishmentTemplate(tpl);
-    if (!result.ok) {
-      setMessage(result.error);
-      return;
-    }
-    clearForm();
-    setMessage('Punishment template saved.');
-  };
-
-  const remove = async (id: string) => {
-    if (!window.confirm('Delete this punishment template?')) return;
-    const result = await deletePunishmentTemplate(id);
-    if (!result.ok) {
-      setMessage(result.error);
-      return;
-    }
-    if (draft.id === id) clearForm();
-    setMessage('Punishment template deleted.');
-  };
-
-  const triggerLabel = (trigger: PunishmentTrigger) =>
-    trigger.type === 'quota_miss' ? 'Daily quota miss' : 'Manual';
-
-  const list = (
-    <AdminListCard
-      title="Punishments"
-      count={filtered.length}
-      intro='Applied when the daily quota is missed (up to 2 per day). Titles with "bonus" add an extra task.'
-      search={search}
-      onSearchChange={setSearch}
-    >
-      {filtered.length === 0 ? (
-        <AdminEmpty
-          title={search ? 'No matches' : 'No templates yet'}
-          hint={
-            search
-              ? 'Try a different search term.'
-              : 'Define templates that copy into active punishments.'
-          }
-        />
-      ) : (
-        <ul className="admin-library">
-          {filtered.map((t) => (
-            <AdminLibraryItem
-              key={t.id}
-              selected={draft.id === t.id}
-              title={t.title}
-              meta={`−${t.pointsLost} pts · ${triggerLabel(t.trigger)}`}
-              onEdit={() => {
-                setDraft(t);
-                setErrors({});
-              }}
-              onDelete={() => remove(t.id)}
-            />
-          ))}
-        </ul>
-      )}
-    </AdminListCard>
-  );
-
-  const form = (
+  return (
     <section className="card">
-      <h3 className="section-title">
-        {draft.id ? 'Edit template' : 'New template'}
-      </h3>
-      <StatusMessage message={message} />
-
-      <FormBlock title="Basics">
-        <Field
-          label="Title"
-          htmlFor="pun-title"
-          required
-          error={errors.title}
-        >
-          <input
-            id="pun-title"
-            value={draft.title}
-            onChange={(e) => {
-              setDraft({ ...draft, title: e.target.value });
-              if (errors.title) setErrors((p) => ({ ...p, title: '' }));
-            }}
-          />
-        </Field>
-        <Field label="Description" htmlFor="pun-desc">
-          <textarea
-            id="pun-desc"
-            rows={3}
-            value={draft.description}
-            onChange={(e) =>
-              setDraft({ ...draft, description: e.target.value })
-            }
-          />
-        </Field>
-      </FormBlock>
-
-      <FormBlock title="Rules">
-        <Field label="Trigger" hint="When this template can be applied.">
-          <ChoiceRow
-            label="Punishment trigger"
-            name="pun-trigger"
-            options={[
-              {
-                value: 'quota_miss' as const,
-                label: 'Quota miss',
-                hint: 'Auto on missed daily quota',
-              },
-              {
-                value: 'manual' as const,
-                label: 'Manual',
-                hint: 'Assigned by admin flow',
-              },
-            ]}
-            value={draft.trigger.type}
-            onChange={(type) =>
-              setDraft({ ...draft, trigger: { type } as PunishmentTrigger })
-            }
-          />
-        </Field>
-        <Field label="Points lost" htmlFor="pun-points">
-          <input
-            id="pun-points"
-            type="number"
-            min={0}
-            value={draft.pointsLost}
-            onChange={(e) =>
-              setDraft({ ...draft, pointsLost: Number(e.target.value) })
-            }
-          />
-        </Field>
-      </FormBlock>
-
-      <FormActions
-        editing={!!draft.id}
-        entityLabel="template"
-        onSubmit={submit}
-        onClear={() => {
-          clearForm();
-          setMessage('');
-        }}
-      />
+      <h3 className="section-title">Punishments catalog</h3>
+      <p className="muted">
+        Manage punishment categories under Easy, Medium, and Hard, and add
+        punishments inside each category on the Punishments page.
+      </p>
+      <p className="muted">
+        {categoryCount} categor{categoryCount === 1 ? 'y' : 'ies'} · {templateCount}{' '}
+        punishment{templateCount === 1 ? '' : 's'}
+      </p>
+      <div className="btn-row">
+        <Link to="/punishments?manage=1" className="btn btn--primary">
+          Open punishments manager
+        </Link>
+      </div>
     </section>
   );
-
-  return <AdminSection list={list} form={form} />;
 }
 
 function UserAdmin() {
   const { createAppUser } = useAppStore();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<UserRole>('user');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [profiles, setProfiles] = useState<AdminProfileRow[]>([]);
@@ -1576,7 +1600,7 @@ function UserAdmin() {
   const submit = async () => {
     setError('');
     setMessage('');
-    const result = await createAppUser(username, password, role);
+    const result = await createAppUser(username, password, 'user');
     if (result.ok) {
       setMessage(`User "${username.trim()}" created. They can sign in with ${username.includes('@') ? username.trim() : `${username.trim()}@local.app`}.`);
       setUsername('');
@@ -1687,7 +1711,9 @@ function UserAdmin() {
       <section className="card">
         <h3 className="section-title">New user</h3>
         <p className="muted">
-          Create accounts for regular users or additional admins.
+          Create regular user accounts. For admins, use Supabase Dashboard →
+          Authentication, then set <code>profiles.role</code> to{' '}
+          <code>admin</code>.
         </p>
         <StatusMessage message={error} variant="err" />
         <StatusMessage message={message} />
@@ -1715,17 +1741,6 @@ function UserAdmin() {
               onChange={(e) => setPassword(e.target.value)}
             />
           </Field>
-          <Field label="Role">
-            <ChipSelect
-              label="User role"
-              options={[
-                { value: 'user' as const, label: 'User' },
-                { value: 'admin' as const, label: 'Admin' },
-              ]}
-              value={role}
-              onChange={setRole}
-            />
-          </Field>
         </FormBlock>
 
         <FormActions
@@ -1735,7 +1750,6 @@ function UserAdmin() {
           onClear={() => {
             setUsername('');
             setPassword('');
-            setRole('user');
             setMessage('');
             setError('');
           }}

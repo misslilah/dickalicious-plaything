@@ -13,7 +13,6 @@ export function Settings() {
   const {
     state,
     session,
-    updateSettings,
     resetAll,
     logout,
     changePassword,
@@ -190,36 +189,6 @@ export function Settings() {
             until OAuth is enabled.
           </p>
         )}
-      </section>
-
-      <section className="card">
-        <h3 className="section-title">Daily rules</h3>
-        <label className="field">
-          <span>Daily quota (%)</span>
-          <input
-            type="number"
-            min={50}
-            max={100}
-            value={state.settings.dailyQuotaPercent}
-            onChange={(e) =>
-              updateSettings({ dailyQuotaPercent: Number(e.target.value) })
-            }
-          />
-        </label>
-        <label className="field">
-          <span>Reset hour (0–23)</span>
-          <input
-            type="number"
-            min={0}
-            max={23}
-            value={state.settings.resetHour}
-            onChange={(e) => updateSettings({ resetHour: Number(e.target.value) })}
-          />
-        </label>
-        <p className="muted">
-          The day starts after this hour. The plan regenerates automatically.
-          Settings sync to the server for your account.
-        </p>
       </section>
 
       <section className="card">

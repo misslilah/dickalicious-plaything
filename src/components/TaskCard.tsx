@@ -1,12 +1,16 @@
+import { getStageLabel } from '../lib/levels';
 import type { Category, Task } from '../types';
 import { TaskCompletionGate } from './TaskCompletionGate';
+import { getPhraseRepeatCount } from '../lib/phraseChallenge';
 import { taskHasRequirements } from '../lib/taskRequirements';
 
 interface TaskCardProps {
   task: Task;
   category?: Category;
+  scopeBadge?: string;
   completed?: boolean;
   onToggle?: () => void;
+  onStart?: () => void;
   onComplete?: () => void;
   onUncomplete?: () => void;
   showXp?: boolean;
@@ -22,18 +26,24 @@ const frequencyLabels: Record<Task['frequency'], string> = {
 function TaskCardBody({
   task,
   category,
+  scopeBadge,
   showXp,
   interactive,
 }: {
   task: Task;
   category?: Category;
+  scopeBadge?: string;
   showXp: boolean;
   interactive: boolean;
 }) {
   const requirementBadges: string[] = [];
   if (task.timerSeconds) requirementBadges.push('Timer');
+  if (task.durationSeconds) requirementBadges.push('Duration');
   if (task.openUrl?.trim()) requirementBadges.push('Open page');
-  if (task.requiredPhrase?.trim()) requirementBadges.push('Phrase');
+  if (task.requiredPhrase?.trim()) {
+    const times = getPhraseRepeatCount(task);
+    requirementBadges.push(times > 1 ? `Phrase ×${times}` : 'Phrase');
+  }
 
   return (
     <div className="task-card__body">
@@ -46,15 +56,25 @@ function TaskCardBody({
             {category.icon} {category.name}
           </span>
         )}
+        {scopeBadge && (
+          <span className="task-card__badge task-card__badge--personal">
+            {scopeBadge}
+          </span>
+        )}
         <span className="task-card__freq">{frequencyLabels[task.frequency]}</span>
       </div>
       <h3 className="task-card__title">{task.title}</h3>
       <p className="task-card__desc">{task.description}</p>
       <div className="task-card__meta">
-        <span>Lvl. {task.minLevel}+</span>
+        {task.userStage && task.userStage !== 'any' && (
+          <span>{getStageLabel(task.userStage)}</span>
+        )}
         {task.durationMinutes != null && <span>{task.durationMinutes} min</span>}
         {task.timerSeconds != null && task.timerSeconds > 0 && (
           <span>{Math.ceil(task.timerSeconds / 60)} min timer</span>
+        )}
+        {task.durationSeconds != null && task.durationSeconds > 0 && (
+          <span>{Math.ceil(task.durationSeconds / 60)} min duration</span>
         )}
         {showXp && <span className="task-card__xp">+{task.xpReward} XP</span>}
       </div>
@@ -70,8 +90,10 @@ function TaskCardBody({
 export function TaskCard({
   task,
   category,
+  scopeBadge,
   completed = false,
   onToggle,
+  onStart,
   onComplete,
   onUncomplete,
   showXp = true,
@@ -91,12 +113,14 @@ export function TaskCard({
           task={task}
           completed={completed}
           disabled={disabled}
+          onStart={onStart}
           onComplete={handleComplete}
           onUncomplete={handleUncomplete}
         >
           <TaskCardBody
             task={task}
             category={category}
+            scopeBadge={scopeBadge}
             showXp={showXp}
             interactive={interactive}
           />
@@ -106,6 +130,7 @@ export function TaskCard({
           <TaskCardBody
             task={task}
             category={category}
+            scopeBadge={scopeBadge}
             showXp={showXp}
             interactive={interactive}
           />

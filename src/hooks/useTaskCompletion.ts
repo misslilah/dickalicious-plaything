@@ -1,8 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Task } from '../types';
 import { markPageOpened, isPageOpened } from '../lib/taskPageOpened';
 import {
+  clearPhraseChallenge,
+  getPhraseChallengeState,
+  isPhraseChallengeFailed,
+  isPhraseChallengePassed,
+} from '../lib/phraseChallenge';
+import {
   formatCountdown,
+  getEndAt,
   getRemainingMs,
   hasActiveTimer,
   isTimerComplete,
@@ -10,7 +17,15 @@ import {
   clearTimer,
 } from '../lib/taskTimers';
 import {
-  phraseMatches,
+  clearDuration,
+  getDurationEndAt,
+  getDurationRemaining,
+  hasActiveDuration,
+  isDurationComplete,
+  startDuration,
+} from '../lib/taskDuration';
+import {
+  taskHasDuration,
   taskHasOpenUrl,
   taskHasPhrase,
   taskHasTimer,
@@ -18,34 +33,76 @@ import {
 
 export function useTaskCompletion(task: Task, completed: boolean) {
   const hasTimer = taskHasTimer(task);
+  const hasDuration = taskHasDuration(task);
   const hasPage = taskHasOpenUrl(task);
   const hasPhrase = taskHasPhrase(task);
 
   const [remainingMs, setRemainingMs] = useState(() =>
     hasTimer ? getRemainingMs(task.id) : 0,
   );
+  const [durationRemainingMs, setDurationRemainingMs] = useState(() =>
+    hasDuration ? getDurationRemaining(task.id) : 0,
+  );
   const [pageOpened, setPageOpened] = useState(() =>
     hasPage ? isPageOpened(task.id) : true,
   );
-  const [phraseInput, setPhraseInput] = useState('');
+  const [phraseRevision, setPhraseRevision] = useState(0);
 
-  const tick = useCallback(() => {
+  const refreshPhraseChallenge = useCallback(() => {
+    setPhraseRevision((n) => n + 1);
+  }, []);
+
+  const phraseChallengePassed = useMemo(() => {
+    if (!hasPhrase) return true;
+    void phraseRevision;
+    return isPhraseChallengePassed(task);
+  }, [hasPhrase, task, phraseRevision]);
+
+  const phraseChallengeFailed = useMemo(() => {
+    if (!hasPhrase) return false;
+    void phraseRevision;
+    return isPhraseChallengeFailed(task.id);
+  }, [hasPhrase, task.id, phraseRevision]);
+
+  const phraseChallengeState = useMemo(() => {
+    if (!hasPhrase) return null;
+    void phraseRevision;
+    return getPhraseChallengeState(task.id);
+  }, [hasPhrase, task.id, phraseRevision]);
+
+  const prevCompleted = useRef(completed);
+  useEffect(() => {
+    if (prevCompleted.current && !completed && hasPhrase) {
+      clearPhraseChallenge(task.id);
+      refreshPhraseChallenge();
+    }
+    prevCompleted.current = completed;
+  }, [completed, hasPhrase, task.id, refreshPhraseChallenge]);
+
+  const tickTimer = useCallback(() => {
     if (!hasTimer) return;
     setRemainingMs(getRemainingMs(task.id));
   }, [hasTimer, task.id]);
 
-  useEffect(() => {
-    if (!hasTimer || completed) return;
-    if (!hasActiveTimer(task.id) && !isTimerComplete(task.id)) {
-      startTimer(task.id, task.timerSeconds!);
-    }
-    tick();
-  }, [hasTimer, completed, task.id, task.timerSeconds, tick]);
+  const tickDuration = useCallback(() => {
+    if (!hasDuration) return;
+    setDurationRemainingMs(getDurationRemaining(task.id));
+  }, [hasDuration, task.id]);
 
   useEffect(() => {
     if (!hasTimer || completed) return;
-    const id = window.setInterval(tick, 1000);
-    const onVisible = () => tick();
+    tickTimer();
+  }, [hasTimer, completed, task.id, tickTimer]);
+
+  useEffect(() => {
+    if (!hasDuration || completed) return;
+    tickDuration();
+  }, [hasDuration, completed, task.id, tickDuration]);
+
+  useEffect(() => {
+    if (!hasTimer || completed) return;
+    const id = window.setInterval(tickTimer, 1000);
+    const onVisible = () => tickTimer();
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
     return () => {
@@ -53,12 +110,43 @@ export function useTaskCompletion(task: Task, completed: boolean) {
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
     };
-  }, [hasTimer, completed, tick]);
+  }, [hasTimer, completed, tickTimer]);
 
+  useEffect(() => {
+    if (!hasDuration || completed) return;
+    const id = window.setInterval(tickDuration, 1000);
+    const onVisible = () => tickDuration();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [hasDuration, completed, tickDuration]);
+
+  const timerStarted = hasTimer && getEndAt(task.id) != null;
+  const timerRunning = hasTimer && hasActiveTimer(task.id);
   const timerDone = !hasTimer || isTimerComplete(task.id);
+
+  const durationStarted = hasDuration && getDurationEndAt(task.id) != null;
+  const durationRunning = hasDuration && hasActiveDuration(task.id);
+  const durationDone = !hasDuration || isDurationComplete(task.id);
+
+  const startTaskTimer = () => {
+    if (!hasTimer || completed || timerStarted) return;
+    startTimer(task.id, task.timerSeconds!);
+    tickTimer();
+  };
+
+  const startTaskDuration = () => {
+    if (!hasDuration || completed || durationStarted) return;
+    startDuration(task.id, task.durationSeconds!);
+    tickDuration();
+  };
+
   const pageDone = !hasPage || pageOpened;
-  const phraseDone =
-    !hasPhrase || phraseMatches(phraseInput, task.requiredPhrase!);
+  const phraseDone = !hasPhrase || phraseChallengePassed;
 
   const openPage = () => {
     const url = task.openUrl?.trim();
@@ -70,20 +158,33 @@ export function useTaskCompletion(task: Task, completed: boolean) {
 
   const finishRequirements = () => {
     if (hasTimer) clearTimer(task.id);
+    if (hasDuration) clearDuration(task.id);
+    if (hasPhrase) clearPhraseChallenge(task.id);
   };
 
   return {
     hasTimer,
+    hasDuration,
     hasPage,
     hasPhrase,
     remainingMs,
     countdown: formatCountdown(remainingMs),
+    durationCountdown: formatCountdown(durationRemainingMs),
+    timerStarted,
+    timerRunning,
     timerDone,
+    startTaskTimer,
+    durationStarted,
+    durationRunning,
+    durationDone,
+    startTaskDuration,
     pageOpened,
-    phraseInput,
-    setPhraseInput,
     phraseDone,
-    canComplete: timerDone && pageDone && phraseDone,
+    phraseChallengeFailed,
+    phraseChallengeState,
+    refreshPhraseChallenge,
+    canComplete:
+      timerDone && durationDone && pageDone && phraseDone && !phraseChallengeFailed,
     openPage,
     finishRequirements,
   };

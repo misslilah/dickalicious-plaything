@@ -4,14 +4,14 @@ function storageKey(taskId: string): string {
   return `${KEY_PREFIX}${taskId}`;
 }
 
-/** Persist timer end time (ISO). Starts or resumes a countdown for this task. */
+/** Session-only countdown; cleared when leaving the task page if incomplete. */
 export function startTimer(taskId: string, seconds: number): void {
   const endAt = new Date(Date.now() + seconds * 1000).toISOString();
-  localStorage.setItem(storageKey(taskId), endAt);
+  sessionStorage.setItem(storageKey(taskId), endAt);
 }
 
 export function getEndAt(taskId: string): string | null {
-  return localStorage.getItem(storageKey(taskId));
+  return sessionStorage.getItem(storageKey(taskId));
 }
 
 export function getRemainingMs(taskId: string): number {
@@ -20,7 +20,7 @@ export function getRemainingMs(taskId: string): number {
   return Math.max(0, new Date(endAt).getTime() - Date.now());
 }
 
-/** True when no timer is stored or the end time has passed. */
+/** True when a timer was started and the end time has passed. */
 export function isTimerComplete(taskId: string): boolean {
   const endAt = getEndAt(taskId);
   if (!endAt) return false;
@@ -32,7 +32,7 @@ export function hasActiveTimer(taskId: string): boolean {
 }
 
 export function clearTimer(taskId: string): void {
-  localStorage.removeItem(storageKey(taskId));
+  sessionStorage.removeItem(storageKey(taskId));
 }
 
 export function formatCountdown(remainingMs: number): string {

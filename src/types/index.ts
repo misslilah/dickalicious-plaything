@@ -1,4 +1,8 @@
+import type { TaskUserStage, UserStage } from '../lib/levels';
+
 export type TaskFrequency = 'daily' | 'weekly' | 'once';
+
+export type TaskScope = 'category' | 'daily' | 'custom';
 
 export type UserRole = 'user' | 'admin';
 
@@ -30,29 +34,36 @@ export interface Category {
   description: string;
   /** Presentation image (URL or base64 data URL). */
   imageUrl?: string;
-}
-
-export interface Level {
-  number: 1 | 2 | 3 | 4 | 5;
-  name: string;
-  xpRequired: number;
+  /** Minimum user stage to join; null = anyone. */
+  requiredStage?: UserStage | null;
 }
 
 export interface Task {
   id: string;
   title: string;
   description: string;
-  categoryId: string;
-  minLevel: number;
+  /** Category library tasks only; null for daily/custom. */
+  categoryId?: string | null;
+  taskScope: TaskScope;
+  /** Required when taskScope is `custom`. */
+  assignedUserId?: string | null;
+  /** Who this task is for; `any` = all users. */
+  userStage?: TaskUserStage;
   xpReward: number;
   frequency: TaskFrequency;
   durationMinutes?: number;
-  /** Countdown must finish before the task can be completed. */
+  /** Session countdown; resets if the player leaves the task page before completing. */
   timerSeconds?: number;
+  /** Persistent countdown from Start duration; continues after closing the site. */
+  durationSeconds?: number;
   /** User must open this URL before completing. */
   openUrl?: string;
   /** Exact phrase (trimmed) the user must type to complete. */
   requiredPhrase?: string;
+  /** How many times the phrase must be typed correctly (default 1). */
+  requiredPhraseRepeatCount?: number;
+  /** Malus added at day end if started (category) or on plan (daily/custom) and incomplete. */
+  malusPointsOnFail?: number;
 }
 
 export interface UserProgress {
@@ -61,6 +72,7 @@ export interface UserProgress {
   streak: number;
   lastActiveDate: string | null;
   points: number;
+  malusPoints: number;
 }
 
 export interface DailyPlanTask {
@@ -74,6 +86,8 @@ export interface DailyPlan {
   tasks: DailyPlanTask[];
   closed: boolean;
   extraTaskIds: string[];
+  /** Task IDs the user opened or explicitly started today. */
+  startedTaskIds?: string[];
 }
 
 export type RewardTrigger =
@@ -92,15 +106,35 @@ export interface Reward {
 
 export type PunishmentTrigger =
   | { type: 'quota_miss' }
-  | { type: 'manual' };
+  | { type: 'manual' }
+  | { type: 'malus_relief' };
 
-/** Admin-defined catalog entry applied when quota is missed. */
+export type PunishmentDifficulty = 'easy' | 'medium' | 'hard';
+
+/** Admin-defined grouping for punishment templates. */
+export interface PunishmentCategory {
+  id: string;
+  name: string;
+  description?: string;
+  sortOrder: number;
+  /** Section on the Punishments page: Easy / Medium / Hard. */
+  difficulty?: PunishmentDifficulty;
+  /** Presentation image (URL or base64 data URL). */
+  imageUrl?: string;
+}
+
+/** Admin-defined catalog entry; user chooses one to reduce malus balance. */
 export interface PunishmentTemplate {
   id: string;
   title: string;
   description: string;
   trigger: PunishmentTrigger;
-  pointsLost: number;
+  categoryId?: string | null;
+  /** Legacy DB column; prefer categoryId. */
+  difficulty?: PunishmentDifficulty;
+  malusPointsRelieved: number;
+  /** Legacy field; kept for DB compat, not used in malus flow. */
+  pointsLost?: number;
 }
 
 /** Runtime punishment assigned to the user (not the admin catalog). */
@@ -115,9 +149,10 @@ export interface Punishment {
   date: string;
 }
 
+/** Legacy JSON in user_progress; only resetHour may be read for day boundary. */
 export interface AppSettings {
-  dailyQuotaPercent: number;
-  resetHour: number;
+  dailyQuotaPercent?: number;
+  resetHour?: number;
 }
 
 export interface VideoCategory {
@@ -144,16 +179,18 @@ export interface Video {
 
 export interface AppState {
   categories: Category[];
-  levels: Level[];
   tasks: Task[];
   videoCategories: VideoCategory[];
   videos: Video[];
   progress: UserProgress;
   dailyPlans: Record<string, DailyPlan>;
   rewards: Reward[];
+  punishmentCategories: PunishmentCategory[];
   punishmentTemplates: PunishmentTemplate[];
   punishments: Punishment[];
   settings: AppSettings;
   unlockedRewardIds: string[];
+  /** Category IDs the signed-in user has joined. */
+  joinedCategoryIds: string[];
   version: number;
 }

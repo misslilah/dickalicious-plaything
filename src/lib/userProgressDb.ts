@@ -1,4 +1,5 @@
 import type { AppState, DailyPlan, Punishment } from '../types';
+import { getLevelFromXp } from './levels';
 import { createInitialState } from './seed';
 import { getSupabase } from './supabase';
 
@@ -8,6 +9,7 @@ type DbUserProgress = {
   current_level: number;
   streak: number;
   points: number;
+  malus_points: number;
   last_active_date: string | null;
   settings: AppState['settings'];
   daily_plans: Record<string, DailyPlan>;
@@ -15,7 +17,7 @@ type DbUserProgress = {
   punishments: Punishment[];
 };
 
-export function userSliceFromState(state: AppState): Omit<AppState, 'categories' | 'tasks' | 'rewards' | 'punishmentTemplates' | 'videoCategories' | 'videos' | 'levels' | 'version'> {
+export function userSliceFromState(state: AppState): Omit<AppState, 'categories' | 'tasks' | 'rewards' | 'punishmentTemplates' | 'videoCategories' | 'videos' | 'version' | 'joinedCategoryIds'> {
   return {
     progress: state.progress,
     dailyPlans: state.dailyPlans,
@@ -33,9 +35,10 @@ export function applyUserProgressToState(
     ...base,
     progress: {
       totalXp: row.total_xp,
-      currentLevel: row.current_level,
+      currentLevel: getLevelFromXp(row.total_xp),
       streak: row.streak,
       points: row.points,
+      malusPoints: row.malus_points ?? 0,
       lastActiveDate: row.last_active_date,
     },
     dailyPlans: row.daily_plans ?? {},
@@ -84,6 +87,7 @@ export async function saveUserProgress(
     current_level: state.progress.currentLevel,
     streak: state.progress.streak,
     points: state.progress.points,
+    malus_points: state.progress.malusPoints,
     last_active_date: state.progress.lastActiveDate,
     settings: state.settings,
     daily_plans: state.dailyPlans,

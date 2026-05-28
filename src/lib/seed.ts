@@ -1,27 +1,63 @@
-import type { AppState, PunishmentTemplate } from '../types';
-import { DEFAULT_LEVELS } from './levels';
+import type {
+  AppState,
+  PunishmentCategory,
+  PunishmentTemplate,
+} from '../types';
+
+export const DEFAULT_PUNISHMENT_CATEGORIES: PunishmentCategory[] = [
+  {
+    id: 'pun-cat-easy',
+    name: 'Easy',
+    description: 'Light malus relief',
+    sortOrder: 0,
+    difficulty: 'easy',
+  },
+  {
+    id: 'pun-cat-medium',
+    name: 'Medium',
+    description: 'Moderate malus relief',
+    sortOrder: 1,
+    difficulty: 'medium',
+  },
+  {
+    id: 'pun-cat-hard',
+    name: 'Hard',
+    description: 'Heavy malus relief',
+    sortOrder: 2,
+    difficulty: 'hard',
+  },
+];
 
 export const DEFAULT_PUNISHMENT_TEMPLATES: PunishmentTemplate[] = [
   {
-    id: 'pun-tpl-points',
-    title: 'Points lost',
-    description: 'Daily quota not met — points deducted',
-    trigger: { type: 'quota_miss' },
-    pointsLost: 15,
+    id: 'pun-tpl-easy',
+    title: 'Light discipline',
+    description: 'A small corrective task to clear minor malus.',
+    trigger: { type: 'malus_relief' },
+    categoryId: 'pun-cat-easy',
+    malusPointsRelieved: 5,
   },
   {
-    id: 'pun-tpl-bonus',
-    title: 'Bonus task tomorrow',
-    description: 'An extra task will be added to your plan',
-    trigger: { type: 'quota_miss' },
-    pointsLost: 0,
+    id: 'pun-tpl-medium',
+    title: 'Standard punishment',
+    description: 'Moderate effort to reduce malus balance.',
+    trigger: { type: 'malus_relief' },
+    categoryId: 'pun-cat-medium',
+    malusPointsRelieved: 15,
+  },
+  {
+    id: 'pun-tpl-hard',
+    title: 'Heavy punishment',
+    description: 'Serious consequence for a large malus balance.',
+    trigger: { type: 'malus_relief' },
+    categoryId: 'pun-cat-hard',
+    malusPointsRelieved: 30,
   },
 ];
 
 export function createInitialState(): AppState {
   return {
     categories: [],
-    levels: DEFAULT_LEVELS,
     tasks: [],
     videoCategories: [],
     videos: [],
@@ -31,16 +67,16 @@ export function createInitialState(): AppState {
       streak: 0,
       lastActiveDate: null,
       points: 0,
+      malusPoints: 0,
     },
     dailyPlans: {},
     rewards: [],
+    punishmentCategories: [...DEFAULT_PUNISHMENT_CATEGORIES],
     punishmentTemplates: [...DEFAULT_PUNISHMENT_TEMPLATES],
     punishments: [],
-    settings: {
-      dailyQuotaPercent: 80,
-      resetHour: 4,
-    },
+    settings: {},
     unlockedRewardIds: [],
-    version: 4,
+    joinedCategoryIds: [],
+    version: 7,
   };
 }

@@ -11,6 +11,7 @@ import { VideoCategoryDetail } from './pages/VideoCategoryDetail';
 import { Login } from './pages/Login';
 import { Punishments } from './pages/Punishments';
 import { Rewards } from './pages/Rewards';
+import { Profile } from './pages/Profile';
 import { Settings } from './pages/Settings';
 import { Today } from './pages/Today';
 
@@ -33,6 +34,7 @@ export default function App() {
               <Route path="library" element={<Navigate to="/videos" replace />} />
               <Route path="rewards" element={<Rewards />} />
               <Route path="punishments" element={<Punishments />} />
+              <Route path="profile" element={<Profile />} />
               <Route path="settings" element={<Settings />} />
             </Route>
             <Route element={<AdminRoute />}>

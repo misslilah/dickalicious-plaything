@@ -3,12 +3,14 @@ import { TaskCard } from './TaskCard';
 import { useAppStore } from '../hooks/useAppStore';
 import { completionStats, getTodayPlan } from '../lib/gameLogic';
 import { formatDisplayDate, todayKey } from '../lib/dates';
+import { getResetHour } from '../lib/gameLogic';
 
 export function DailyTasksSection() {
-  const { state, completeTask, uncompleteTask, closeDay } = useAppStore();
+  const { state, completeTask, uncompleteTask, markTaskStarted, closeDay } =
+    useAppStore();
   const plan = getTodayPlan(state);
   const stats = completionStats(plan);
-  const dateKey = todayKey(state.settings.resetHour);
+  const dateKey = todayKey(getResetHour(state));
 
   if (!plan) {
     return (
@@ -53,14 +55,19 @@ export function DailyTasksSection() {
         {plan.tasks.map((entry) => {
           const task = state.tasks.find((t) => t.id === entry.taskId);
           if (!task) return null;
-          const category = state.categories.find((c) => c.id === task.categoryId);
+          const category = task.categoryId
+            ? state.categories.find((c) => c.id === task.categoryId)
+            : undefined;
+          const isPersonal = (task.taskScope ?? 'category') === 'custom';
           return (
             <li key={entry.taskId}>
               <TaskCard
                 task={task}
                 category={category}
+                scopeBadge={isPersonal ? 'Personal' : undefined}
                 completed={entry.completed}
                 disabled={plan.closed}
+                onStart={() => markTaskStarted(entry.taskId)}
                 onComplete={() => completeTask(entry.taskId)}
                 onUncomplete={() => uncompleteTask(entry.taskId)}
               />
@@ -72,8 +79,8 @@ export function DailyTasksSection() {
       {plan.tasks.length === 0 && (
         <p className="muted">
           {state.tasks.length === 0
-            ? 'No tasks configured yet. Ask an admin to create categories and daily tasks.'
-            : 'No daily tasks match your current level. Browse categories below or ask an admin to add tasks.'}
+            ? 'No tasks configured yet. Ask an admin to add daily or personal tasks.'
+            : 'No daily or personal tasks match your level today. Browse categories below or ask an admin.'}
         </p>
       )}
 
@@ -85,9 +92,9 @@ export function DailyTasksSection() {
 
       {plan.closed && (
         <p className="notice">
-          {stats.percent >= state.settings.dailyQuotaPercent
-            ? 'Well done! Quota reached for today.'
-            : 'Day closed without quota — punishments may apply.'}
+          {stats.percent === 100
+            ? 'Well done! All tasks completed for today.'
+            : 'Day closed — incomplete tasks may have added malus. Check Punishments.'}
         </p>
       )}
     </section>

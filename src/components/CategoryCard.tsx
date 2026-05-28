@@ -5,9 +5,10 @@ import type { Category } from '../types';
 interface CategoryCardProps {
   category: Category;
   taskCount: number;
+  isMember?: boolean;
 }
 
-export function CategoryCard({ category, taskCount }: CategoryCardProps) {
+export function CategoryCard({ category, taskCount, isMember }: CategoryCardProps) {
   return (
     <Link
       to={`/category/${category.id}`}
@@ -31,6 +32,9 @@ export function CategoryCard({ category, taskCount }: CategoryCardProps) {
         <h3 className="category-card__name">{category.name}</h3>
         <p className="category-card__meta muted">
           {taskCount} {taskCount === 1 ? 'task' : 'tasks'}
+          {isMember != null && (
+            <> · {isMember ? 'Joined' : 'Not joined'}</>
+          )}
         </p>
       </div>
     </Link>

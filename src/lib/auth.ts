@@ -169,11 +169,64 @@ export async function changePassword(
   return { ok: true };
 }
 
+export async function signUp(
+  email: string,
+  password: string,
+  username: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!isSupabaseConfigured()) {
+    return {
+      ok: false,
+      error: 'Supabase is not configured. See setup instructions on the login page.',
+    };
+  }
+
+  const trimmedEmail = email.trim().toLowerCase();
+  const trimmedUsername = username.trim();
+  if (!trimmedEmail) return { ok: false, error: 'Email is required.' };
+  if (!trimmedUsername) return { ok: false, error: 'Username is required.' };
+  if (password.length < 6) {
+    return { ok: false, error: 'Password must be at least 6 characters.' };
+  }
+
+  const supabase = getSupabase()!;
+  try {
+    const { error } = await supabase.auth.signUp({
+      email: trimmedEmail,
+      password,
+      options: {
+        data: { username: trimmedUsername },
+      },
+    });
+    if (error) {
+      return { ok: false, error: formatSupabaseAuthError(error) };
+    }
+  } catch (err) {
+    return {
+      ok: false,
+      error: formatSupabaseAuthError(
+        err instanceof Error ? err : { message: String(err) },
+      ),
+    };
+  }
+
+  return { ok: true };
+}
+
+/** Admin-only helper: creates a regular user account (never admin). */
 export async function createUser(
   username: string,
   password: string,
   role: UserRole,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (role === 'admin') {
+    return {
+      ok: false,
+      error:
+        'Admin accounts cannot be created here. Set role to admin in Supabase Dashboard → profiles.',
+    };
+  }
+
   const trimmed = username.trim();
   if (!trimmed) return { ok: false, error: 'Username is required.' };
   if (password.length < 6) {
@@ -188,7 +241,7 @@ export async function createUser(
     email,
     password,
     options: {
-      data: { username: trimmed, role },
+      data: { username: trimmed },
     },
   });
 

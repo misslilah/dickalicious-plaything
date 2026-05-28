@@ -2,27 +2,71 @@ import type {
   AppState,
   DailyPlan,
   Punishment,
+  PunishmentCategory,
+  PunishmentTemplate,
   Task,
 } from '../types';
+import { DEFAULT_RESET_HOUR } from './constants';
 import { todayKey, isYesterday } from './dates';
-import { getLevelFromXp } from './levels';
+import { getLevelFromXp, taskMatchesUserStage } from './levels';
+import {
+  frequencyMatchesPlanDate,
+  isHomePlanTask,
+} from './taskScope';
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-export function getEligibleDailyTasks(state: AppState): Task[] {
-  const level = state.progress.currentLevel;
-  return state.tasks.filter(
-    (t) => t.frequency === 'daily' && t.minLevel <= level,
-  );
+export function getResetHour(state: AppState): number {
+  return state.settings.resetHour ?? DEFAULT_RESET_HOUR;
 }
 
-export function ensureDailyPlan(state: AppState, dateKey?: string): AppState {
-  const date = dateKey ?? todayKey(state.settings.resetHour);
-  if (state.dailyPlans[date]) return state;
+export function getEligibleDailyTasks(
+  state: AppState,
+  userId: string | null = null,
+): Task[] {
+  const level = state.progress.currentLevel;
+  const date = todayKey(getResetHour(state));
 
-  const eligible = getEligibleDailyTasks(state);
+  return state.tasks.filter((t) => {
+    if (!isHomePlanTask(t, userId)) return false;
+    if (!taskMatchesUserStage(t, level)) return false;
+    return frequencyMatchesPlanDate(t, date, state);
+  });
+}
+
+export function ensureDailyPlan(
+  state: AppState,
+  dateKey?: string,
+  userId: string | null = null,
+): AppState {
+  const date = dateKey ?? todayKey(getResetHour(state));
+  const eligible = getEligibleDailyTasks(state, userId);
+  const existing = state.dailyPlans[date];
+
+  if (existing) {
+    if (existing.closed) return state;
+
+    const existingIds = new Set(existing.tasks.map((t) => t.taskId));
+    const missing = eligible.filter((t) => !existingIds.has(t.id));
+    if (missing.length === 0) return state;
+
+    return {
+      ...state,
+      dailyPlans: {
+        ...state.dailyPlans,
+        [date]: {
+          ...existing,
+          tasks: [
+            ...existing.tasks,
+            ...missing.map((t) => ({ taskId: t.id, completed: false })),
+          ],
+        },
+      },
+    };
+  }
+
   const yesterday = Object.keys(state.dailyPlans).sort().reverse()[0];
   const prevPlan = yesterday ? state.dailyPlans[yesterday] : undefined;
   const extraIds = prevPlan?.extraTaskIds ?? [];
@@ -39,6 +83,7 @@ export function ensureDailyPlan(state: AppState, dateKey?: string): AppState {
     tasks: uniqueIds.map((taskId) => ({ taskId, completed: false })),
     closed: false,
     extraTaskIds: [],
+    startedTaskIds: [],
   };
 
   return {
@@ -48,7 +93,7 @@ export function ensureDailyPlan(state: AppState, dateKey?: string): AppState {
 }
 
 export function getTodayPlan(state: AppState): DailyPlan | undefined {
-  const date = todayKey(state.settings.resetHour);
+  const date = todayKey(getResetHour(state));
   return state.dailyPlans[date];
 }
 
@@ -69,17 +114,78 @@ export function completionStats(plan: DailyPlan | undefined): {
   };
 }
 
-export function quotaMet(state: AppState, plan: DailyPlan): boolean {
-  const { percent } = completionStats(plan);
-  return percent >= state.settings.dailyQuotaPercent;
+/** All daily plan tasks completed (replaces legacy quota for streak). */
+export function dayFullyCompleted(plan: DailyPlan): boolean {
+  if (plan.tasks.length === 0) return true;
+  return plan.tasks.every((t) => t.completed);
+}
+
+function normalizeStartedIds(plan: DailyPlan): string[] {
+  return plan.startedTaskIds ?? [];
+}
+
+export function markTaskStarted(state: AppState, taskId: string): AppState {
+  const date = todayKey(getResetHour(state));
+  let next = ensureDailyPlan(state, date);
+  const plan = next.dailyPlans[date];
+  if (!plan || plan.closed) return next;
+
+  const started = normalizeStartedIds(plan);
+  if (started.includes(taskId)) return next;
+
+  return {
+    ...next,
+    dailyPlans: {
+      ...next.dailyPlans,
+      [date]: { ...plan, startedTaskIds: [...started, taskId] },
+    },
+  };
+}
+
+function malusForIncompletePlanTasks(
+  state: AppState,
+  plan: DailyPlan,
+): number {
+  const started = new Set(normalizeStartedIds(plan));
+  let total = 0;
+
+  for (const entry of plan.tasks) {
+    if (entry.completed) continue;
+    const task = state.tasks.find((t) => t.id === entry.taskId);
+    if (!task) continue;
+    const scope = task.taskScope ?? 'category';
+    if (scope === 'category' && !started.has(entry.taskId)) continue;
+    total += task.malusPointsOnFail ?? 0;
+  }
+
+  return total;
+}
+
+function applyMalus(state: AppState, amount: number): AppState {
+  if (amount <= 0) return state;
+  return {
+    ...state,
+    progress: {
+      ...state.progress,
+      malusPoints: state.progress.malusPoints + amount,
+    },
+  };
+}
+
+/** Apply this task's malus_points_on_fail to the user's malus balance (e.g. phrase challenge failed). */
+export function applyTaskMalus(state: AppState, taskId: string): AppState {
+  const task = state.tasks.find((t) => t.id === taskId);
+  if (!task) return state;
+  return applyMalus(state, task.malusPointsOnFail ?? 0);
 }
 
 export function completeTask(
   state: AppState,
   taskId: string,
+  userId: string | null = null,
 ): AppState {
-  const date = todayKey(state.settings.resetHour);
-  let next = ensureDailyPlan(state, date);
+  const date = todayKey(getResetHour(state));
+  let next = markTaskStarted(ensureDailyPlan(state, date, userId), taskId);
   const plan = next.dailyPlans[date];
   if (!plan || plan.closed) return next;
 
@@ -103,7 +209,7 @@ export function completeTask(
     lastActiveDate: date,
   };
 
-  progress.currentLevel = getLevelFromXp(progress.totalXp, next.levels);
+  progress.currentLevel = getLevelFromXp(progress.totalXp);
 
   next = {
     ...next,
@@ -119,7 +225,7 @@ export function completeTask(
 }
 
 export function uncompleteTask(state: AppState, taskId: string): AppState {
-  const date = todayKey(state.settings.resetHour);
+  const date = todayKey(getResetHour(state));
   const plan = state.dailyPlans[date];
   if (!plan || plan.closed) return state;
 
@@ -143,7 +249,6 @@ export function uncompleteTask(state: AppState, taskId: string): AppState {
       points: Math.max(0, state.progress.points - pointsLoss),
       currentLevel: getLevelFromXp(
         Math.max(0, state.progress.totalXp - task.xpReward),
-        state.levels,
       ),
     },
     dailyPlans: {
@@ -153,17 +258,16 @@ export function uncompleteTask(state: AppState, taskId: string): AppState {
   };
 }
 
-function punishmentsToday(state: AppState, date: string): Punishment[] {
-  return state.punishments.filter((p) => p.date === date && p.active);
-}
-
-export function closeDay(state: AppState): AppState {
-  const date = todayKey(state.settings.resetHour);
-  let next = ensureDailyPlan(state, date);
+export function closeDay(
+  state: AppState,
+  userId: string | null = null,
+): AppState {
+  const date = todayKey(getResetHour(state));
+  let next = ensureDailyPlan(state, date, userId);
   const plan = next.dailyPlans[date];
   if (!plan || plan.closed) return next;
 
-  const met = quotaMet(next, plan);
+  const malusGain = malusForIncompletePlanTasks(next, plan);
   let updated: AppState = {
     ...next,
     dailyPlans: {
@@ -172,10 +276,15 @@ export function closeDay(state: AppState): AppState {
     },
   };
 
-  if (met) {
+  updated = applyMalus(updated, malusGain);
+
+  if (malusGain === 0 && dayFullyCompleted(plan)) {
     updated = applyStreakSuccess(updated, date);
-  } else {
-    updated = applyPunishments(updated, date);
+  } else if (malusGain > 0) {
+    updated = {
+      ...updated,
+      progress: { ...updated.progress, streak: 0 },
+    };
   }
 
   return updated;
@@ -189,7 +298,7 @@ function applyStreakSuccess(state: AppState, date: string): AppState {
     streak = 1;
   } else if (last === date) {
     // already counted today
-  } else if (isYesterday(last, state.settings.resetHour)) {
+  } else if (isYesterday(last, getResetHour(state))) {
     streak += 1;
   } else {
     streak = 1;
@@ -206,64 +315,6 @@ function applyStreakSuccess(state: AppState, date: string): AppState {
 
   next = checkAutoRewards(next);
   return next;
-}
-
-function applyPunishments(state: AppState, date: string): AppState {
-  const existing = punishmentsToday(state, date);
-  if (existing.length >= 2) {
-    return {
-      ...state,
-      progress: { ...state.progress, streak: 0 },
-    };
-  }
-
-  const catalog = state.punishmentTemplates;
-  if (catalog.length === 0) {
-    return {
-      ...state,
-      progress: { ...state.progress, streak: 0 },
-    };
-  }
-
-  const templates = catalog.slice(0, 2 - existing.length);
-
-  const newPunishments: Punishment[] = templates.map((tpl) => ({
-    id: generateId(),
-    title: tpl.title,
-    description: tpl.description,
-    trigger: tpl.trigger,
-    pointsLost: tpl.pointsLost,
-    active: true,
-    assignedAt: new Date().toISOString(),
-    date,
-  }));
-
-  let points = state.progress.points;
-  let extraTaskIds: string[] = [];
-
-  for (const p of newPunishments) {
-    points = Math.max(0, points - p.pointsLost);
-    if (p.title.includes('bonus')) {
-      const bonus = state.tasks.find(
-        (t) => t.frequency === 'daily' && t.minLevel <= state.progress.currentLevel,
-      );
-      if (bonus) extraTaskIds.push(bonus.id);
-    }
-  }
-
-  const plan = state.dailyPlans[date];
-  const updatedPlan = plan
-    ? { ...plan, extraTaskIds: [...plan.extraTaskIds, ...extraTaskIds] }
-    : plan;
-
-  return {
-    ...state,
-    progress: { ...state.progress, points, streak: 0 },
-    punishments: [...state.punishments, ...newPunishments],
-    dailyPlans: updatedPlan
-      ? { ...state.dailyPlans, [date]: updatedPlan }
-      : state.dailyPlans,
-  };
 }
 
 function checkAutoRewards(state: AppState): AppState {
@@ -313,6 +364,37 @@ export function purchaseReward(state: AppState, rewardId: string): AppState {
   };
 }
 
+export function acceptPunishment(
+  state: AppState,
+  templateId: string,
+): AppState {
+  if (state.progress.malusPoints <= 0) return state;
+
+  const template = state.punishmentTemplates.find((t) => t.id === templateId);
+  if (!template) return state;
+
+  const relieved = template.malusPointsRelieved;
+  const newMalus = Math.max(0, state.progress.malusPoints - relieved);
+  const date = todayKey(getResetHour(state));
+
+  const entry: Punishment = {
+    id: generateId(),
+    title: template.title,
+    description: template.description,
+    trigger: { type: 'malus_relief' },
+    pointsLost: 0,
+    active: false,
+    assignedAt: new Date().toISOString(),
+    date,
+  };
+
+  return {
+    ...state,
+    progress: { ...state.progress, malusPoints: newMalus },
+    punishments: [...state.punishments, entry],
+  };
+}
+
 export function dismissPunishment(state: AppState, id: string): AppState {
   return {
     ...state,
@@ -322,8 +404,11 @@ export function dismissPunishment(state: AppState, id: string): AppState {
   };
 }
 
-export function processDayRollover(state: AppState): AppState {
-  const date = todayKey(state.settings.resetHour);
+export function processDayRollover(
+  state: AppState,
+  userId: string | null = null,
+): AppState {
+  const date = todayKey(getResetHour(state));
   const dates = Object.keys(state.dailyPlans).sort();
   const openPast = dates.filter((d) => d < date && !state.dailyPlans[d].closed);
 
@@ -332,35 +417,143 @@ export function processDayRollover(state: AppState): AppState {
     next = closeDayForDate(next, d);
   }
 
-  return ensureDailyPlan(next, date);
+  return ensureDailyPlan(next, date, userId);
 }
 
 function closeDayForDate(state: AppState, date: string): AppState {
   const plan = state.dailyPlans[date];
   if (!plan || plan.closed) return state;
 
-  const tempSettings = state;
-  const fakeState = { ...tempSettings };
-  const met = quotaMet(fakeState, plan);
+  const malusGain = malusForIncompletePlanTasks(state, plan);
+  let updated: AppState = {
+    ...state,
+    dailyPlans: {
+      ...state.dailyPlans,
+      [date]: { ...plan, closed: true },
+    },
+  };
 
-  if (met) {
-    return {
-      ...state,
-      dailyPlans: {
-        ...state.dailyPlans,
-        [date]: { ...plan, closed: true },
-      },
+  updated = applyMalus(updated, malusGain);
+
+  if (malusGain === 0 && dayFullyCompleted(plan)) {
+    updated = applyStreakSuccess(updated, date);
+  } else if (malusGain > 0) {
+    updated = {
+      ...updated,
+      progress: { ...updated.progress, streak: 0 },
     };
   }
 
-  return applyPunishments(
-    {
-      ...state,
-      dailyPlans: {
-        ...state.dailyPlans,
-        [date]: { ...plan, closed: true },
-      },
-    },
-    date,
+  return updated;
+}
+
+export const PUNISHMENT_DIFFICULTY_ORDER = ['easy', 'medium', 'hard'] as const;
+
+export const PUNISHMENT_DIFFICULTY_LABELS: Record<
+  (typeof PUNISHMENT_DIFFICULTY_ORDER)[number],
+  string
+> = {
+  easy: 'Easy',
+  medium: 'Medium',
+  hard: 'Hard',
+};
+
+export function categoryDifficulty(
+  category: PunishmentCategory,
+): (typeof PUNISHMENT_DIFFICULTY_ORDER)[number] {
+  if (category.difficulty) return category.difficulty;
+  const name = category.name.trim().toLowerCase();
+  if (name === 'easy' || name === 'medium' || name === 'hard') return name;
+  return 'medium';
+}
+
+export function groupCategoriesByDifficulty(
+  categories: PunishmentCategory[],
+): Record<(typeof PUNISHMENT_DIFFICULTY_ORDER)[number], PunishmentCategory[]> {
+  const groups: Record<
+    (typeof PUNISHMENT_DIFFICULTY_ORDER)[number],
+    PunishmentCategory[]
+  > = { easy: [], medium: [], hard: [] };
+  const sorted = [...categories].sort((a, b) => a.sortOrder - b.sortOrder);
+  for (const c of sorted) {
+    groups[categoryDifficulty(c)].push(c);
+  }
+  return groups;
+}
+
+export function templatesForCategory(
+  templates: PunishmentTemplate[],
+  categories: PunishmentCategory[],
+  categoryId: string,
+): PunishmentTemplate[] {
+  return templates.filter(
+    (t) => resolvePunishmentCategoryId(t, categories) === categoryId,
   );
+}
+
+export function resolvePunishmentCategoryId(
+  template: PunishmentTemplate,
+  categories: PunishmentCategory[],
+): string | null {
+  if (template.categoryId) return template.categoryId;
+  const difficulty = template.difficulty ?? 'medium';
+  const match = categories.find((c) => c.name.toLowerCase() === difficulty);
+  return match?.id ?? null;
+}
+
+export function groupPunishmentsByCategory(
+  templates: PunishmentTemplate[],
+  categories: PunishmentCategory[],
+  options?: { includeEmpty?: boolean },
+): { category: PunishmentCategory; templates: PunishmentTemplate[] }[] {
+  const sorted = [...categories].sort((a, b) => a.sortOrder - b.sortOrder);
+  const buckets = new Map<string, PunishmentTemplate[]>(
+    sorted.map((c) => [c.id, []]),
+  );
+  const uncategorized: PunishmentTemplate[] = [];
+
+  for (const t of templates) {
+    const catId = resolvePunishmentCategoryId(t, sorted);
+    if (catId && buckets.has(catId)) {
+      buckets.get(catId)!.push(t);
+    } else {
+      uncategorized.push(t);
+    }
+  }
+
+  const groups = sorted
+    .map((category) => ({
+      category,
+      templates: buckets.get(category.id) ?? [],
+    }))
+    .filter((g) => options?.includeEmpty || g.templates.length > 0);
+
+  if (uncategorized.length > 0) {
+    groups.push({
+      category: {
+        id: '__uncategorized__',
+        name: 'Other',
+        sortOrder: 9999,
+      },
+      templates: uncategorized,
+    });
+  }
+
+  return groups;
+}
+
+/** @deprecated Use groupPunishmentsByCategory */
+export function groupPunishmentTemplates(
+  templates: PunishmentTemplate[],
+): Record<string, PunishmentTemplate[]> {
+  const groups: Record<string, PunishmentTemplate[]> = {
+    easy: [],
+    medium: [],
+    hard: [],
+  };
+  for (const t of templates) {
+    const key = t.difficulty ?? 'medium';
+    if (groups[key]) groups[key].push(t);
+  }
+  return groups;
 }

@@ -3,26 +3,28 @@ import { CategoryCard } from '../components/CategoryCard';
 import { DailyTasksSection } from '../components/DailyTasksSection';
 import { XpBar } from '../components/XpBar';
 import { useAppStore } from '../hooks/useAppStore';
+import { formatLevelDisplay } from '../lib/levels';
 import { completionStats, getTodayPlan } from '../lib/gameLogic';
 
 export function Dashboard() {
   const { state } = useAppStore();
-  const { progress, levels } = state;
-  const levelInfo = levels.find((l) => l.number === progress.currentLevel);
+  const { progress } = state;
   const plan = getTodayPlan(state);
   const stats = completionStats(plan);
-  const activePunishments = state.punishments.filter((p) => p.active).length;
+  const malus = state.progress.malusPoints;
 
   const taskCountByCategory = (categoryId: string) =>
-    state.tasks.filter((t) => t.categoryId === categoryId).length;
+    state.tasks.filter(
+      (t) => (t.taskScope ?? 'category') === 'category' && t.categoryId === categoryId,
+    ).length;
 
   return (
     <div className="page">
       <section className="home-stats card card--hero">
         <XpBar
           totalXp={progress.totalXp}
-          levels={levels}
-          levelName={`Level ${progress.currentLevel} — ${levelInfo?.name ?? ''}`}
+          currentLevel={progress.currentLevel}
+          levelName={formatLevelDisplay(progress.currentLevel)}
         />
         <div className="home-stats__row">
           <span className="home-stats__chip">
@@ -39,11 +41,11 @@ export function Dashboard() {
         </div>
       </section>
 
-      {activePunishments > 0 && (
+      {malus > 0 && (
         <section className="card card--warn">
           <p>
-            {activePunishments} active punishment(s).{' '}
-            <Link to="/punishments">View punishments</Link>
+            {malus} malus point{malus === 1 ? '' : 's'}.{' '}
+            <Link to="/punishments">Clear malus with a punishment</Link>
           </p>
         </section>
       )}
@@ -65,6 +67,7 @@ export function Dashboard() {
                 key={cat.id}
                 category={cat}
                 taskCount={taskCountByCategory(cat.id)}
+                isMember={state.joinedCategoryIds.includes(cat.id)}
               />
             ))}
           </div>

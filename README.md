@@ -11,10 +11,11 @@ Progressive web app (PWA) for gamified task tracking. **Shared catalog data** (c
 ## 1. Supabase project
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. Open **SQL Editor** and run:
-   - `supabase/migrations/001_initial.sql`
-   - `supabase/migrations/002_patreon_tiers.sql`
+2. Open **SQL Editor** and run migrations **in numeric order** (001 → 012), then storage:
+   - `supabase/migrations/001_initial.sql` through `012_task_duration.sql`
    - `supabase/storage_setup.sql`
+   - If the app errors on missing columns (e.g. `assigned_user_id` on `tasks`), run `011_tasks_columns_fix.sql` alone — it is idempotent.
+   - After SQL changes, PostgREST usually refreshes the schema cache automatically; if inserts still fail, wait a minute or reload the project in the Supabase dashboard (**Settings → API**).
 3. Under **Authentication → Providers**, enable Email. For production, disable public sign-ups and create users from the Dashboard or Admin panel.
 4. Create the first admin:
    - **Authentication → Users → Add user** (email + password)
@@ -174,6 +175,9 @@ npm run build
 |------|---------|
 | `supabase/migrations/001_initial.sql` | Tables, RLS, profile trigger |
 | `supabase/migrations/002_patreon_tiers.sql` | Patreon columns, tier RLS |
+| `supabase/migrations/003`–`010` | Tier fixes, task requirements, scope, malus, punishments |
+| `supabase/migrations/011_tasks_columns_fix.sql` | Idempotent repair if `tasks` columns from 004–007 were never applied |
+| `supabase/migrations/012_task_duration.sql` | `duration_seconds` — persistent countdown (vs session `timer_seconds`) |
 | `supabase/storage_setup.sql` | Storage buckets and policies |
 | `supabase/functions/patreon-*` | OAuth + webhook Edge Functions |
 

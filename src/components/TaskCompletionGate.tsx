@@ -1,12 +1,17 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { Task } from '../types';
 import { useTaskCompletion } from '../hooks/useTaskCompletion';
+import { useAppStore } from '../hooks/useAppStore';
+import { getPhraseRepeatCount } from '../lib/phraseChallenge';
 import { taskHasRequirements } from '../lib/taskRequirements';
+import { clearTimer, isTimerComplete } from '../lib/taskTimers';
+import { PhraseChallengeModal } from './PhraseChallengeModal';
 
 interface TaskCompletionGateProps {
   task: Task;
   completed: boolean;
   disabled?: boolean;
+  onStart?: () => void;
   onComplete: () => void;
   onUncomplete?: () => void;
   children: ReactNode;
@@ -16,30 +21,84 @@ export function TaskCompletionGate({
   task,
   completed,
   disabled = false,
+  onStart,
   onComplete,
   onUncomplete,
   children,
 }: TaskCompletionGateProps) {
+  const { applyTaskMalus } = useAppStore();
+  const [showPhraseModal, setShowPhraseModal] = useState(false);
+  const [phraseFailNotice, setPhraseFailNotice] = useState<string | null>(null);
+
   const {
     hasTimer,
+    hasDuration,
     hasPage,
     hasPhrase,
     countdown,
+    durationCountdown,
+    timerStarted,
+    timerRunning,
     timerDone,
+    startTaskTimer,
+    durationStarted,
+    durationRunning,
+    durationDone,
+    startTaskDuration,
     pageOpened,
-    phraseInput,
-    setPhraseInput,
     phraseDone,
+    phraseChallengeFailed,
+    refreshPhraseChallenge,
     canComplete,
     openPage,
     finishRequirements,
   } = useTaskCompletion(task, completed);
 
   const hasRequirements = taskHasRequirements(task);
+  const needsManualStart = hasTimer || hasDuration;
+  const repeatCount = getPhraseRepeatCount(task);
+  const malusOnFail = task.malusPointsOnFail ?? 0;
+
+  useEffect(() => {
+    if (!completed && !disabled && onStart && !needsManualStart) {
+      onStart();
+    }
+  }, [task.id, completed, disabled, onStart, needsManualStart]);
+
+  useEffect(() => {
+    return () => {
+      if (completed || !hasTimer) return;
+      if (!isTimerComplete(task.id)) {
+        clearTimer(task.id);
+      }
+    };
+  }, [task.id, completed, hasTimer]);
+
+  const handleStartTimer = () => {
+    if (disabled || completed || timerStarted) return;
+    startTaskTimer();
+    onStart?.();
+  };
+
+  const handleStartDuration = () => {
+    if (disabled || completed || durationStarted) return;
+    startTaskDuration();
+    onStart?.();
+  };
+
+  const openPhraseChallenge = () => {
+    if (disabled || completed || phraseDone || phraseChallengeFailed) return;
+    setShowPhraseModal(true);
+  };
 
   const handleToggle = () => {
     if (completed) {
       onUncomplete?.();
+      setPhraseFailNotice(null);
+      return;
+    }
+    if (hasPhrase && !phraseDone && !phraseChallengeFailed) {
+      openPhraseChallenge();
       return;
     }
     if (!canComplete || disabled) return;
@@ -47,14 +106,37 @@ export function TaskCompletionGate({
     onComplete();
   };
 
+  const handlePhrasePassed = () => {
+    refreshPhraseChallenge();
+    setShowPhraseModal(false);
+    setPhraseFailNotice(null);
+  };
+
+  const handlePhraseFailed = (malusPoints: number) => {
+    applyTaskMalus(task.id);
+    refreshPhraseChallenge();
+    setShowPhraseModal(false);
+    const malusText =
+      malusPoints > 0
+        ? `Phrase challenge failed. +${malusPoints} malus applied — this task cannot be completed today.`
+        : 'Phrase challenge failed — this task cannot be completed today.';
+    setPhraseFailNotice(malusText);
+  };
+
   const checkboxDisabled =
     disabled || (!completed && hasRequirements && !canComplete);
 
   const requirementHints: string[] = [];
   if (!completed && hasRequirements) {
-    if (hasTimer && !timerDone) requirementHints.push('Wait for the timer');
+    if (hasTimer && !timerStarted) requirementHints.push('Start the timer');
+    else if (hasTimer && timerRunning) requirementHints.push('Wait for the timer');
+    if (hasDuration && !durationStarted) requirementHints.push('Start the duration');
+    else if (hasDuration && durationRunning)
+      requirementHints.push('Wait for the duration');
     if (hasPage && !pageOpened) requirementHints.push('Open the required page');
-    if (hasPhrase && !phraseDone) requirementHints.push('Type the exact phrase');
+    if (hasPhrase && phraseChallengeFailed)
+      requirementHints.push('Phrase challenge failed');
+    else if (hasPhrase && !phraseDone) requirementHints.push('Complete the phrase challenge');
   }
 
   return (
@@ -71,17 +153,63 @@ export function TaskCompletionGate({
         {children}
       </div>
 
+      {(phraseFailNotice || phraseChallengeFailed) && !completed && (
+        <p className="task-card__phrase-fail" role="alert">
+          {phraseFailNotice ??
+            (malusOnFail > 0
+              ? `Phrase challenge failed. +${malusOnFail} malus applied — this task cannot be completed today.`
+              : 'Phrase challenge failed — this task cannot be completed today.')}
+        </p>
+      )}
+
       {hasRequirements && !completed && (
         <div className="task-gate">
           {hasTimer && (
             <div className="task-gate__block">
               <span className="task-gate__label">Timer</span>
-              {timerDone ? (
+              {!timerStarted ? (
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--small"
+                  onClick={handleStartTimer}
+                  disabled={disabled}
+                >
+                  Start timer
+                </button>
+              ) : timerDone ? (
                 <span className="task-gate__ok">Ready</span>
               ) : (
-                <span className="task-gate__countdown" aria-live="polite">
-                  {countdown}
-                </span>
+                <>
+                  <span className="task-gate__status">Timer running</span>
+                  <span className="task-gate__countdown" aria-live="polite">
+                    {countdown}
+                  </span>
+                </>
+              )}
+            </div>
+          )}
+
+          {hasDuration && (
+            <div className="task-gate__block">
+              <span className="task-gate__label">Duration</span>
+              {!durationStarted ? (
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--small"
+                  onClick={handleStartDuration}
+                  disabled={disabled}
+                >
+                  Start duration
+                </button>
+              ) : durationDone ? (
+                <span className="task-gate__ok">Ready</span>
+              ) : (
+                <>
+                  <span className="task-gate__status">Duration running</span>
+                  <span className="task-gate__countdown" aria-live="polite">
+                    {durationCountdown}
+                  </span>
+                </>
               )}
             </div>
           )}
@@ -100,23 +228,22 @@ export function TaskCompletionGate({
             </div>
           )}
 
-          {hasPhrase && (
-            <div className="task-gate__block task-gate__phrase">
-              <label className="task-gate__label" htmlFor={`phrase-${task.id}`}>
-                Type:{' '}
-                <span className="task-gate__phrase-hint">{task.requiredPhrase}</span>
-              </label>
-              <input
-                id={`phrase-${task.id}`}
-                type="text"
-                className="task-gate__input"
-                value={phraseInput}
-                onChange={(e) => setPhraseInput(e.target.value)}
-                disabled={disabled}
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="Type the phrase exactly"
-              />
+          {hasPhrase && !phraseChallengeFailed && (
+            <div className="task-gate__block">
+              {phraseDone ? (
+                <span className="task-gate__ok">
+                  Phrase complete ({repeatCount}/{repeatCount})
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--small"
+                  onClick={openPhraseChallenge}
+                  disabled={disabled}
+                >
+                  Begin phrase
+                </button>
+              )}
             </div>
           )}
 
@@ -125,6 +252,13 @@ export function TaskCompletionGate({
           )}
         </div>
       )}
+
+      <PhraseChallengeModal
+        task={task}
+        open={showPhraseModal}
+        onPassed={handlePhrasePassed}
+        onFailed={handlePhraseFailed}
+      />
     </>
   );
 }

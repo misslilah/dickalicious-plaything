@@ -11,6 +11,7 @@ import {
 import type {
   AppState,
   Category,
+  PunishmentCategory,
   PunishmentTemplate,
   Reward,
   Session,
@@ -21,6 +22,7 @@ import type {
 } from '../types';
 import {
   deleteCategoryDb,
+  deletePunishmentCategoryDb,
   deletePunishmentTemplateDb,
   deleteRewardDb,
   deleteTaskDb,
@@ -30,6 +32,7 @@ import {
   insertVideoRow,
   type SharedCatalog,
   upsertCategory,
+  upsertPunishmentCategory,
   upsertPunishmentTemplate,
   upsertReward,
   upsertTask,
@@ -43,18 +46,24 @@ import {
   logout as authLogout,
   onAuthStateChange,
   sessionToApp,
+  signUp as authSignUp,
 } from '../lib/auth';
+import { updateProfileLastSeen } from '../lib/profileDb';
+import { fetchCategoryMemberIds, joinCategoryDb } from '../lib/categoryMembersDb';
 import {
+  acceptPunishment,
+  applyTaskMalus,
   closeDay,
   completeTask,
   dismissPunishment,
   ensureDailyPlan,
+  markTaskStarted,
   processDayRollover,
   purchaseReward,
   uncompleteTask,
 } from '../lib/gameLogic';
 import { createInitialState } from '../lib/seed';
-import { isSupabaseConfigured, SUPABASE_SETUP_HINT } from '../lib/supabase';
+import { getSupabase, isSupabaseConfigured, SUPABASE_SETUP_HINT } from '../lib/supabase';
 import { fetchUserProgress, saveUserProgress } from '../lib/userProgressDb';
 import {
   deleteVideoFile,
@@ -75,11 +84,21 @@ interface AppStoreValue {
   supabaseConfigured: boolean;
   lastSaveError: string | null;
   refresh: () => Promise<void>;
+  refreshCatalog: () => Promise<void>;
   refreshPatreonProfile: () => Promise<void>;
   login: (
     emailOrUsername: string,
     password: string,
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  signUp: (
+    email: string,
+    password: string,
+    username: string,
+  ) => Promise<
+    | { ok: true; needsEmailConfirmation?: boolean }
+    | { ok: false; error: string }
+  >;
+  refreshProfile: () => Promise<void>;
   logout: () => Promise<void>;
   changePassword: (
     newPassword: string,
@@ -91,9 +110,13 @@ interface AppStoreValue {
   ) => Promise<MutateResult>;
   completeTask: (taskId: string) => void;
   uncompleteTask: (taskId: string) => void;
+  markTaskStarted: (taskId: string) => void;
   closeDay: () => void;
   purchaseReward: (rewardId: string) => void;
+  acceptPunishment: (templateId: string) => void;
+  applyTaskMalus: (taskId: string) => void;
   dismissPunishment: (id: string) => void;
+  joinCategory: (categoryId: string) => Promise<MutateResult>;
   updateSettings: (partial: Partial<AppState['settings']>) => void;
   updateCategory: (category: Category) => Promise<MutateResult>;
   addCategory: (category: Category) => Promise<MutateResult>;
@@ -104,6 +127,9 @@ interface AppStoreValue {
   addReward: (reward: Reward) => Promise<MutateResult>;
   updateReward: (reward: Reward) => Promise<MutateResult>;
   deleteReward: (id: string) => Promise<MutateResult>;
+  addPunishmentCategory: (category: PunishmentCategory) => Promise<MutateResult>;
+  updatePunishmentCategory: (category: PunishmentCategory) => Promise<MutateResult>;
+  deletePunishmentCategory: (id: string) => Promise<MutateResult>;
   addPunishmentTemplate: (template: PunishmentTemplate) => Promise<MutateResult>;
   updatePunishmentTemplate: (template: PunishmentTemplate) => Promise<MutateResult>;
   deletePunishmentTemplate: (id: string) => Promise<MutateResult>;
@@ -128,6 +154,7 @@ function mergeCatalogIntoState(base: AppState, catalog: SharedCatalog): AppState
     categories: catalog.categories,
     tasks: catalog.tasks,
     rewards: catalog.rewards,
+    punishmentCategories: catalog.punishmentCategories,
     punishmentTemplates: catalog.punishmentTemplates,
     videoCategories: catalog.videoCategories,
     videos: catalog.videos,
@@ -163,9 +190,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     setDataError(null);
 
     try {
-      const [catalogResult, progressResult] = await Promise.all([
+      const [catalogResult, progressResult, membersResult] = await Promise.all([
         fetchSharedCatalog(),
         fetchUserProgress(userId),
+        fetchCategoryMemberIds(userId),
       ]);
 
       if (!catalogResult.ok) {
@@ -176,10 +204,18 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         setDataError(progressResult.error);
         return;
       }
+      if (!membersResult.ok) {
+        setDataError(membersResult.error);
+        return;
+      }
 
       let merged = mergeCatalogIntoState(progressResult.state, catalogResult.catalog);
-      merged = processDayRollover(merged);
-      merged = ensureDailyPlan(merged);
+      merged = {
+        ...merged,
+        joinedCategoryIds: membersResult.categoryIds,
+      };
+      merged = processDayRollover(merged, userId);
+      merged = ensureDailyPlan(merged, undefined, userId);
       setState(merged);
       void persistUserProgress(merged);
     } catch (err) {
@@ -234,12 +270,44 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     await loadAllData(userId);
   }, [loadAllData]);
 
+  const refreshCatalog = useCallback(async () => {
+    const catalogResult = await fetchSharedCatalog();
+    if (catalogResult.ok) {
+      setState((s) =>
+        ensureDailyPlan(
+          mergeCatalogIntoState(s, catalogResult.catalog),
+          undefined,
+          userIdRef.current,
+        ),
+      );
+    }
+  }, []);
+
   const refreshPatreonProfile = useCallback(async () => {
     const current = await getCurrentSession();
     if (current) {
       setSession(sessionToApp(current));
     }
   }, []);
+
+  const refreshProfile = useCallback(async () => {
+    const current = await getCurrentSession();
+    if (current) {
+      setSession(sessionToApp(current));
+    }
+  }, []);
+
+  useEffect(() => {
+    const userId = session?.userId;
+    if (!userId || !isSupabaseConfigured()) return;
+
+    const heartbeat = () => {
+      void updateProfileLastSeen(userId);
+    };
+    heartbeat();
+    const intervalId = window.setInterval(heartbeat, 30_000);
+    return () => window.clearInterval(intervalId);
+  }, [session?.userId]);
 
   const requireAdmin = useCallback((): MutateResult | null => {
     if (session?.role !== 'admin') {
@@ -258,7 +326,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       supabaseConfigured: isSupabaseConfigured(),
       lastSaveError,
       refresh,
+      refreshCatalog,
       refreshPatreonProfile,
+      refreshProfile,
       clearSaveError: () => setLastSaveError(null),
       login: async (emailOrUsername, password) => {
         const result = await authLogin(emailOrUsername, password);
@@ -266,6 +336,25 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         userIdRef.current = result.session.userId;
         setSession(sessionToApp(result.session));
         await loadAllData(result.session.userId);
+        return { ok: true };
+      },
+      signUp: async (email, password, username) => {
+        const result = await authSignUp(email, password, username);
+        if (!result.ok) return result;
+
+        const supabase = getSupabase();
+        const { data } = supabase ? await supabase.auth.getSession() : { data: null };
+        if (!data.session?.user) {
+          return { ok: true, needsEmailConfirmation: true };
+        }
+
+        const current = await getCurrentSession();
+        if (!current) {
+          return { ok: true, needsEmailConfirmation: true };
+        }
+        userIdRef.current = current.userId;
+        setSession(sessionToApp(current));
+        await loadAllData(current.userId);
         return { ok: true };
       },
       logout: async () => {
@@ -280,17 +369,36 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         if (denied) return denied;
         return createUser(username, password, role);
       },
-      completeTask: (taskId) => applyUserState(completeTask(state, taskId)),
+      completeTask: (taskId) =>
+        applyUserState(completeTask(state, taskId, session?.userId ?? null)),
       uncompleteTask: (taskId) => applyUserState(uncompleteTask(state, taskId)),
-      closeDay: () => applyUserState(closeDay(state)),
+      markTaskStarted: (taskId) =>
+        applyUserState(markTaskStarted(state, taskId)),
+      closeDay: () => applyUserState(closeDay(state, session?.userId ?? null)),
       purchaseReward: (rewardId) => applyUserState(purchaseReward(state, rewardId)),
+      acceptPunishment: (templateId) =>
+        applyUserState(acceptPunishment(state, templateId)),
+      applyTaskMalus: (taskId) => applyUserState(applyTaskMalus(state, taskId)),
       dismissPunishment: (id) => applyUserState(dismissPunishment(state, id)),
+      joinCategory: async (categoryId) => {
+        const userId = userIdRef.current;
+        if (!userId) return { ok: false, error: 'Not signed in.' };
+        const result = await joinCategoryDb(userId, categoryId);
+        if (!result.ok) return result;
+        setState((s) => ({
+          ...s,
+          joinedCategoryIds: s.joinedCategoryIds.includes(categoryId)
+            ? s.joinedCategoryIds
+            : [...s.joinedCategoryIds, categoryId],
+        }));
+        return { ok: true };
+      },
       updateSettings: (partial) =>
         applyUserState({ ...state, settings: { ...state.settings, ...partial } }),
       updateCategory: async (category) => {
         const denied = requireAdmin();
         if (denied) return denied;
-        const result = await upsertCategory(category);
+        const result = await upsertCategory(category, 'update');
         if (!result.ok) return result;
         setState((s) => ({
           ...s,
@@ -303,7 +411,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       addCategory: async (category) => {
         const denied = requireAdmin();
         if (denied) return denied;
-        const result = await upsertCategory(category);
+        const result = await upsertCategory(category, 'insert');
         if (!result.ok) return result;
         setState((s) => ({
           ...s,
@@ -328,10 +436,16 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         if (denied) return denied;
         const result = await upsertTask(task);
         if (!result.ok) return result;
-        setState((s) => ({
-          ...s,
-          tasks: s.tasks.map((t) => (t.id === result.task.id ? result.task : t)),
-        }));
+        setState((s) =>
+          ensureDailyPlan(
+            {
+              ...s,
+              tasks: s.tasks.map((t) => (t.id === result.task.id ? result.task : t)),
+            },
+            undefined,
+            userIdRef.current,
+          ),
+        );
         return { ok: true };
       },
       addTask: async (task) => {
@@ -339,7 +453,13 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         if (denied) return denied;
         const result = await upsertTask({ ...task, id: '' });
         if (!result.ok) return result;
-        setState((s) => ({ ...s, tasks: [...s.tasks, result.task] }));
+        setState((s) =>
+          ensureDailyPlan(
+            { ...s, tasks: [...s.tasks, result.task] },
+            undefined,
+            userIdRef.current,
+          ),
+        );
         return { ok: true };
       },
       deleteTask: async (id) => {
@@ -394,15 +514,36 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         }));
         return { ok: true };
       },
+      addPunishmentCategory: async (category) => {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const result = await upsertPunishmentCategory(category, 'insert');
+        if (!result.ok) return result;
+        await refreshCatalog();
+        return { ok: true };
+      },
+      updatePunishmentCategory: async (category) => {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const result = await upsertPunishmentCategory(category, 'update');
+        if (!result.ok) return result;
+        await refreshCatalog();
+        return { ok: true };
+      },
+      deletePunishmentCategory: async (id) => {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const result = await deletePunishmentCategoryDb(id);
+        if (!result.ok) return result;
+        await refreshCatalog();
+        return { ok: true };
+      },
       addPunishmentTemplate: async (template) => {
         const denied = requireAdmin();
         if (denied) return denied;
         const result = await upsertPunishmentTemplate({ ...template, id: '' });
         if (!result.ok) return result;
-        setState((s) => ({
-          ...s,
-          punishmentTemplates: [...s.punishmentTemplates, result.template],
-        }));
+        await refreshCatalog();
         return { ok: true };
       },
       updatePunishmentTemplate: async (template) => {
@@ -410,12 +551,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         if (denied) return denied;
         const result = await upsertPunishmentTemplate(template);
         if (!result.ok) return result;
-        setState((s) => ({
-          ...s,
-          punishmentTemplates: s.punishmentTemplates.map((t) =>
-            t.id === result.template.id ? result.template : t,
-          ),
-        }));
+        await refreshCatalog();
         return { ok: true };
       },
       deletePunishmentTemplate: async (id) => {
@@ -423,10 +559,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         if (denied) return denied;
         const result = await deletePunishmentTemplateDb(id);
         if (!result.ok) return result;
-        setState((s) => ({
-          ...s,
-          punishmentTemplates: s.punishmentTemplates.filter((t) => t.id !== id),
-        }));
+        await refreshCatalog();
         return { ok: true };
       },
       addVideoCategory: async (category) => {
@@ -515,7 +648,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         if (catalogResult.ok) {
           next = mergeCatalogIntoState(fresh, catalogResult.catalog);
         }
-        next = ensureDailyPlan(next);
+        next = ensureDailyPlan(next, undefined, userId);
+        const membersResult = await fetchCategoryMemberIds(userId);
+        if (membersResult.ok) {
+          next = { ...next, joinedCategoryIds: membersResult.categoryIds };
+        }
         setState(next);
         const save = await saveUserProgress(userId, next);
         if (!save.ok) return save;
@@ -530,7 +667,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       dataError,
       lastSaveError,
       refresh,
+      refreshCatalog,
       refreshPatreonProfile,
+      refreshProfile,
       loadAllData,
       applyUserState,
       requireAdmin,

@@ -1,12 +1,16 @@
+import type { TaskUserStage, UserStage } from './levels';
 import type {
   Category,
   ContentTier,
+  PunishmentCategory,
+  PunishmentDifficulty,
   PunishmentTemplate,
   PunishmentTrigger,
   Reward,
   RewardTrigger,
   Task,
   TaskFrequency,
+  TaskScope,
   Video,
   VideoCategory,
 } from '../types';
@@ -16,6 +20,7 @@ export interface SharedCatalog {
   categories: Category[];
   tasks: Task[];
   rewards: Reward[];
+  punishmentCategories: PunishmentCategory[];
   punishmentTemplates: PunishmentTemplate[];
   videoCategories: VideoCategory[];
   videos: Video[];
@@ -29,20 +34,26 @@ type DbCategory = {
   icon: string;
   image_url: string | null;
   sort_order: number;
+  required_stage: UserStage | null;
 };
 
 type DbTask = {
   id: string;
-  category_id: string;
+  category_id: string | null;
+  task_scope: TaskScope;
+  assigned_user_id: string | null;
   title: string;
   description: string;
-  min_level: number;
+  user_stage: TaskUserStage;
   xp_reward: number;
   frequency: TaskFrequency;
   duration_minutes: number | null;
   timer_seconds: number | null;
+  duration_seconds: number | null;
   open_url: string | null;
   required_phrase: string | null;
+  required_phrase_repeat_count: number;
+  malus_points_on_fail: number;
 };
 
 type DbReward = {
@@ -56,12 +67,24 @@ type DbReward = {
   level_required: number | null;
 };
 
+type DbPunishmentCategory = {
+  id: string;
+  name: string;
+  description: string | null;
+  sort_order: number;
+  difficulty: string | null;
+  image_url: string | null;
+};
+
 type DbPunishmentTemplate = {
   id: string;
   title: string;
   description: string;
   trigger_type: PunishmentTrigger['type'];
   points_lost: number;
+  difficulty: PunishmentDifficulty | null;
+  malus_points_relieved: number;
+  punishment_category_id: string | null;
 };
 
 type DbVideoCategory = {
@@ -93,22 +116,31 @@ function mapCategory(row: DbCategory): Category {
     color: row.color,
     icon: row.icon,
     imageUrl: row.image_url ?? undefined,
+    requiredStage: row.required_stage ?? null,
   };
 }
 
 function mapTask(row: DbTask): Task {
+  const taskScope = row.task_scope ?? 'category';
   return {
     id: row.id,
-    categoryId: row.category_id,
+    taskScope,
+    categoryId: row.category_id ?? null,
+    assignedUserId: row.assigned_user_id ?? null,
     title: row.title,
     description: row.description,
-    minLevel: row.min_level,
+    userStage: row.user_stage ?? 'any',
     xpReward: row.xp_reward,
     frequency: row.frequency,
     durationMinutes: row.duration_minutes ?? undefined,
     timerSeconds: row.timer_seconds ?? undefined,
+    durationSeconds: row.duration_seconds ?? undefined,
     openUrl: row.open_url ?? undefined,
-    requiredPhrase: row.required_phrase ?? undefined,
+    requiredPhrase: row.required_phrase?.trim() || undefined,
+    requiredPhraseRepeatCount: row.required_phrase?.trim()
+      ? Math.max(1, row.required_phrase_repeat_count ?? 1)
+      : 1,
+    malusPointsOnFail: row.malus_points_on_fail ?? 0,
   };
 }
 
@@ -132,12 +164,36 @@ function mapReward(row: DbReward): Reward {
   };
 }
 
+function mapPunishmentCategory(row: DbPunishmentCategory): PunishmentCategory {
+  const difficultyRaw = row.difficulty?.toLowerCase();
+  const difficulty =
+    difficultyRaw === 'easy' || difficultyRaw === 'medium' || difficultyRaw === 'hard'
+      ? difficultyRaw
+      : undefined;
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description ?? undefined,
+    sortOrder: row.sort_order ?? 0,
+    difficulty,
+    imageUrl: row.image_url ?? undefined,
+  };
+}
+
 function mapPunishmentTemplate(row: DbPunishmentTemplate): PunishmentTemplate {
+  const triggerType = row.trigger_type;
+  const trigger: PunishmentTrigger =
+    triggerType === 'malus_relief'
+      ? { type: 'malus_relief' }
+      : ({ type: triggerType } as PunishmentTrigger);
   return {
     id: row.id,
     title: row.title,
     description: row.description,
-    trigger: { type: row.trigger_type } as PunishmentTrigger,
+    trigger,
+    categoryId: row.punishment_category_id ?? null,
+    difficulty: row.difficulty ?? undefined,
+    malusPointsRelieved: row.malus_points_relieved ?? row.points_lost ?? 0,
     pointsLost: row.points_lost,
   };
 }
@@ -195,6 +251,7 @@ export async function fetchSharedCatalog(): Promise<
     categoriesRes,
     tasksRes,
     rewardsRes,
+    punishmentCategoriesRes,
     punishmentsRes,
     videoCategoriesRes,
     videosRes,
@@ -202,6 +259,7 @@ export async function fetchSharedCatalog(): Promise<
     supabase.from('categories').select('*').order('sort_order'),
     supabase.from('tasks').select('*').order('created_at'),
     supabase.from('rewards').select('*').order('created_at'),
+    supabase.from('punishment_categories').select('*').order('sort_order'),
     supabase.from('punishment_templates').select('*').order('created_at'),
     supabase.from('video_categories').select('*').order('sort_order'),
     supabase.from('videos').select('*').order('created_at', { ascending: false }),
@@ -211,6 +269,7 @@ export async function fetchSharedCatalog(): Promise<
     categoriesRes.error ??
     tasksRes.error ??
     rewardsRes.error ??
+    punishmentCategoriesRes.error ??
     punishmentsRes.error ??
     videoCategoriesRes.error ??
     videosRes.error;
@@ -225,6 +284,9 @@ export async function fetchSharedCatalog(): Promise<
       categories: (categoriesRes.data as DbCategory[]).map(mapCategory),
       tasks: (tasksRes.data as DbTask[]).map(mapTask),
       rewards: (rewardsRes.data as DbReward[]).map(mapReward),
+      punishmentCategories: (punishmentCategoriesRes.data as DbPunishmentCategory[]).map(
+        mapPunishmentCategory,
+      ),
       punishmentTemplates: (punishmentsRes.data as DbPunishmentTemplate[]).map(
         mapPunishmentTemplate,
       ),
@@ -238,22 +300,49 @@ export async function fetchSharedCatalog(): Promise<
 
 export async function upsertCategory(
   category: Category,
+  mode: 'insert' | 'update',
 ): Promise<{ ok: true; category: Category } | { ok: false; error: string }> {
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
 
   const row = {
-    id: category.id || undefined,
     name: category.name,
     description: category.description,
     color: category.color,
     icon: category.icon,
     image_url: category.imageUrl ?? null,
+    required_stage: category.requiredStage ?? null,
   };
 
-  const { data, error } = category.id
-    ? await supabase.from('categories').update(row).eq('id', category.id).select().single()
-    : await supabase.from('categories').insert(row).select().single();
+  if (mode === 'update') {
+    if (!category.id) {
+      return { ok: false, error: 'Category id is required for update.' };
+    }
+    const { data, error } = await supabase
+      .from('categories')
+      .update(row)
+      .eq('id', category.id)
+      .select('*')
+      .maybeSingle();
+    if (error) return { ok: false, error: error.message };
+    if (!data) {
+      return {
+        ok: false,
+        error: 'Category not found or update returned no row.',
+      };
+    }
+    return { ok: true, category: mapCategory(data as DbCategory) };
+  }
+
+  const insertRow = {
+    ...row,
+    id: category.id || undefined,
+  };
+  const { data, error } = await supabase
+    .from('categories')
+    .insert(insertRow)
+    .select('*')
+    .single();
 
   if (error || !data) return { ok: false, error: error?.message ?? 'Save failed.' };
   return { ok: true, category: mapCategory(data as DbCategory) };
@@ -275,18 +364,29 @@ export async function upsertTask(
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
 
+  const taskScope = task.taskScope ?? 'category';
+  const requiredPhrase = task.requiredPhrase?.trim() || null;
   const row = {
     id: task.id || undefined,
-    category_id: task.categoryId,
+    task_scope: taskScope,
+    category_id: taskScope === 'category' ? task.categoryId ?? null : null,
+    ...(taskScope === 'custom'
+      ? { assigned_user_id: task.assignedUserId ?? null }
+      : {}),
     title: task.title,
     description: task.description,
-    min_level: task.minLevel,
+    user_stage: task.userStage ?? 'any',
     xp_reward: task.xpReward,
     frequency: task.frequency,
     duration_minutes: task.durationMinutes ?? null,
     timer_seconds: task.timerSeconds ?? null,
+    duration_seconds: task.durationSeconds ?? null,
     open_url: task.openUrl?.trim() || null,
-    required_phrase: task.requiredPhrase?.trim() || null,
+    required_phrase: requiredPhrase,
+    required_phrase_repeat_count: requiredPhrase
+      ? Math.max(1, task.requiredPhraseRepeatCount ?? 1)
+      : 1,
+    malus_points_on_fail: task.malusPointsOnFail ?? 0,
   };
 
   const { data, error } = task.id
@@ -345,7 +445,10 @@ export async function upsertPunishmentTemplate(
     title: template.title,
     description: template.description,
     trigger_type: template.trigger.type,
-    points_lost: template.pointsLost,
+    points_lost: template.pointsLost ?? 0,
+    difficulty: template.difficulty ?? null,
+    malus_points_relieved: template.malusPointsRelieved ?? 0,
+    punishment_category_id: template.categoryId ?? null,
   };
 
   const { data, error } = template.id
@@ -367,6 +470,67 @@ export async function deletePunishmentTemplateDb(
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
   const { error } = await supabase.from('punishment_templates').delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function upsertPunishmentCategory(
+  category: PunishmentCategory,
+  mode: 'insert' | 'update',
+): Promise<
+  { ok: true; category: PunishmentCategory } | { ok: false; error: string }
+> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const row = {
+    name: category.name,
+    description: category.description ?? null,
+    sort_order: category.sortOrder ?? 0,
+    difficulty: category.difficulty ?? 'medium',
+    image_url: category.imageUrl ?? null,
+  };
+
+  if (mode === 'update') {
+    if (!category.id) {
+      return { ok: false, error: 'Category id is required for update.' };
+    }
+    const { data, error } = await supabase
+      .from('punishment_categories')
+      .update(row)
+      .eq('id', category.id)
+      .select('*')
+      .maybeSingle();
+    if (error) return { ok: false, error: error.message };
+    if (!data) {
+      return {
+        ok: false,
+        error: 'Category not found or update returned no row.',
+      };
+    }
+    return { ok: true, category: mapPunishmentCategory(data as DbPunishmentCategory) };
+  }
+
+  const insertRow = {
+    ...row,
+    id: category.id || undefined,
+  };
+  const { data, error } = await supabase
+    .from('punishment_categories')
+    .insert(insertRow)
+    .select('*')
+    .single();
+
+  if (error || !data) return { ok: false, error: error?.message ?? 'Save failed.' };
+  return { ok: true, category: mapPunishmentCategory(data as DbPunishmentCategory) };
+}
+
+export async function deletePunishmentCategoryDb(
+  id: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+  const { error } = await supabase.from('punishment_categories').delete().eq('id', id);
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }
