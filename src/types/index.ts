@@ -50,6 +50,8 @@ export interface Task {
   /** Who this task is for; `any` = all users. */
   userStage?: TaskUserStage;
   xpReward: number;
+  /** Spendable points earned when the task is completed (Rewards shop). */
+  pointsReward?: number;
   frequency: TaskFrequency;
   durationMinutes?: number;
   /** Session countdown; resets if the player leaves the task page before completing. */
@@ -102,6 +104,16 @@ export interface Reward {
   autoTrigger?: RewardTrigger;
   earnedAt?: string;
   purchased?: boolean;
+}
+
+/** Profile badge with image (admin catalog). */
+export interface Badge {
+  id: string;
+  title: string;
+  description: string;
+  imageUrl?: string;
+  isSecret: boolean;
+  sortOrder: number;
 }
 
 export type PunishmentTrigger =
@@ -185,11 +197,13 @@ export interface AppState {
   progress: UserProgress;
   dailyPlans: Record<string, DailyPlan>;
   rewards: Reward[];
+  badges: Badge[];
   punishmentCategories: PunishmentCategory[];
   punishmentTemplates: PunishmentTemplate[];
   punishments: Punishment[];
   settings: AppSettings;
   unlockedRewardIds: string[];
+  unlockedBadgeIds: string[];
   /** Category IDs the signed-in user has joined. */
   joinedCategoryIds: string[];
   version: number;

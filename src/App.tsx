@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AdminRoute } from './components/AdminRoute';
 import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { SoapBubbleField } from './components/SoapBubbleField';
 import { AppStoreProvider } from './hooks/useAppStore';
 import { Admin } from './pages/Admin';
 import { CategoryDetail } from './pages/CategoryDetail';
@@ -19,6 +20,7 @@ export default function App() {
   return (
     <AppStoreProvider>
       <BrowserRouter>
+        <SoapBubbleField />
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route element={<ProtectedRoute />}>

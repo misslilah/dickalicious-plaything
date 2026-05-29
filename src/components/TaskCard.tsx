@@ -77,6 +77,9 @@ function TaskCardBody({
           <span>{Math.ceil(task.durationSeconds / 60)} min duration</span>
         )}
         {showXp && <span className="task-card__xp">+{task.xpReward} XP</span>}
+        {(task.pointsReward ?? 0) > 0 && (
+          <span className="task-card__xp">+{task.pointsReward} pts</span>
+        )}
       </div>
       {requirementBadges.length > 0 && !interactive && (
         <p className="task-card__req-badges muted">

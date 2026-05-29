@@ -1,5 +1,6 @@
 import type { TaskUserStage, UserStage } from './levels';
 import type {
+  Badge,
   Category,
   ContentTier,
   PunishmentCategory,
@@ -14,12 +15,14 @@ import type {
   Video,
   VideoCategory,
 } from '../types';
+import { fetchBadges } from './badgeDb';
 import { getSupabase } from './supabase';
 
 export interface SharedCatalog {
   categories: Category[];
   tasks: Task[];
   rewards: Reward[];
+  badges: Badge[];
   punishmentCategories: PunishmentCategory[];
   punishmentTemplates: PunishmentTemplate[];
   videoCategories: VideoCategory[];
@@ -54,6 +57,7 @@ type DbTask = {
   required_phrase: string | null;
   required_phrase_repeat_count: number;
   malus_points_on_fail: number;
+  points_reward: number;
 };
 
 type DbReward = {
@@ -141,6 +145,7 @@ function mapTask(row: DbTask): Task {
       ? Math.max(1, row.required_phrase_repeat_count ?? 1)
       : 1,
     malusPointsOnFail: row.malus_points_on_fail ?? 0,
+    pointsReward: row.points_reward ?? 0,
   };
 }
 
@@ -251,6 +256,7 @@ export async function fetchSharedCatalog(): Promise<
     categoriesRes,
     tasksRes,
     rewardsRes,
+    badgesResult,
     punishmentCategoriesRes,
     punishmentsRes,
     videoCategoriesRes,
@@ -259,11 +265,16 @@ export async function fetchSharedCatalog(): Promise<
     supabase.from('categories').select('*').order('sort_order'),
     supabase.from('tasks').select('*').order('created_at'),
     supabase.from('rewards').select('*').order('created_at'),
+    fetchBadges(),
     supabase.from('punishment_categories').select('*').order('sort_order'),
     supabase.from('punishment_templates').select('*').order('created_at'),
     supabase.from('video_categories').select('*').order('sort_order'),
     supabase.from('videos').select('*').order('created_at', { ascending: false }),
   ]);
+
+  if (!badgesResult.ok) {
+    return { ok: false, error: badgesResult.error };
+  }
 
   const firstError =
     categoriesRes.error ??
@@ -284,6 +295,7 @@ export async function fetchSharedCatalog(): Promise<
       categories: (categoriesRes.data as DbCategory[]).map(mapCategory),
       tasks: (tasksRes.data as DbTask[]).map(mapTask),
       rewards: (rewardsRes.data as DbReward[]).map(mapReward),
+      badges: badgesResult.badges,
       punishmentCategories: (punishmentCategoriesRes.data as DbPunishmentCategory[]).map(
         mapPunishmentCategory,
       ),
@@ -387,6 +399,7 @@ export async function upsertTask(
       ? Math.max(1, task.requiredPhraseRepeatCount ?? 1)
       : 1,
     malus_points_on_fail: task.malusPointsOnFail ?? 0,
+    points_reward: task.pointsReward ?? 0,
   };
 
   const { data, error } = task.id

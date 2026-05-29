@@ -71,11 +71,13 @@ export function createInitialState(): AppState {
     },
     dailyPlans: {},
     rewards: [],
+    badges: [],
     punishmentCategories: [...DEFAULT_PUNISHMENT_CATEGORIES],
     punishmentTemplates: [...DEFAULT_PUNISHMENT_TEMPLATES],
     punishments: [],
     settings: {},
     unlockedRewardIds: [],
+    unlockedBadgeIds: [],
     joinedCategoryIds: [],
     version: 7,
   };

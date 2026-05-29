@@ -201,7 +201,7 @@ export function completeTask(
       : t,
   );
 
-  const pointsGain = Math.max(5, Math.floor(task.xpReward / 2));
+  const pointsGain = task.pointsReward ?? 0;
   let progress = {
     ...next.progress,
     totalXp: next.progress.totalXp + task.xpReward,
@@ -239,7 +239,7 @@ export function uncompleteTask(state: AppState, taskId: string): AppState {
       : t,
   );
 
-  const pointsLoss = Math.max(5, Math.floor(task.xpReward / 2));
+  const pointsLoss = task.pointsReward ?? 0;
 
   return {
     ...state,

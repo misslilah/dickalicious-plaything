@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type {
+  Badge,
   Category,
   ContentTier,
   PatreonMemberTier,
   PatreonStatus,
+  PunishmentDifficulty,
+  PunishmentTemplate,
+  PunishmentTrigger,
   Reward,
   RewardTrigger,
   Task,
@@ -13,6 +17,12 @@ import type {
   Video,
   VideoCategory,
 } from '../types';
+import {
+  isBadgeImagePreview,
+  MAX_BADGE_IMAGE_BYTES,
+  readBadgeImageFile,
+  resolveBadgeImageUrl,
+} from '../lib/badgeImage';
 import {
   fetchAdminProfiles,
   updateProfilePatreon,
@@ -144,7 +154,7 @@ export function Admin() {
         >
           {section === 'categories' && <CategoryAdmin />}
           {section === 'tasks' && <TaskAdmin />}
-          {section === 'rewards' && <RewardAdmin />}
+          {section === 'rewards' && <RewardsAdmin />}
           {section === 'punishments' && <PunishmentsAdminLink />}
           {section === 'users' && <UserAdmin />}
           {section === 'videos' && <VideosAdmin />}
@@ -775,6 +785,7 @@ function emptyTaskDraft(categoryId: string): Task {
     assignedUserId: null,
     userStage: 'any',
     xpReward: 10,
+    pointsReward: 0,
     frequency: 'daily',
     malusPointsOnFail: 0,
   };
@@ -911,7 +922,7 @@ function TaskAdmin() {
               key={t.id}
               selected={draft.id === t.id}
               title={t.title}
-              meta={`${TASK_SCOPE_LABELS[t.taskScope ?? 'category']}${(t.taskScope ?? 'category') === 'category' ? ` · ${categoryName(t.categoryId)}` : ''}${(t.taskScope ?? 'category') === 'custom' ? ` · ${profileName(t.assignedUserId)}` : ''} · ${getStageLabel(t.userStage ?? 'any')} · ${t.xpReward} XP · malus ${t.malusPointsOnFail ?? 0} · ${t.frequency}${t.timerSeconds ? ` · timer ${t.timerSeconds}s` : ''}${t.durationSeconds ? ` · duration ${t.durationSeconds}s` : ''}${t.openUrl ? ' · URL' : ''}${t.requiredPhrase ? ` · phrase${(t.requiredPhraseRepeatCount ?? 1) > 1 ? ` ×${t.requiredPhraseRepeatCount}` : ''}` : ''}`}
+              meta={`${TASK_SCOPE_LABELS[t.taskScope ?? 'category']}${(t.taskScope ?? 'category') === 'category' ? ` · ${categoryName(t.categoryId)}` : ''}${(t.taskScope ?? 'category') === 'custom' ? ` · ${profileName(t.assignedUserId)}` : ''} · ${getStageLabel(t.userStage ?? 'any')} · ${t.xpReward} XP · ${t.pointsReward ?? 0} pts · malus ${t.malusPointsOnFail ?? 0} · ${t.frequency}${t.timerSeconds ? ` · timer ${t.timerSeconds}s` : ''}${t.durationSeconds ? ` · duration ${t.durationSeconds}s` : ''}${t.openUrl ? ' · URL' : ''}${t.requiredPhrase ? ` · phrase${(t.requiredPhraseRepeatCount ?? 1) > 1 ? ` ×${t.requiredPhraseRepeatCount}` : ''}` : ''}`}
               onEdit={() => {
                 setDraft(t);
                 setErrors({});
@@ -1055,6 +1066,21 @@ function TaskAdmin() {
             value={draft.xpReward}
             onChange={(e) =>
               setDraft({ ...draft, xpReward: Number(e.target.value) })
+            }
+          />
+        </Field>
+        <Field
+          label="Points reward"
+          htmlFor="task-points-reward"
+          hint="Earned when task is completed; spend in Rewards shop"
+        >
+          <input
+            id="task-points-reward"
+            type="number"
+            min={0}
+            value={draft.pointsReward ?? 0}
+            onChange={(e) =>
+              setDraft({ ...draft, pointsReward: Number(e.target.value) })
             }
           />
         </Field>
@@ -1284,6 +1310,272 @@ function TaskAdmin() {
   return <AdminSection list={list} form={form} />;
 }
 
+type RewardsTab = 'catalog' | 'badges';
+
+function RewardsAdmin() {
+  const [tab, setTab] = useState<RewardsTab>('catalog');
+
+  return (
+    <div className="admin-rewards">
+      <div className="admin-subnav">
+        <ChoiceRow
+          label="Rewards section"
+          name="rewards-tab"
+          options={[
+            {
+              value: 'catalog' as const,
+              label: 'Shop & auto',
+              hint: 'Points shop and streak/level badges',
+            },
+            {
+              value: 'badges' as const,
+              label: 'Profile badges',
+              hint: 'Image badges on profile',
+            },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
+      </div>
+      {tab === 'catalog' ? <RewardCatalogAdmin /> : <BadgeAdmin />}
+    </div>
+  );
+}
+
+function emptyBadgeDraft(): Badge {
+  return {
+    id: '',
+    title: '',
+    description: '',
+    isSecret: false,
+    sortOrder: 0,
+  };
+}
+
+function BadgeAdmin() {
+  const { state, addBadge, updateBadge, deleteBadge } = useAppStore();
+  const [draft, setDraft] = useState<Badge>(emptyBadgeDraft());
+  const [search, setSearch] = useState('');
+  const [message, setMessage] = useState('');
+  const [imageMessage, setImageMessage] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const imagePreview = isBadgeImagePreview(draft.imageUrl) ? draft.imageUrl : null;
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return state.badges;
+    return state.badges.filter(
+      (b) =>
+        b.title.toLowerCase().includes(q) ||
+        b.description.toLowerCase().includes(q),
+    );
+  }, [state.badges, search]);
+
+  const loadDraft = (badge: Badge) => {
+    setDraft(badge);
+    setErrors({});
+    setImageMessage('');
+  };
+
+  const validate = () => {
+    const next: Record<string, string> = {};
+    if (!draft.title.trim()) next.title = 'Title is required.';
+    if (!draft.description.trim()) next.description = 'Description is required.';
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  };
+
+  const clearForm = () => {
+    setDraft(emptyBadgeDraft());
+    setErrors({});
+    setImageMessage('');
+  };
+
+  const submit = async () => {
+    if (!validate()) return;
+    setMessage('');
+    setImageMessage('');
+
+    const badgeId = draft.id || crypto.randomUUID();
+    const resolved = await resolveBadgeImageUrl(badgeId, draft.imageUrl);
+    if (!resolved.ok) {
+      setImageMessage(resolved.error);
+      return;
+    }
+
+    const badge: Badge = {
+      ...draft,
+      id: badgeId,
+      title: draft.title.trim(),
+      description: draft.description.trim(),
+      imageUrl: resolved.url,
+    };
+
+    const result = draft.id ? await updateBadge(badge) : await addBadge(badge);
+    if (!result.ok) {
+      setMessage(result.error);
+      return;
+    }
+    clearForm();
+    setMessage('Badge saved.');
+  };
+
+  const remove = async (id: string) => {
+    if (!window.confirm('Delete this badge from the catalog?')) return;
+    const result = await deleteBadge(id);
+    if (!result.ok) {
+      setMessage(result.error);
+      return;
+    }
+    if (draft.id === id) clearForm();
+    setMessage('Badge deleted.');
+  };
+
+  const list = (
+    <AdminListCard
+      title="Profile badges"
+      count={filtered.length}
+      intro="Small image badges shown on the profile. Locked badges are grayscale; secret badges hide how to unlock."
+      search={search}
+      onSearchChange={setSearch}
+    >
+      {filtered.length === 0 ? (
+        <AdminEmpty
+          title={search ? 'No matches' : 'No profile badges yet'}
+          hint={
+            search
+              ? 'Try a different search term.'
+              : 'Create badges with an image and unlock description below.'
+          }
+        />
+      ) : (
+        <ul className="admin-library">
+          {filtered.map((b) => (
+            <AdminLibraryItem
+              key={b.id}
+              selected={draft.id === b.id}
+              title={b.title}
+              meta={
+                b.isSecret
+                  ? 'Secret · Profile badge'
+                  : 'Profile badge'
+              }
+              onEdit={() => loadDraft(b)}
+              onDelete={() => remove(b.id)}
+            />
+          ))}
+        </ul>
+      )}
+    </AdminListCard>
+  );
+
+  const form = (
+    <section className="card">
+      <h3 className="section-title">{draft.id ? 'Edit badge' : 'New badge'}</h3>
+      <StatusMessage message={message} />
+
+      <FormBlock title="Basics">
+        <Field label="Title" htmlFor="badge-title" required error={errors.title}>
+          <input
+            id="badge-title"
+            value={draft.title}
+            onChange={(e) => {
+              setDraft({ ...draft, title: e.target.value });
+              if (errors.title) setErrors((p) => ({ ...p, title: '' }));
+            }}
+          />
+        </Field>
+        <Field
+          label="How to obtain"
+          htmlFor="badge-desc"
+          hint="Shown on hover when the badge is locked (unless secret)."
+          required
+          error={errors.description}
+        >
+          <textarea
+            id="badge-desc"
+            rows={3}
+            value={draft.description}
+            onChange={(e) => {
+              setDraft({ ...draft, description: e.target.value });
+              if (errors.description) setErrors((p) => ({ ...p, description: '' }));
+            }}
+          />
+        </Field>
+        <Field label="Sort order" htmlFor="badge-sort">
+          <input
+            id="badge-sort"
+            type="number"
+            value={draft.sortOrder}
+            onChange={(e) =>
+              setDraft({ ...draft, sortOrder: Number(e.target.value) || 0 })
+            }
+          />
+        </Field>
+        <Field label="Secret badge">
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={draft.isSecret}
+              onChange={(e) => setDraft({ ...draft, isSecret: e.target.checked })}
+            />
+            <span>Hide unlock hint (hover shows ???)</span>
+          </label>
+        </Field>
+      </FormBlock>
+
+      <FormBlock title="Image">
+        <Field
+          label="Badge image"
+          hint={`Square image recommended (~64px display). Max ${Math.round(MAX_BADGE_IMAGE_BYTES / 1024)} KB. Uploads to badge-images bucket.`}
+        >
+          {imageMessage && <StatusMessage message={imageMessage} variant="err" />}
+          <CategoryImagePicker
+            idPrefix="badge"
+            compact
+            previewAlt="Badge image preview"
+            readImageFile={readBadgeImageFile}
+            previewUrl={imagePreview}
+            urlValue={draft.imageUrl?.startsWith('http') ? draft.imageUrl : ''}
+            onUrlChange={(value) => {
+              setImageMessage('');
+              const trimmed = value.trim();
+              if (trimmed) {
+                setDraft({ ...draft, imageUrl: trimmed });
+              } else {
+                setDraft({
+                  ...draft,
+                  imageUrl: draft.imageUrl?.startsWith('data:')
+                    ? draft.imageUrl
+                    : undefined,
+                });
+              }
+            }}
+            onFileSelect={(dataUrl) => {
+              setImageMessage('');
+              setDraft({ ...draft, imageUrl: dataUrl });
+            }}
+            onFileError={setImageMessage}
+          />
+        </Field>
+      </FormBlock>
+
+      <FormActions
+        editing={!!draft.id}
+        entityLabel="badge"
+        onSubmit={submit}
+        onClear={() => {
+          clearForm();
+          setMessage('');
+        }}
+      />
+    </section>
+  );
+
+  return <AdminSection list={list} form={form} />;
+}
+
 type RewardKind = 'shop' | 'badge';
 type BadgeUnlock = 'streak' | 'level';
 
@@ -1296,7 +1588,7 @@ function emptyRewardDraft(): Reward {
   };
 }
 
-function RewardAdmin() {
+function RewardCatalogAdmin() {
   const { state, addReward, updateReward, deleteReward } = useAppStore();
   const [draft, setDraft] = useState<Reward>(emptyRewardDraft());
   const [kind, setKind] = useState<RewardKind>('shop');

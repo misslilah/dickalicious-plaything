@@ -11,10 +11,12 @@ Progressive web app (PWA) for gamified task tracking. **Shared catalog data** (c
 ## 1. Supabase project
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. Open **SQL Editor** and run migrations **in numeric order** (001 → 012), then storage:
-   - `supabase/migrations/001_initial.sql` through `012_task_duration.sql`
-   - `supabase/storage_setup.sql`
+2. Open **SQL Editor** and run migrations **in numeric order** (001 → 018), then storage:
+   - `supabase/migrations/001_initial.sql` through `018_badge_images_storage.sql`
+   - `supabase/storage_setup.sql` (creates `videos`, `category-images`, and `badge-images` buckets + policies)
    - If the app errors on missing columns (e.g. `assigned_user_id` on `tasks`), run `011_tasks_columns_fix.sql` alone — it is idempotent.
+   - **Profile badges** (Admin → Profile badges, Profile page): require `016_badges.sql`. If you see `Could not find the table 'public.badges'`, paste and run `017_badges_fix.sql` in the SQL Editor (same content, fully idempotent).
+   - **Badge image uploads** (`Bucket not found`): run `018_badge_images_storage.sql` in the SQL Editor (idempotent), or re-run `storage_setup.sql` if you have not added the `badge-images` bucket yet.
    - After SQL changes, PostgREST usually refreshes the schema cache automatically; if inserts still fail, wait a minute or reload the project in the Supabase dashboard (**Settings → API**).
 3. Under **Authentication → Providers**, enable Email. For production, disable public sign-ups and create users from the Dashboard or Admin panel.
 4. Create the first admin:
@@ -54,9 +56,9 @@ Open the URL shown (usually `http://localhost:5173`). Sign in with the admin ema
 
 | Data | Location |
 |------|----------|
-| Categories, tasks, rewards, punishment templates, video categories, video metadata | Supabase Postgres (shared) |
-| Video files, category images | Supabase Storage buckets `videos`, `category-images` |
-| XP, level, streak, points, daily plans, settings, active punishments, unlocked rewards | Supabase `user_progress` (per user) |
+| Categories, tasks, rewards, punishment templates, video categories, video metadata, profile badges | Supabase Postgres (shared) |
+| Video files, category images, badge images | Supabase Storage buckets `videos`, `category-images`, `badge-images` |
+| XP, level, streak, points, daily plans, settings, active punishments, unlocked rewards, unlocked profile badges | Supabase `user_progress` / `user_badges` (per user) |
 | Auth session | Supabase Auth (browser session) |
 | Online users list (Home) | Supabase Realtime **Presence** on channel `room:online-users` (ephemeral; not stored in Postgres) |
 | `profiles.last_seen_at` | Optional DB fallback written once per login (not used for the live list) |
@@ -182,6 +184,9 @@ npm run build
 | `supabase/migrations/003`–`010` | Tier fixes, task requirements, scope, malus, punishments |
 | `supabase/migrations/011_tasks_columns_fix.sql` | Idempotent repair if `tasks` columns from 004–007 were never applied |
 | `supabase/migrations/012_task_duration.sql` | `duration_seconds` — persistent countdown (vs session `timer_seconds`) |
+| `supabase/migrations/013`–`015` | Phrase repeat count, profiles presence, task points reward |
+| `supabase/migrations/016_badges.sql` | Profile badge catalog + `user_badges` unlocks (required for badges UI) |
+| `supabase/migrations/017_badges_fix.sql` | Idempotent repair if `016` was never run (paste in SQL Editor) |
 | `supabase/storage_setup.sql` | Storage buckets and policies |
 | `supabase/functions/patreon-*` | OAuth + webhook Edge Functions |
 

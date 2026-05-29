@@ -101,6 +101,7 @@ export function CategoryDetail() {
     assignedUserId: null,
     userStage: 'any',
     xpReward: 10,
+    pointsReward: 0,
     frequency: 'daily',
     malusPointsOnFail: 0,
   });
@@ -196,6 +197,7 @@ export function CategoryDetail() {
       assignedUserId: null,
       userStage: 'any',
       xpReward: 10,
+      pointsReward: 0,
       frequency: 'daily',
       malusPointsOnFail: 0,
     });
@@ -215,6 +217,7 @@ export function CategoryDetail() {
         assignedUserId: null,
         userStage: 'any',
         xpReward: 10,
+        pointsReward: 0,
         frequency: 'daily',
         malusPointsOnFail: 0,
       });
@@ -491,6 +494,17 @@ export function CategoryDetail() {
                 value={taskDraft.xpReward}
                 onChange={(e) =>
                   setTaskDraft({ ...taskDraft, xpReward: Number(e.target.value) })
+                }
+              />
+              <input
+                type="number"
+                min={0}
+                aria-label="Points reward"
+                placeholder="Points reward (shop)"
+                title="Earned when task is completed; spend in Rewards shop"
+                value={taskDraft.pointsReward ?? 0}
+                onChange={(e) =>
+                  setTaskDraft({ ...taskDraft, pointsReward: Number(e.target.value) })
                 }
               />
               <input

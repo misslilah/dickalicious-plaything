@@ -83,3 +83,17 @@ alter table public.tasks
 
 alter table public.tasks
   alter column malus_points_on_fail set not null;
+
+-- 015 — shop points earned on task completion
+alter table public.tasks
+  add column if not exists points_reward int;
+
+update public.tasks
+set points_reward = 0
+where points_reward is null;
+
+alter table public.tasks
+  alter column points_reward set default 0;
+
+alter table public.tasks
+  alter column points_reward set not null;

@@ -10,6 +10,7 @@ import {
 } from 'react';
 import type {
   AppState,
+  Badge,
   Category,
   PunishmentCategory,
   PunishmentTemplate,
@@ -20,6 +21,7 @@ import type {
   Video,
   VideoCategory,
 } from '../types';
+import { deleteBadgeDb, fetchUserBadgeIds, upsertBadge } from '../lib/badgeDb';
 import {
   deleteCategoryDb,
   deletePunishmentCategoryDb,
@@ -128,6 +130,9 @@ interface AppStoreValue {
   addReward: (reward: Reward) => Promise<MutateResult>;
   updateReward: (reward: Reward) => Promise<MutateResult>;
   deleteReward: (id: string) => Promise<MutateResult>;
+  addBadge: (badge: Badge) => Promise<MutateResult>;
+  updateBadge: (badge: Badge) => Promise<MutateResult>;
+  deleteBadge: (id: string) => Promise<MutateResult>;
   addPunishmentCategory: (category: PunishmentCategory) => Promise<MutateResult>;
   updatePunishmentCategory: (category: PunishmentCategory) => Promise<MutateResult>;
   deletePunishmentCategory: (id: string) => Promise<MutateResult>;
@@ -155,6 +160,7 @@ function mergeCatalogIntoState(base: AppState, catalog: SharedCatalog): AppState
     categories: catalog.categories,
     tasks: catalog.tasks,
     rewards: catalog.rewards,
+    badges: catalog.badges,
     punishmentCategories: catalog.punishmentCategories,
     punishmentTemplates: catalog.punishmentTemplates,
     videoCategories: catalog.videoCategories,
@@ -191,11 +197,13 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     setDataError(null);
 
     try {
-      const [catalogResult, progressResult, membersResult] = await Promise.all([
-        fetchSharedCatalog(),
-        fetchUserProgress(userId),
-        fetchCategoryMemberIds(userId),
-      ]);
+      const [catalogResult, progressResult, membersResult, badgesResult] =
+        await Promise.all([
+          fetchSharedCatalog(),
+          fetchUserProgress(userId),
+          fetchCategoryMemberIds(userId),
+          fetchUserBadgeIds(userId),
+        ]);
 
       if (!catalogResult.ok) {
         setDataError(catalogResult.error);
@@ -209,11 +217,16 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         setDataError(membersResult.error);
         return;
       }
+      if (!badgesResult.ok) {
+        setDataError(badgesResult.error);
+        return;
+      }
 
       let merged = mergeCatalogIntoState(progressResult.state, catalogResult.catalog);
       merged = {
         ...merged,
         joinedCategoryIds: membersResult.categoryIds,
+        unlockedBadgeIds: badgesResult.badgeIds,
       };
       merged = processDayRollover(merged, userId);
       merged = ensureDailyPlan(merged, undefined, userId);
@@ -511,6 +524,37 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         }));
         return { ok: true };
       },
+      addBadge: async (badge) => {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const result = await upsertBadge(badge, 'insert');
+        if (!result.ok) return result;
+        setState((s) => ({ ...s, badges: [...s.badges, result.badge] }));
+        return { ok: true };
+      },
+      updateBadge: async (badge) => {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const result = await upsertBadge(badge, 'update');
+        if (!result.ok) return result;
+        setState((s) => ({
+          ...s,
+          badges: s.badges.map((b) => (b.id === result.badge.id ? result.badge : b)),
+        }));
+        return { ok: true };
+      },
+      deleteBadge: async (id) => {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const result = await deleteBadgeDb(id);
+        if (!result.ok) return result;
+        setState((s) => ({
+          ...s,
+          badges: s.badges.filter((b) => b.id !== id),
+          unlockedBadgeIds: s.unlockedBadgeIds.filter((bid) => bid !== id),
+        }));
+        return { ok: true };
+      },
       addPunishmentCategory: async (category) => {
         const denied = requireAdmin();
         if (denied) return denied;
@@ -649,6 +693,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         const membersResult = await fetchCategoryMemberIds(userId);
         if (membersResult.ok) {
           next = { ...next, joinedCategoryIds: membersResult.categoryIds };
+        }
+        const badgesResult = await fetchUserBadgeIds(userId);
+        if (badgesResult.ok) {
+          next = { ...next, unlockedBadgeIds: badgesResult.badgeIds };
         }
         setState(next);
         const save = await saveUserProgress(userId, next);

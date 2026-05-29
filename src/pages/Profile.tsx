@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
+import { BadgeGrid } from '../components/BadgeGrid';
 import { useAppStore } from '../hooks/useAppStore';
 import { getUserStage, getStageLabel, formatLevelDisplay } from '../lib/levels';
 import { updateProfileUsername } from '../lib/profileDb';
@@ -7,7 +8,7 @@ import { tierLabel } from '../lib/tiers';
 
 export function Profile() {
   const { state, session, refreshProfile } = useAppStore();
-  const { progress, unlockedRewardIds } = state;
+  const { progress, unlockedBadgeIds } = state;
 
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState(session?.username ?? '');
@@ -16,7 +17,6 @@ export function Profile() {
   const [usernameSaving, setUsernameSaving] = useState(false);
 
   const stage = getUserStage(progress.currentLevel);
-  const badges = state.rewards.filter((r) => r.autoTrigger);
 
   const patreonTierLabel =
     session?.patreonStatus === 'active' && session.patreonTier
@@ -144,27 +144,7 @@ export function Profile() {
 
       <section className="card">
         <h3 className="section-title">Badges</h3>
-        {badges.length === 0 ? (
-          <p className="muted">No badges in the catalog yet.</p>
-        ) : (
-          <ul className="badge-list profile-badge-grid">
-            {badges.map((reward) => {
-              const earned = unlockedRewardIds.includes(reward.id);
-              return (
-                <li
-                  key={reward.id}
-                  className={`reward-item${earned ? ' reward-item--earned' : ''}`}
-                >
-                  <span className="reward-icon">{earned ? '🏅' : '🔒'}</span>
-                  <div>
-                    <strong>{reward.title}</strong>
-                    <p className="muted">{reward.description}</p>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+        <BadgeGrid badges={state.badges} unlockedBadgeIds={unlockedBadgeIds} />
       </section>
     </div>
   );
