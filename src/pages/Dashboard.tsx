@@ -17,7 +17,10 @@ type ComposeTarget =
 export function Dashboard() {
   const { state, session } = useAppStore();
   const isAdmin = session?.role === 'admin';
-  const sendAdminBroadcast = useSendAdminBroadcast(session?.userId);
+  const sendAdminBroadcast = useSendAdminBroadcast(
+    session?.userId,
+    session?.username,
+  );
   const {
     onlineUsers,
     loading: onlineLoading,

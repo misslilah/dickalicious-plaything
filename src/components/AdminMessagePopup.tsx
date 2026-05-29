@@ -1,9 +1,14 @@
 interface AdminMessagePopupProps {
   message: string;
+  senderUsername: string;
   onDismiss: () => void;
 }
 
-export function AdminMessagePopup({ message, onDismiss }: AdminMessagePopupProps) {
+export function AdminMessagePopup({
+  message,
+  senderUsername,
+  onDismiss,
+}: AdminMessagePopupProps) {
   return (
     <div
       className="admin-message-modal"
@@ -15,7 +20,7 @@ export function AdminMessagePopup({ message, onDismiss }: AdminMessagePopupProps
       <div className="admin-message-modal__backdrop" aria-hidden="true" />
       <div className="admin-message-modal__panel">
         <h2 id="admin-message-title" className="admin-message-modal__title">
-          Message from admin
+          Message from {senderUsername}
         </h2>
         <p id="admin-message-body" className="admin-message-modal__body">
           {message}

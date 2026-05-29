@@ -26,6 +26,7 @@ export type AdminMessagePayload = {
   message: string;
   targetUserId: string | null;
   senderUserId: string;
+  senderUsername: string;
 };
 
 const broadcastListeners = new Set<(payload: AdminMessagePayload) => void>();
@@ -146,11 +147,16 @@ async function ensureChannel(userId: string, username: string) {
     .on('broadcast', { event: ADMIN_MESSAGE_EVENT }, ({ payload }) => {
       const data = payload as AdminMessagePayload | undefined;
       if (!data?.message?.trim() || !data.senderUserId) return;
+      const senderUsername =
+        typeof data.senderUsername === 'string' && data.senderUsername.trim()
+          ? data.senderUsername.trim()
+          : 'Admin';
       for (const listener of broadcastListeners) {
         listener({
           message: data.message.trim(),
           targetUserId: data.targetUserId ?? null,
           senderUserId: data.senderUserId,
+          senderUsername,
         });
       }
     })
@@ -238,6 +244,7 @@ export async function sendAdminMessage(
   message: string,
   targetUserId: string | null,
   senderUserId: string,
+  senderUsername: string,
 ): Promise<{ ok: boolean; error?: string }> {
   if (!channel) {
     return { ok: false, error: 'Not connected to realtime. Open Home first.' };
@@ -245,7 +252,7 @@ export async function sendAdminMessage(
   const status = await channel.send({
     type: 'broadcast',
     event: ADMIN_MESSAGE_EVENT,
-    payload: { message, targetUserId, senderUserId },
+    payload: { message, targetUserId, senderUserId, senderUsername },
   });
   if (status !== 'ok') {
     return { ok: false, error: 'Failed to send message.' };
