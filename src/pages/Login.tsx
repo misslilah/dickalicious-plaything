@@ -228,12 +228,6 @@ export function Login() {
             </button>
           </form>
         )}
-
-        <p className="muted login-hint">
-          Admin accounts are created in Supabase Dashboard → Authentication, then
-          set <code>role</code> to <code>admin</code> on the <code>profiles</code>{' '}
-          row.
-        </p>
       </div>
     </div>
   );
