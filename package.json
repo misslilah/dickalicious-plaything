@@ -4,6 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "copy-bubble-pop": "node scripts/copy-bubble-pop.mjs",
+    "predev": "npm run copy-bubble-pop",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"

@@ -33,14 +33,27 @@ const POP_LABELS = [
 
 const MAX_BUBBLES = 8;
 const POP_DURATION_MS = 600;
+const BUBBLE_POP_SRC = '/sounds/bubble-pop.mp3';
+const BUBBLE_POP_VOLUME = 0.7;
 
 let nextId = 0;
+let bubblePopTemplate: HTMLAudioElement | null = null;
+let bubblePopMp3Ok: boolean | null = null;
 
 function rand(min: number, max: number) {
   return min + Math.random() * (max - min);
 }
 
-function playPopSound(ctx: AudioContext | null) {
+function getBubblePopTemplate(): HTMLAudioElement {
+  if (!bubblePopTemplate) {
+    bubblePopTemplate = new Audio(BUBBLE_POP_SRC);
+    bubblePopTemplate.preload = 'auto';
+    bubblePopTemplate.volume = BUBBLE_POP_VOLUME;
+  }
+  return bubblePopTemplate;
+}
+
+function playWebAudioPopSound(ctx: AudioContext | null) {
   if (!ctx) return;
 
   try {
@@ -161,6 +174,27 @@ function playPopSound(ctx: AudioContext | null) {
   }
 }
 
+function playPopSound(getCtx: () => AudioContext | null) {
+  if (bubblePopMp3Ok !== false) {
+    try {
+      const audio = getBubblePopTemplate().cloneNode() as HTMLAudioElement;
+      audio.volume = BUBBLE_POP_VOLUME;
+      const fallback = () => {
+        bubblePopMp3Ok = false;
+        playWebAudioPopSound(getCtx());
+      };
+      audio.addEventListener('error', fallback, { once: true });
+      void audio.play().then(() => {
+        bubblePopMp3Ok = true;
+      }).catch(fallback);
+      return;
+    } catch {
+      bubblePopMp3Ok = false;
+    }
+  }
+  playWebAudioPopSound(getCtx());
+}
+
 export function SoapBubbleField() {
   const bubblesRef = useRef<Bubble[]>([]);
   const spawnTimerRef = useRef<number | null>(null);
@@ -201,17 +235,18 @@ export function SoapBubbleField() {
       event.preventDefault();
       event.stopPropagation();
 
-      if (!audioCtxRef.current) {
-        const AudioCtx =
-          window.AudioContext ||
-          (window as Window & { webkitAudioContext?: typeof AudioContext })
-            .webkitAudioContext;
-        if (AudioCtx) {
-          audioCtxRef.current = new AudioCtx();
+      playPopSound(() => {
+        if (!audioCtxRef.current) {
+          const AudioCtx =
+            window.AudioContext ||
+            (window as Window & { webkitAudioContext?: typeof AudioContext })
+              .webkitAudioContext;
+          if (AudioCtx) {
+            audioCtxRef.current = new AudioCtx();
+          }
         }
-      }
-
-      playPopSound(audioCtxRef.current);
+        return audioCtxRef.current;
+      });
 
       const rect = event.currentTarget.getBoundingClientRect();
       const label =
