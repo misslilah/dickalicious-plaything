@@ -25,6 +25,7 @@ export function userSliceFromState(state: AppState): Omit<AppState, 'categories'
     punishments: state.punishments,
     settings: state.settings,
     unlockedRewardIds: state.unlockedRewardIds,
+    unlockedBadgeIds: state.unlockedBadgeIds,
   };
 }
 
