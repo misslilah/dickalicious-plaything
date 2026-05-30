@@ -1,5 +1,6 @@
 import { Link, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { AdminMessageListener } from './AdminMessageListener';
+import { LockCardOverlay } from './LockCardOverlay';
 import { useAppStore } from '../hooks/useAppStore';
 
 export function ProtectedRoute() {
@@ -58,6 +59,7 @@ export function ProtectedRoute() {
   return (
     <>
       <AdminMessageListener />
+      <LockCardOverlay />
       <Outlet />
     </>
   );

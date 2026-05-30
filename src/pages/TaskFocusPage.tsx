@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   Link,
   useBlocker,
@@ -55,6 +55,12 @@ export function TaskFocusPage() {
 
   const { phraseChallengeFailed } = useTaskCompletion(task ?? EMPTY_TASK, completed);
 
+  const allowNavigationRef = useRef(false);
+
+  useEffect(() => {
+    allowNavigationRef.current = false;
+  }, [taskId]);
+
   useEffect(() => {
     if (!taskId || !validTask || completed) return;
     markTaskStarted(taskId);
@@ -65,6 +71,7 @@ export function TaskFocusPage() {
 
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
+      !allowNavigationRef.current &&
       shouldBlockNavigation &&
       currentLocation.pathname !== nextLocation.pathname,
   );
@@ -89,6 +96,7 @@ export function TaskFocusPage() {
 
   const handleFinished = useCallback(() => {
     if (!taskId) return;
+    allowNavigationRef.current = true;
     completeTask(taskId);
     navigate(`/category/${categoryId}`, { replace: true });
   }, [taskId, completeTask, navigate, categoryId]);

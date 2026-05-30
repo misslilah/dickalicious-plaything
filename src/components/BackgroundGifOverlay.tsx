@@ -5,6 +5,7 @@ import {
   fetchGifBank,
   fetchGifBankAppearanceSettings,
   randomAppearanceIntervalMs,
+  subscribeGifBankCatalogChanged,
   subscribeGifBankSettingsChanged,
   type GifBankAppearanceSettings,
   type GifBankEntry,
@@ -58,9 +59,11 @@ export function BackgroundGifOverlay() {
   const isDisplayingRef = useRef(false);
   const appearanceSettingsRef = useRef(appearanceSettings);
   const catalogRef = useRef(catalog);
+  const activeEntryIdRef = useRef<string | null>(null);
 
   appearanceSettingsRef.current = appearanceSettings;
   catalogRef.current = catalog;
+  activeEntryIdRef.current = active?.entry.id ?? null;
 
   const clearScheduleTimer = () => {
     if (scheduleRef.current) {
@@ -172,6 +175,28 @@ export function BackgroundGifOverlay() {
   }, []);
 
   useEffect(() => {
+    return subscribeGifBankCatalogChanged(() => {
+      void (async () => {
+        const result = await fetchGifBank();
+        if (!result.ok) return;
+
+        const activeId = activeEntryIdRef.current;
+        const deletedActive =
+          activeId != null && !result.gifs.some((gif) => gif.id === activeId);
+
+        if (deletedActive) {
+          clearAllTimers();
+          setActive(null);
+          setVisible(false);
+        }
+
+        setCatalog(result.gifs);
+        setScheduleEpoch((epoch) => epoch + 1);
+      })();
+    });
+  }, []);
+
+  useEffect(() => {
     if (!session) {
       setCatalog([]);
       setAppearanceSettings(DEFAULT_GIF_BANK_APPEARANCE_SETTINGS);
@@ -206,11 +231,9 @@ export function BackgroundGifOverlay() {
     if (previewEntry) return;
 
     if (!session || catalog.length === 0) {
-      if (!isDisplayingRef.current) {
-        clearDisplayTimers();
-        setActive(null);
-        setVisible(false);
-      }
+      clearAllTimers();
+      setActive(null);
+      setVisible(false);
       return;
     }
 

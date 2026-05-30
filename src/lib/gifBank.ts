@@ -57,6 +57,7 @@ type DbGifBankSettings = {
 };
 
 const GIF_BANK_SETTINGS_CHANGED_EVENT = 'gif-bank-settings-changed';
+const GIF_BANK_CATALOG_CHANGED_EVENT = 'gif-bank-catalog-changed';
 
 function formatGifBankDbError(error: { message?: string; code?: string }): string {
   const message = error.message ?? 'Unknown error';
@@ -151,6 +152,16 @@ export function subscribeGifBankSettingsChanged(onChange: () => void): () => voi
   const handler = () => onChange();
   window.addEventListener(GIF_BANK_SETTINGS_CHANGED_EVENT, handler);
   return () => window.removeEventListener(GIF_BANK_SETTINGS_CHANGED_EVENT, handler);
+}
+
+export function notifyGifBankCatalogChanged(): void {
+  window.dispatchEvent(new CustomEvent(GIF_BANK_CATALOG_CHANGED_EVENT));
+}
+
+export function subscribeGifBankCatalogChanged(onChange: () => void): () => void {
+  const handler = () => onChange();
+  window.addEventListener(GIF_BANK_CATALOG_CHANGED_EVENT, handler);
+  return () => window.removeEventListener(GIF_BANK_CATALOG_CHANGED_EVENT, handler);
 }
 
 function mapGifBankSettings(row: DbGifBankSettings): GifBankAppearanceSettings {
@@ -347,6 +358,7 @@ export async function insertGifBankEntry(
   if (!entry) {
     return { ok: false, error: 'Saved but public URL is unavailable.' };
   }
+  notifyGifBankCatalogChanged();
   return { ok: true, entry };
 }
 
@@ -362,5 +374,6 @@ export async function deleteGifBankEntry(
 
   const fileResult = await deleteGifFile(storagePath);
   if (!fileResult.ok) return fileResult;
+  notifyGifBankCatalogChanged();
   return { ok: true };
 }

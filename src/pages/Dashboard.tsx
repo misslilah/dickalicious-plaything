@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AdminBroadcastComposeModal } from '../components/AdminBroadcastComposeModal';
+import { AdminLockCardComposeModal } from '../components/AdminLockCardComposeModal';
 import { CategoryCard } from '../components/CategoryCard';
 import { DailyTasksSection } from '../components/DailyTasksSection';
 import { XpBar } from '../components/XpBar';
 import { useAppStore } from '../hooks/useAppStore';
 import { useSendAdminBroadcast } from '../hooks/useAdminBroadcast';
+import { useAdminLockCards } from '../hooks/useLockCard';
 import { useOnlinePresence } from '../hooks/useOnlinePresence';
 import {
   canJoinCategory,
@@ -20,11 +22,14 @@ import {
   MAX_ACTIVE_CATEGORY_JOINS,
 } from '../lib/categoryProgression';
 import { formatLevelDisplay } from '../lib/levels';
+import { clearLockCard, createLockCard } from '../lib/lockCardDb';
 import { completionStats, getTodayPlan } from '../lib/gameLogic';
 
 type ComposeTarget =
   | { kind: 'all' }
   | { kind: 'user'; userId: string; username: string };
+
+type LockTarget = { userId: string; username: string };
 
 export function Dashboard() {
   const { state, session, joinCategory } = useAppStore();
@@ -40,6 +45,15 @@ export function Dashboard() {
   } = useOnlinePresence(session?.userId, session?.username);
   const [onlineOpen, setOnlineOpen] = useState(false);
   const [composeTarget, setComposeTarget] = useState<ComposeTarget | null>(null);
+  const [lockTarget, setLockTarget] = useState<LockTarget | null>(null);
+  const [manualLockUserId, setManualLockUserId] = useState('');
+  const [clearingLockId, setClearingLockId] = useState<string | null>(null);
+  const {
+    lockCards: activeLockCards,
+    loading: lockCardsLoading,
+    error: lockCardsError,
+    refresh: refreshLockCards,
+  } = useAdminLockCards(isAdmin);
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const [joinError, setJoinError] = useState('');
   const { progress } = state;
@@ -58,6 +72,49 @@ export function Dashboard() {
     const result = await joinCategory(categoryId);
     setJoiningId(null);
     if (!result.ok) setJoinError(result.error);
+  };
+
+  const usernameForUserId = useCallback(
+    (userId: string) =>
+      onlineUsers.find((user) => user.id === userId)?.username ??
+      `${userId.slice(0, 8)}…`,
+    [onlineUsers],
+  );
+
+  const handleCreateLockCard = useCallback(
+    async (phrase: string, requiredCount: number, targetUserId: string) => {
+      if (!session?.userId) {
+        return { ok: false, error: 'Not signed in.' };
+      }
+      const result = await createLockCard({
+        userId: targetUserId,
+        phrase,
+        requiredCount,
+        createdBy: session.userId,
+      });
+      if (result.ok) {
+        void refreshLockCards();
+      }
+      return result.ok
+        ? { ok: true }
+        : { ok: false, error: result.error };
+    },
+    [session?.userId, refreshLockCards],
+  );
+
+  const handleClearLockCard = async (lockId: string) => {
+    setClearingLockId(lockId);
+    const result = await clearLockCard(lockId);
+    setClearingLockId(null);
+    if (result.ok) {
+      void refreshLockCards();
+    }
+  };
+
+  const openManualLock = () => {
+    const userId = manualLockUserId.trim();
+    if (!userId) return;
+    setLockTarget({ userId, username: userId.slice(0, 8) + '…' });
   };
 
   return (
@@ -134,6 +191,70 @@ export function Dashboard() {
               </button>
             </div>
           )}
+          {isAdmin && (
+            <div className="online-panel__lock-by-id">
+              <label className="online-panel__lock-by-id-label" htmlFor="lock-user-id">
+                Lock by user ID
+              </label>
+              <div className="form-inline">
+                <input
+                  id="lock-user-id"
+                  type="text"
+                  value={manualLockUserId}
+                  onChange={(e) => setManualLockUserId(e.target.value)}
+                  placeholder="User UUID…"
+                />
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--small"
+                  onClick={openManualLock}
+                  disabled={!manualLockUserId.trim()}
+                >
+                  Lock card
+                </button>
+              </div>
+            </div>
+          )}
+          {isAdmin && (
+            <div className="online-panel__active-locks">
+              <h3 className="online-panel__active-locks-title">Active lock cards</h3>
+              {lockCardsLoading && <p className="muted">Loading lock cards…</p>}
+              {lockCardsError && (
+                <p className="login-error" role="alert">
+                  {lockCardsError}
+                </p>
+              )}
+              {!lockCardsLoading && !lockCardsError && activeLockCards.length === 0 && (
+                <p className="muted">No active lock cards.</p>
+              )}
+              {!lockCardsLoading && activeLockCards.length > 0 && (
+                <ul className="active-lock-cards-list">
+                  {activeLockCards.map((lock) => (
+                    <li key={lock.id} className="active-lock-cards-list__item">
+                      <div className="active-lock-cards-list__meta">
+                        <strong>{usernameForUserId(lock.userId)}</strong>
+                        <span className="muted">
+                          {lock.completedCount}/{lock.requiredCount} · &ldquo;
+                          {lock.phrase.length > 32
+                            ? `${lock.phrase.slice(0, 32)}…`
+                            : lock.phrase}
+                          &rdquo;
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--small"
+                        onClick={() => void handleClearLockCard(lock.id)}
+                        disabled={clearingLockId === lock.id}
+                      >
+                        {clearingLockId === lock.id ? 'Clearing…' : 'Clear'}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
           {onlineLoading && <p className="muted">Connecting…</p>}
           {onlineError && (
             <p className="login-error" role="alert">
@@ -153,19 +274,33 @@ export function Dashboard() {
                     <span className="tag tag--ok">You</span>
                   )}
                   {isAdmin && user.id !== session?.userId && (
-                    <button
-                      type="button"
-                      className="btn btn--ghost btn--small online-users-list__message"
-                      onClick={() =>
-                        setComposeTarget({
-                          kind: 'user',
-                          userId: user.id,
-                          username: user.username,
-                        })
-                      }
-                    >
-                      Message
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--small online-users-list__message"
+                        onClick={() =>
+                          setComposeTarget({
+                            kind: 'user',
+                            userId: user.id,
+                            username: user.username,
+                          })
+                        }
+                      >
+                        Message
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--small online-users-list__lock"
+                        onClick={() =>
+                          setLockTarget({
+                            userId: user.id,
+                            username: user.username,
+                          })
+                        }
+                      >
+                        Lock card
+                      </button>
+                    </>
                   )}
                 </li>
               ))}
@@ -186,6 +321,14 @@ export function Dashboard() {
         }
         onClose={() => setComposeTarget(null)}
         onSend={sendAdminBroadcast}
+      />
+
+      <AdminLockCardComposeModal
+        open={lockTarget !== null}
+        targetLabel={lockTarget?.username ?? ''}
+        targetUserId={lockTarget?.userId ?? ''}
+        onClose={() => setLockTarget(null)}
+        onCreate={handleCreateLockCard}
       />
 
       <DailyTasksSection />

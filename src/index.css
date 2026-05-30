@@ -2616,6 +2616,193 @@ a.task-list-row {
   margin-top: 0.35rem;
 }
 
+.admin-compose-modal__input {
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(192, 132, 252, 0.25);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.online-users-list__lock {
+  margin-left: 0;
+  flex-shrink: 0;
+}
+
+.online-panel__lock-by-id {
+  margin: 0 0 0.85rem;
+}
+
+.online-panel__lock-by-id-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.online-panel__active-locks {
+  margin: 0 0 0.85rem;
+  padding: 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  background: rgba(248, 113, 113, 0.06);
+}
+
+.online-panel__active-locks-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+}
+
+.active-lock-cards-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.active-lock-cards-list__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.active-lock-cards-list__item:last-child {
+  border-bottom: none;
+}
+
+.active-lock-cards-list__meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.82rem;
+}
+
+.active-lock-cards-list__meta span {
+  word-break: break-word;
+}
+
+/* —— Lock card overlay (blocks entire site) —— */
+
+.lock-card-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.lock-card-overlay__backdrop {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(192, 132, 252, 0.12), transparent 55%),
+    rgba(0, 0, 0, 0.88);
+  pointer-events: none;
+}
+
+.lock-card-overlay__panel {
+  position: relative;
+  width: min(100%, 28rem);
+  padding: 1.5rem 1.25rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: var(--surface);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(192, 132, 252, 0.08) inset;
+  text-align: center;
+}
+
+.lock-card-overlay__icon {
+  font-size: 2rem;
+  margin-bottom: 0.35rem;
+}
+
+.lock-card-overlay__title {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+}
+
+.lock-card-overlay__hint {
+  margin: 0 0 0.85rem;
+  font-size: 0.78rem;
+  text-align: left;
+}
+
+.lock-card-overlay__target {
+  margin: 0 0 0.65rem;
+  font-size: 0.85rem;
+  text-align: left;
+}
+
+.lock-card-overlay__target-text {
+  font-family: ui-monospace, monospace;
+  color: var(--accent);
+  word-break: break-word;
+}
+
+.lock-card-overlay__progress {
+  margin: 0 0 0.45rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.lock-card-overlay__progress-bar {
+  height: 0.35rem;
+  margin: 0 0 1rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.lock-card-overlay__progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #f472b6, #c084fc);
+  transition: width 0.25s ease;
+}
+
+.lock-card-overlay__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  text-align: left;
+}
+
+.lock-card-overlay__label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.lock-card-overlay__input {
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(192, 132, 252, 0.25);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.lock-card-overlay__feedback {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #fbbf24;
+}
+
+.lock-card-overlay__submit {
+  margin-top: 0.35rem;
+  width: 100%;
+}
+
 /* —— Background GIF overlay —— */
 
 .background-gif-overlay {
