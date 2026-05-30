@@ -52,3 +52,16 @@ create policy "gif_bank_admin_write"
   on storage.objects for all to authenticated
   using (bucket_id = 'gif-bank' and public.is_admin())
   with check (bucket_id = 'gif-bank' and public.is_admin());
+
+insert into storage.buckets (id, name, public)
+values ('audio-playlist', 'audio-playlist', true)
+on conflict (id) do nothing;
+
+create policy "audio_playlist_public_read"
+  on storage.objects for select
+  using (bucket_id = 'audio-playlist');
+
+create policy "audio_playlist_admin_write"
+  on storage.objects for all to authenticated
+  using (bucket_id = 'audio-playlist' and public.is_admin())
+  with check (bucket_id = 'audio-playlist' and public.is_admin());

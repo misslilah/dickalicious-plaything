@@ -91,3 +91,11 @@ export const PATREON_MEMBER_TIER_OPTIONS: { value: PatreonMemberTier | ''; label
   { value: 'princess', label: 'Princess' },
   { value: 'slut', label: 'Slut' },
 ];
+
+/** Patreon tier gate for audio playlists (null = no tier requirement). */
+export const AUDIO_PLAYLIST_TIER_OPTIONS: { value: PatreonMemberTier | ''; label: string }[] = [
+  { value: '', label: 'None (everyone)' },
+  { value: 'sweetie', label: 'Sweetie' },
+  { value: 'princess', label: 'Princess' },
+  { value: 'slut', label: 'Slut' },
+];

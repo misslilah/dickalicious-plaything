@@ -193,6 +193,30 @@ export interface VideoCategory {
   requiredTier?: ContentTier | null;
 }
 
+/** Admin-defined audio playlist; tracks unlock sequentially within each playlist. */
+export interface AudioPlaylist {
+  id: string;
+  title: string;
+  description: string | null;
+  sortOrder: number;
+  unlockAfterPlaylistId: string | null;
+  /** Minimum Patreon tier required; null = everyone with an account. */
+  patreonTier: PatreonMemberTier | null;
+  createdAt: string;
+}
+
+/** Audio playlist track; file in Supabase Storage at `storagePath`. */
+export interface AudioPlaylistItem {
+  id: string;
+  playlistId: string;
+  title: string;
+  storagePath: string;
+  sortOrder: number;
+  durationSeconds: number | null;
+  url: string;
+  createdAt: string;
+}
+
 /** Video metadata; file in Supabase Storage at `storagePath`. */
 export interface Video {
   id: string;

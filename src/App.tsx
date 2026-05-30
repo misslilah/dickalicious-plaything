@@ -10,6 +10,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { BackgroundGifOverlay } from './components/BackgroundGifOverlay';
 import { SoapBubbleField } from './components/SoapBubbleField';
 import { AppStoreProvider } from './hooks/useAppStore';
+import { AudioPlayerProvider } from './contexts/AudioPlayerProvider';
 import { Admin } from './pages/Admin';
 import { CategoryDetail } from './pages/CategoryDetail';
 import { TaskFocusPage } from './pages/TaskFocusPage';
@@ -80,7 +81,9 @@ const router = createBrowserRouter([
 export default function App() {
   return (
     <AppStoreProvider>
-      <RouterProvider router={router} />
+      <AudioPlayerProvider>
+        <RouterProvider router={router} />
+      </AudioPlayerProvider>
     </AppStoreProvider>
   );
 }

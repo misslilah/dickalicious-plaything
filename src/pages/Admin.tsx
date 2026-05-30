@@ -27,8 +27,10 @@ import {
   type AdminProfileRow,
 } from '../lib/profileDb';
 import {
+  AUDIO_PLAYLIST_TIER_OPTIONS,
   PATREON_MEMBER_TIER_OPTIONS,
   tierAccessHint,
+  tierLabel,
   VIDEO_ACCESS_CUMULATIVE_NOTE,
   VIDEO_ACCESS_OPTIONS,
 } from '../lib/tiers';
@@ -69,6 +71,21 @@ import {
   clearGifBankPreview,
   previewGifAsBackground,
 } from '../lib/gifBankPreview';
+import type { AudioPlaylist, AudioPlaylistItem } from '../types';
+import {
+  AUDIO_ACCEPT,
+  deleteAudioPlaylist,
+  deleteAudioPlaylistItem,
+  fetchAudioLibrary,
+  insertAudioPlaylist,
+  insertAudioPlaylistItem,
+  itemsForPlaylist,
+  MAX_AUDIO_BYTES,
+  readAudioDuration,
+  updateAudioPlaylist,
+  updateAudioPlaylistOrder,
+  updateAudioPlaylistsOrder,
+} from '../lib/audioPlaylist';
 
 const ADMIN_SECTIONS = [
   {
@@ -113,6 +130,12 @@ const ADMIN_SECTIONS = [
     icon: '🖼️',
     hint: 'Background GIFs',
   },
+  {
+    id: 'audio' as const,
+    label: 'Audio playlist',
+    icon: '🎧',
+    hint: 'Multiple sequential playlists',
+  },
 ];
 
 const CATEGORY_COLORS = [
@@ -143,7 +166,7 @@ export function Admin() {
       <header className="page-header">
         <h2>Admin</h2>
         <p className="muted">
-          Manage categories, tasks, rewards, punishments, videos, and users.
+          Manage categories, tasks, rewards, punishments, videos, audio playlist, and users.
         </p>
       </header>
 
@@ -184,6 +207,7 @@ export function Admin() {
           {section === 'users' && <UserAdmin />}
           {section === 'videos' && <VideosAdmin />}
           {section === 'gifbank' && <GifBankAdmin />}
+          {section === 'audio' && <AudioPlaylistAdmin />}
         </div>
       </div>
 
@@ -3121,4 +3145,538 @@ function VideosAdmin() {
       {tab === 'categories' ? <VideoCategoryAdmin /> : <VideoUploadAdmin />}
     </div>
   );
+}
+
+function AudioPlaylistAdmin() {
+  const [playlists, setPlaylists] = useState<AudioPlaylist[]>([]);
+  const [items, setItems] = useState<AudioPlaylistItem[]>([]);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [unlockAfterId, setUnlockAfterId] = useState('');
+  const [patreonTier, setPatreonTier] = useState('');
+  const [editingPlaylistId, setEditingPlaylistId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editUnlockAfterId, setEditUnlockAfterId] = useState('');
+  const [editPatreonTier, setEditPatreonTier] = useState('');
+  const [trackTitle, setTrackTitle] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [savingPlaylist, setSavingPlaylist] = useState(false);
+  const [reordering, setReordering] = useState(false);
+
+  const selectedPlaylist = playlists.find((p) => p.id === selectedPlaylistId) ?? null;
+  const selectedItems = selectedPlaylistId
+    ? itemsForPlaylist(selectedPlaylistId, items)
+    : [];
+
+  const loadLibrary = async () => {
+    setLoading(true);
+    setError('');
+    const result = await fetchAudioLibrary();
+    setLoading(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setPlaylists(result.library.playlists);
+    setItems(result.library.items);
+    if (
+      selectedPlaylistId &&
+      !result.library.playlists.some((p) => p.id === selectedPlaylistId)
+    ) {
+      setSelectedPlaylistId(null);
+    }
+  };
+
+  useEffect(() => {
+    void loadLibrary();
+  }, []);
+
+  const createPlaylist = async () => {
+    setError('');
+    setMessage('');
+    setSavingPlaylist(true);
+    const result = await insertAudioPlaylist(
+      title,
+      description || null,
+      unlockAfterId || null,
+      (patreonTier as PatreonMemberTier) || null,
+      playlists,
+    );
+    setSavingPlaylist(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setPlaylists((prev) => [...prev, result.playlist]);
+    setTitle('');
+    setDescription('');
+    setUnlockAfterId('');
+    setPatreonTier('');
+    setSelectedPlaylistId(result.playlist.id);
+    setMessage('Playlist created.');
+  };
+
+  const startEditPlaylist = (playlist: AudioPlaylist) => {
+    setEditingPlaylistId(playlist.id);
+    setEditTitle(playlist.title);
+    setEditDescription(playlist.description ?? '');
+    setEditUnlockAfterId(playlist.unlockAfterPlaylistId ?? '');
+    setEditPatreonTier(playlist.patreonTier ?? '');
+  };
+
+  const saveEditPlaylist = async () => {
+    if (!editingPlaylistId) return;
+    setError('');
+    setMessage('');
+    setSavingPlaylist(true);
+    const result = await updateAudioPlaylist(
+      editingPlaylistId,
+      {
+        title: editTitle,
+        description: editDescription || null,
+        unlockAfterPlaylistId: editUnlockAfterId || null,
+        patreonTier: (editPatreonTier as PatreonMemberTier) || null,
+      },
+      playlists,
+    );
+    setSavingPlaylist(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setPlaylists((prev) =>
+      prev.map((p) => (p.id === editingPlaylistId ? result.playlist : p)),
+    );
+    setEditingPlaylistId(null);
+    setMessage('Playlist updated.');
+  };
+
+  const removePlaylist = async (playlist: AudioPlaylist) => {
+    if (
+      !window.confirm(
+        `Delete playlist "${playlist.title}" and all its tracks? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setError('');
+    setMessage('');
+    const result = await deleteAudioPlaylist(playlist.id, items);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setPlaylists((prev) => prev.filter((p) => p.id !== playlist.id));
+    setItems((prev) => prev.filter((i) => i.playlistId !== playlist.id));
+    if (selectedPlaylistId === playlist.id) setSelectedPlaylistId(null);
+    setMessage('Playlist deleted.');
+  };
+
+  const movePlaylist = async (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= playlists.length) return;
+    const next = [...playlists];
+    const [removed] = next.splice(index, 1);
+    next.splice(target, 0, removed);
+    setPlaylists(next);
+    setReordering(true);
+    setError('');
+    const result = await updateAudioPlaylistsOrder(next.map((p) => p.id));
+    setReordering(false);
+    if (!result.ok) {
+      setError(result.error);
+      void loadLibrary();
+    }
+  };
+
+  const submitTrack = async () => {
+    if (!selectedPlaylistId) {
+      setError('Select a playlist first.');
+      return;
+    }
+    setError('');
+    setMessage('');
+    if (!file) {
+      setError('Choose an audio file (MP3, M4A, WAV, OGG).');
+      return;
+    }
+    if (file.size > MAX_AUDIO_BYTES) {
+      setError(
+        `File too large. Max ${Math.round(MAX_AUDIO_BYTES / (1024 * 1024))} MB.`,
+      );
+      return;
+    }
+
+    setUploading(true);
+    const duration = await readAudioDuration(file);
+    const result = await insertAudioPlaylistItem(
+      selectedPlaylistId,
+      trackTitle,
+      file,
+      duration,
+    );
+    setUploading(false);
+
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+
+    setItems((prev) => [...prev, result.item]);
+    setTrackTitle('');
+    setFile(null);
+    setMessage('Audio track added to playlist.');
+  };
+
+  const removeTrack = async (item: AudioPlaylistItem) => {
+    if (!window.confirm(`Delete "${item.title}" from the playlist?`)) return;
+    setError('');
+    setMessage('');
+    const result = await deleteAudioPlaylistItem(item.id, item.storagePath);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setItems((prev) => prev.filter((i) => i.id !== item.id));
+    setMessage('Track deleted.');
+  };
+
+  const moveTrack = async (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= selectedItems.length) return;
+    const next = [...selectedItems];
+    const [removed] = next.splice(index, 1);
+    next.splice(target, 0, removed);
+    setItems((prev) => [
+      ...prev.filter((i) => i.playlistId !== selectedPlaylistId),
+      ...next,
+    ]);
+    setReordering(true);
+    setError('');
+    const result = await updateAudioPlaylistOrder(next.map((i) => i.id));
+    setReordering(false);
+    if (!result.ok) {
+      setError(result.error);
+      void loadLibrary();
+    }
+  };
+
+  const unlockOptions = (excludeId?: string) =>
+    playlists.filter((p) => p.id !== excludeId);
+
+  const playlistList = (
+    <>
+      <h3 className="admin-list-title">Playlists</h3>
+      {loading && <p className="muted">Loading…</p>}
+      {!loading && playlists.length === 0 && (
+        <p className="muted">No playlists yet. Create one below.</p>
+      )}
+      {!loading && playlists.length > 0 && (
+        <ul className="admin-audio-list">
+          {playlists.map((playlist, index) => {
+            const trackCount = itemsForPlaylist(playlist.id, items).length;
+            const prereq = playlist.unlockAfterPlaylistId
+              ? playlists.find((p) => p.id === playlist.unlockAfterPlaylistId)
+              : null;
+            const isSelected = selectedPlaylistId === playlist.id;
+            const isEditing = editingPlaylistId === playlist.id;
+
+            return (
+              <li
+                key={playlist.id}
+                className={`admin-audio-list__item${isSelected ? ' admin-audio-list__item--selected' : ''}`}
+              >
+                {isEditing ? (
+                  <div className="admin-audio-playlist-edit">
+                    <label className="form-field">
+                      Title
+                      <input
+                        type="text"
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                      />
+                    </label>
+                    <label className="form-field">
+                      Description (optional)
+                      <input
+                        type="text"
+                        value={editDescription}
+                        onChange={(e) => setEditDescription(e.target.value)}
+                      />
+                    </label>
+                    <label className="form-field">
+                      Unlocking after playlist
+                      <select
+                        value={editUnlockAfterId}
+                        onChange={(e) => setEditUnlockAfterId(e.target.value)}
+                      >
+                        <option value="">Always available</option>
+                        {unlockOptions(playlist.id).map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="form-field">
+                      Required Patreon tier
+                      <select
+                        value={editPatreonTier}
+                        onChange={(e) => setEditPatreonTier(e.target.value)}
+                      >
+                        {AUDIO_PLAYLIST_TIER_OPTIONS.map((opt) => (
+                          <option key={opt.value || 'none'} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="admin-audio-list__actions">
+                      <button
+                        type="button"
+                        className="btn btn--primary btn--small"
+                        disabled={savingPlaylist}
+                        onClick={() => void saveEditPlaylist()}
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--small"
+                        onClick={() => setEditingPlaylistId(null)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="admin-audio-list__select"
+                      onClick={() => setSelectedPlaylistId(playlist.id)}
+                    >
+                      <div className="admin-audio-list__meta">
+                        <strong>{playlist.title}</strong>
+                        {playlist.description && (
+                          <span className="muted">{playlist.description}</span>
+                        )}
+                        <span className="muted">
+                          {trackCount} track{trackCount === 1 ? '' : 's'}
+                          {playlist.patreonTier
+                            ? ` · Requires ${tierLabel(playlist.patreonTier)}`
+                            : ''}
+                          {prereq ? ` · Unlocks after "${prereq.title}"` : ' · Always available'}
+                        </span>
+                      </div>
+                    </button>
+                    <div className="admin-audio-list__actions">
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--small"
+                        disabled={index === 0 || reordering}
+                        onClick={() => void movePlaylist(index, -1)}
+                        aria-label="Move up"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--small"
+                        disabled={index === playlists.length - 1 || reordering}
+                        onClick={() => void movePlaylist(index, 1)}
+                        aria-label="Move down"
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--small"
+                        onClick={() => startEditPlaylist(playlist)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--small btn--danger"
+                        onClick={() => void removePlaylist(playlist)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {selectedPlaylist && (
+        <>
+          <h3 className="admin-list-title">
+            Tracks in “{selectedPlaylist.title}”
+          </h3>
+          {selectedItems.length === 0 ? (
+            <p className="muted">No tracks in this playlist yet.</p>
+          ) : (
+            <ul className="admin-audio-list">
+              {selectedItems.map((item, index) => (
+                <li key={item.id} className="admin-audio-list__item">
+                  <span className="admin-audio-list__order">{index + 1}</span>
+                  <div className="admin-audio-list__meta">
+                    <strong>{item.title}</strong>
+                    {item.durationSeconds != null && (
+                      <span className="muted">
+                        {Math.round(item.durationSeconds)}s
+                      </span>
+                    )}
+                  </div>
+                  <div className="admin-audio-list__actions">
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--small"
+                      disabled={index === 0 || reordering}
+                      onClick={() => void moveTrack(index, -1)}
+                      aria-label="Move up"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--small"
+                      disabled={index === selectedItems.length - 1 || reordering}
+                      onClick={() => void moveTrack(index, 1)}
+                      aria-label="Move down"
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--small btn--danger"
+                      onClick={() => void removeTrack(item)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </>
+  );
+
+  const form = (
+    <>
+      <h3 className="admin-form-title">Create playlist</h3>
+      <p className="muted">
+        Each playlist plays in order. Users must finish every track in a
+        prerequisite playlist before the next one unlocks.
+      </p>
+      {message && <p className="admin-form-message">{message}</p>}
+      {error && (
+        <p className="login-error" role="alert">
+          {error}
+        </p>
+      )}
+      <label className="form-field">
+        Title
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Playlist title"
+        />
+      </label>
+      <label className="form-field">
+        Description (optional)
+        <input
+          type="text"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Short description"
+        />
+      </label>
+      <label className="form-field">
+        Unlock after playlist
+        <select
+          value={unlockAfterId}
+          onChange={(e) => setUnlockAfterId(e.target.value)}
+        >
+          <option value="">Always available</option>
+          {playlists.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.title}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="form-field">
+        Required Patreon tier
+        <select
+          value={patreonTier}
+          onChange={(e) => setPatreonTier(e.target.value)}
+        >
+          {AUDIO_PLAYLIST_TIER_OPTIONS.map((opt) => (
+            <option key={opt.value || 'none'} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button
+        type="button"
+        className="btn btn--primary"
+        disabled={savingPlaylist || !title.trim()}
+        onClick={() => void createPlaylist()}
+      >
+        {savingPlaylist ? 'Saving…' : 'Create playlist'}
+      </button>
+
+      {selectedPlaylist && (
+        <>
+          <h3 className="admin-form-title">Upload audio</h3>
+          <p className="muted">
+            Supported: MP3, M4A, WAV, OGG. Tracks are added to “
+            {selectedPlaylist.title}”.
+          </p>
+          <label className="form-field">
+            Title
+            <input
+              type="text"
+              value={trackTitle}
+              onChange={(e) => setTrackTitle(e.target.value)}
+              placeholder="Track title (optional)"
+            />
+          </label>
+          <label className="form-field">
+            Audio file
+            <input
+              type="file"
+              accept={AUDIO_ACCEPT}
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
+          <button
+            type="button"
+            className="btn btn--primary"
+            disabled={uploading || !file}
+            onClick={() => void submitTrack()}
+          >
+            {uploading ? 'Uploading…' : 'Add to playlist'}
+          </button>
+        </>
+      )}
+    </>
+  );
+
+  return <AdminSection list={playlistList} form={form} />;
 }
