@@ -3505,3 +3505,71 @@ a.task-list-row {
   background: rgba(167, 139, 184, 0.15);
   color: var(--text-muted);
 }
+
+/* —— Patreon support bubble —— */
+
+.patreon-bubble {
+  position: fixed;
+  right: max(var(--pad-inline), env(safe-area-inset-right, 0px));
+  bottom: calc(var(--safe-bottom) + 0.85rem);
+  z-index: 150;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  background: rgba(26, 16, 36, 0.88);
+  border: 1px solid rgba(255, 66, 77, 0.28);
+  color: #ff6b73;
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  backdrop-filter: blur(10px);
+  text-decoration: none;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    color 0.18s ease,
+    background 0.18s ease;
+}
+
+.patreon-bubble--with-nav {
+  bottom: calc(var(--nav-h) + var(--safe-bottom) + 0.75rem);
+}
+
+.patreon-bubble--with-player {
+  bottom: calc(var(--nav-h) + 3.75rem + var(--safe-bottom) + 0.75rem);
+}
+
+.patreon-bubble__logo {
+  width: 1.15rem;
+  height: 1.15rem;
+  display: block;
+}
+
+.patreon-bubble:hover {
+  color: #ff424d;
+  border-color: rgba(255, 66, 77, 0.55);
+  background: rgba(36, 21, 51, 0.94);
+  box-shadow:
+    0 4px 16px rgba(255, 66, 77, 0.18),
+    0 2px 12px rgba(0, 0, 0, 0.4);
+  transform: translateY(-2px);
+}
+
+.patreon-bubble:focus-visible {
+  outline: 2px solid rgba(255, 66, 77, 0.75);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .patreon-bubble {
+    transition: none;
+  }
+
+  .patreon-bubble:hover {
+    transform: none;
+  }
+}
