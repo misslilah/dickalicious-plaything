@@ -40,9 +40,8 @@ export function BadgeGrid({ badges, unlockedBadgeIds }: BadgeGridProps) {
             >
               <div
                 className="profile-badge__icon-wrap"
-                title={hover}
                 aria-label={hover}
-                tabIndex={0}
+                tabIndex={unlocked ? undefined : 0}
               >
                 {badge.imageUrl ? (
                   <img
@@ -57,9 +56,11 @@ export function BadgeGrid({ badges, unlockedBadgeIds }: BadgeGridProps) {
                     {unlocked ? '🏅' : '🔒'}
                   </span>
                 )}
-                <span className="badge-tooltip" role="tooltip">
-                  {hover}
-                </span>
+                {!unlocked && (
+                  <span className="badge-tooltip" role="tooltip">
+                    {hover}
+                  </span>
+                )}
               </div>
               {showTitle && (
                 <span className="profile-badge__title">{badge.title}</span>
