@@ -1137,6 +1137,7 @@ select {
 }
 
 .category-card__image-wrap {
+  position: relative;
   aspect-ratio: 4 / 3;
   background: var(--bg-elevated);
   overflow: hidden;
@@ -1177,6 +1178,109 @@ select {
 .category-card__meta {
   margin: 0.15rem 0 0;
   font-size: 0.72rem;
+}
+
+.category-card--locked {
+  opacity: 0.72;
+  pointer-events: none;
+  filter: grayscale(0.35);
+}
+
+.category-card--locked .category-card__lock-overlay {
+  pointer-events: auto;
+}
+
+.category-card__lock-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.5rem;
+  background: rgba(10, 8, 18, 0.72);
+  text-align: center;
+}
+
+.category-card__lock-icon {
+  font-size: 1.25rem;
+}
+
+.category-card__lock-text {
+  margin: 0;
+  font-size: 0.68rem;
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+
+.category-card__progress {
+  margin-top: 0.45rem;
+}
+
+.category-card__progress-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(192, 132, 252, 0.15);
+  overflow: hidden;
+}
+
+.category-card__progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--cat-color, var(--accent));
+  border-radius: inherit;
+  transition: width 0.2s ease;
+}
+
+.category-card__progress-label {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.68rem;
+}
+
+.category-card__join {
+  margin-top: 0.5rem;
+  pointer-events: auto;
+}
+
+.category-tier {
+  margin-bottom: 1.25rem;
+}
+
+.category-tier--locked .category-grid {
+  opacity: 0.85;
+}
+
+.category-tier__hint {
+  margin: -0.25rem 0 0.65rem;
+  font-size: 0.85rem;
+}
+
+.category-detail__completion {
+  margin-top: 0.65rem;
+}
+
+.category-detail__progress-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(192, 132, 252, 0.15);
+  overflow: hidden;
+  margin-bottom: 0.35rem;
+}
+
+.category-detail__progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+}
+
+.category-detail__member-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .back-link {
@@ -2493,6 +2597,115 @@ a.task-list-row {
   justify-content: flex-end;
   gap: 0.5rem;
   margin-top: 0.35rem;
+}
+
+/* —— Background GIF overlay —— */
+
+.background-gif-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.background-gif-overlay__img {
+  position: fixed;
+  max-width: min(28vw, 240px);
+  max-height: min(28vh, 240px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  pointer-events: none;
+  transition: opacity 1.5s ease;
+  filter: saturate(0.85);
+}
+
+.background-gif-overlay__img--top-left {
+  top: 1rem;
+  left: 1rem;
+}
+
+.background-gif-overlay__img--top-right {
+  top: 1rem;
+  right: 1rem;
+}
+
+.background-gif-overlay__img--bottom-left {
+  bottom: 1rem;
+  left: 1rem;
+}
+
+.background-gif-overlay__img--bottom-right {
+  bottom: 1rem;
+  right: 1rem;
+}
+
+.admin-gif-bank-item__main {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.admin-gif-bank-item__thumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 0.35rem;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.gif-bank-preview-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.gif-bank-preview-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  border: none;
+  background: rgba(0, 0, 0, 0.72);
+  cursor: pointer;
+}
+
+.gif-bank-preview-modal__panel {
+  position: relative;
+  width: min(100%, 28rem);
+  padding: 1.25rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(192, 132, 252, 0.35);
+  background: var(--surface);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.gif-bank-preview-modal__title {
+  margin: 0 0 0.35rem;
+  font-size: 1.1rem;
+}
+
+.gif-bank-preview-modal__label {
+  margin: 0 0 0.85rem;
+  font-size: 0.85rem;
+}
+
+.gif-bank-preview-modal__img {
+  display: block;
+  width: 100%;
+  max-height: min(50vh, 20rem);
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.gif-bank-preview-modal__actions {
+  margin-top: 1rem;
 }
 
 /* —— Soap bubbles —— */

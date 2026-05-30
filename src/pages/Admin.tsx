@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import type {
   Badge,
   Category,
+  CategoryGroup,
   ContentTier,
   PatreonMemberTier,
   PatreonStatus,
@@ -40,6 +41,7 @@ import {
 } from '../lib/videoStorage';
 import { CategoryImagePicker } from '../components/CategoryImagePicker';
 import { useAppStore } from '../hooks/useAppStore';
+import { CATEGORY_GROUP_LABELS, CATEGORY_GROUP_ORDER } from '../lib/categoryProgression';
 import { getStageLabel, USER_STAGE_OPTIONS, type TaskUserStage } from '../lib/levels';
 import { TASK_SCOPE_LABELS, TASK_SCOPE_OPTIONS } from '../lib/taskScope';
 import {
@@ -47,6 +49,17 @@ import {
   MAX_CATEGORY_IMAGE_BYTES,
   resolveCategoryImageUrl,
 } from '../lib/categoryImage';
+import {
+  deleteGifBankEntry,
+  fetchGifBank,
+  insertGifBankEntry,
+  MAX_GIF_BYTES,
+  type GifBankEntry,
+} from '../lib/gifBank';
+import {
+  clearGifBankPreview,
+  previewGifAsBackground,
+} from '../lib/gifBankPreview';
 
 const ADMIN_SECTIONS = [
   {
@@ -84,6 +97,12 @@ const ADMIN_SECTIONS = [
     label: 'Videos',
     icon: '🎬',
     hint: 'Categories & uploads',
+  },
+  {
+    id: 'gifbank' as const,
+    label: 'GIF bank',
+    icon: '🖼️',
+    hint: 'Background GIFs',
   },
 ];
 
@@ -155,6 +174,7 @@ export function Admin() {
           {section === 'punishments' && <PunishmentsAdminLink />}
           {section === 'users' && <UserAdmin />}
           {section === 'videos' && <VideosAdmin />}
+          {section === 'gifbank' && <GifBankAdmin />}
         </div>
       </div>
 
@@ -526,6 +546,8 @@ function emptyCategoryDraft(): Category {
     description: '',
     imageUrl: undefined,
     requiredStage: null,
+    categoryGroup: 'beginner',
+    unlockAfterCategoryId: null,
   };
 }
 
@@ -623,7 +645,7 @@ function CategoryAdmin() {
               key={c.id}
               selected={draft.id === c.id}
               title={`${c.icon} ${c.name}`}
-              meta={c.description || 'No description'}
+              meta={`${CATEGORY_GROUP_LABELS[c.categoryGroup ?? 'beginner']}${c.unlockAfterCategoryId ? ' · chained unlock' : ''}${c.description ? ` · ${c.description}` : ' · No description'}`}
               onEdit={() => {
                 setDraft(c);
                 setErrors({});
@@ -701,6 +723,51 @@ function CategoryAdmin() {
             value={draft.description}
             onChange={(e) => setDraft({ ...draft, description: e.target.value })}
           />
+        </Field>
+        <Field
+          label="Tier group"
+          hint="Home section: All appears first; other tiers unlock progressively."
+        >
+          <select
+            aria-label="Category tier group"
+            value={draft.categoryGroup ?? 'beginner'}
+            onChange={(e) =>
+              setDraft({
+                ...draft,
+                categoryGroup: e.target.value as CategoryGroup,
+              })
+            }
+          >
+            {CATEGORY_GROUP_ORDER.map((group) => (
+              <option key={group} value={group}>
+                {CATEGORY_GROUP_LABELS[group]}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field
+          label="Unlock after category"
+          hint="Optional: player must 100% complete this category before joining."
+        >
+          <select
+            aria-label="Unlock after category"
+            value={draft.unlockAfterCategoryId ?? ''}
+            onChange={(e) =>
+              setDraft({
+                ...draft,
+                unlockAfterCategoryId: e.target.value || null,
+              })
+            }
+          >
+            <option value="">None (tier rules only)</option>
+            {state.categories
+              .filter((c) => c.id !== draft.id)
+              .map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.icon} {c.name}
+                </option>
+              ))}
+          </select>
         </Field>
         <Field
           label="Minimum stage to join"
@@ -2458,6 +2525,289 @@ function VideoUploadAdmin() {
   );
 
   return <AdminSection list={list} form={form} />;
+}
+
+function GifBankPreviewModal({
+  entry,
+  onClose,
+  onTestBackground,
+}: {
+  entry: GifBankEntry;
+  onClose: () => void;
+  onTestBackground: () => void;
+}) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  return (
+    <div
+      className="gif-bank-preview-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="gif-bank-preview-title"
+    >
+      <button
+        type="button"
+        className="gif-bank-preview-modal__backdrop"
+        aria-label="Close preview"
+        onClick={onClose}
+      />
+      <div className="gif-bank-preview-modal__panel">
+        <h2 id="gif-bank-preview-title" className="gif-bank-preview-modal__title">
+          GIF preview
+        </h2>
+        <p className="muted gif-bank-preview-modal__label">
+          {entry.title || 'Untitled GIF'}
+        </p>
+        <img
+          src={entry.url}
+          alt=""
+          className="gif-bank-preview-modal__img"
+        />
+        <div className="btn-row gif-bank-preview-modal__actions">
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={onTestBackground}
+          >
+            Test as background
+          </button>
+          <button type="button" className="btn btn--ghost" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GifBankAdmin() {
+  const [gifs, setGifs] = useState<GifBankEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [title, setTitle] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [search, setSearch] = useState('');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [previewEntry, setPreviewEntry] = useState<GifBankEntry | null>(null);
+
+  const loadGifs = async () => {
+    setLoading(true);
+    setError('');
+    const result = await fetchGifBank();
+    setLoading(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setGifs(result.gifs);
+  };
+
+  useEffect(() => {
+    void loadGifs();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearGifBankPreview();
+    };
+  }, []);
+
+  const openPreview = (entry: GifBankEntry) => {
+    previewGifAsBackground(entry);
+    setPreviewEntry(entry);
+  };
+
+  const closePreview = () => {
+    clearGifBankPreview();
+    setPreviewEntry(null);
+  };
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return gifs;
+    return gifs.filter((g) =>
+      (g.title ?? '').toLowerCase().includes(q),
+    );
+  }, [gifs, search]);
+
+  const submit = async () => {
+    setError('');
+    setMessage('');
+    if (!file) {
+      setError('Choose a GIF file.');
+      return;
+    }
+    if (file.size > MAX_GIF_BYTES) {
+      setError(
+        `GIF too large. Max ${Math.round(MAX_GIF_BYTES / (1024 * 1024))} MB.`,
+      );
+      return;
+    }
+
+    setUploading(true);
+    const result = await insertGifBankEntry(title, file);
+    setUploading(false);
+
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+
+    setGifs((prev) => [result.entry, ...prev]);
+    setTitle('');
+    setFile(null);
+    setMessage('GIF uploaded.');
+  };
+
+  const remove = async (entry: GifBankEntry) => {
+    if (!window.confirm('Delete this GIF from the bank?')) return;
+    setError('');
+    setMessage('');
+    const result = await deleteGifBankEntry(entry.id, entry.storagePath);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setGifs((prev) => prev.filter((g) => g.id !== entry.id));
+    if (previewEntry?.id === entry.id) closePreview();
+    setMessage('GIF deleted.');
+  };
+
+  const list = (
+    <AdminListCard
+      title="GIF bank"
+      count={filtered.length}
+      intro="GIFs appear randomly in the app background at 3% opacity every 5–10 minutes. Click to preview."
+      search={search}
+      onSearchChange={setSearch}
+    >
+      {loading && <p className="muted">Loading GIFs…</p>}
+      <StatusMessage message={error} variant="err" />
+      {!loading && filtered.length === 0 ? (
+        <AdminEmpty
+          title={search ? 'No matches' : 'No GIFs yet'}
+          hint={
+            search
+              ? 'Try a different search term.'
+              : 'Upload a GIF below to add it to the background rotation.'
+          }
+        />
+      ) : (
+        <ul className="admin-library admin-library--gif-bank">
+          {filtered.map((g) => (
+            <li
+              key={g.id}
+              className={
+                previewEntry?.id === g.id
+                  ? 'admin-library-item admin-library-item--selected'
+                  : 'admin-library-item'
+              }
+            >
+              <button
+                type="button"
+                className="admin-library-item__main admin-gif-bank-item__main"
+                onClick={() => openPreview(g)}
+                aria-pressed={previewEntry?.id === g.id}
+              >
+                <img
+                  src={g.url}
+                  alt=""
+                  className="admin-gif-bank-item__thumb"
+                />
+                <span>
+                  <strong className="admin-library-item__title">
+                    {g.title || 'Untitled GIF'}
+                  </strong>
+                  <span className="admin-library-item__meta muted">
+                    {new Date(g.createdAt).toLocaleString()} · Click to preview
+                  </span>
+                </span>
+              </button>
+              <div className="admin-library-item__actions">
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--small btn--danger-text"
+                  onClick={() => void remove(g)}
+                >
+                  Delete
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </AdminListCard>
+  );
+
+  const form = (
+    <section className="card">
+      <h3 className="section-title">Upload GIF</h3>
+      <StatusMessage message={message} />
+      <StatusMessage message={error} variant="err" />
+
+      <FormBlock title="Details">
+        <Field label="Title (optional)" htmlFor="gif-title">
+          <input
+            id="gif-title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Label for admin list"
+          />
+        </Field>
+        <Field
+          label="GIF file"
+          htmlFor="gif-file"
+          hint={`accept image/gif · max ${Math.round(MAX_GIF_BYTES / (1024 * 1024))} MB`}
+          required
+        >
+          <input
+            id="gif-file"
+            type="file"
+            accept="image/gif"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          />
+          {file && (
+            <p className="muted">
+              {file.name} ({Math.round(file.size / 1024)} KB)
+            </p>
+          )}
+        </Field>
+      </FormBlock>
+
+      <FormActions
+        editing={false}
+        entityLabel="GIF"
+        onSubmit={() => void submit()}
+        onClear={() => {
+          setTitle('');
+          setFile(null);
+          setError('');
+          setMessage('');
+        }}
+        disabled={uploading}
+      />
+    </section>
+  );
+
+  return (
+    <>
+      {previewEntry && (
+        <GifBankPreviewModal
+          entry={previewEntry}
+          onClose={closePreview}
+          onTestBackground={() => previewGifAsBackground(previewEntry)}
+        />
+      )}
+      <AdminSection list={list} form={form} />
+    </>
+  );
 }
 
 function VideosAdmin() {

@@ -26,6 +26,13 @@ export interface Session {
   patreonUserId: string | null;
 }
 
+export type CategoryGroup =
+  | 'all'
+  | 'beginner'
+  | 'intermediate'
+  | 'trained'
+  | 'mindless';
+
 export interface Category {
   id: string;
   name: string;
@@ -36,6 +43,16 @@ export interface Category {
   imageUrl?: string;
   /** Minimum user stage to join; null = anyone. */
   requiredStage?: UserStage | null;
+  /** Home tier section; `all` shows before tier groups. */
+  categoryGroup?: CategoryGroup;
+  /** Unlock only after this category is 100% complete. */
+  unlockAfterCategoryId?: string | null;
+}
+
+export interface CategoryMemberProgress {
+  categoryId: string;
+  tasksCompletedCount: number;
+  markedCompleteAt: string | null;
 }
 
 export interface Task {
@@ -206,5 +223,7 @@ export interface AppState {
   unlockedBadgeIds: string[];
   /** Category IDs the signed-in user has joined. */
   joinedCategoryIds: string[];
+  /** Per-category completion synced from category_members. */
+  categoryMemberProgress: CategoryMemberProgress[];
   version: number;
 }

@@ -7,6 +7,7 @@ import {
 import { AdminRoute } from './components/AdminRoute';
 import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { BackgroundGifOverlay } from './components/BackgroundGifOverlay';
 import { SoapBubbleField } from './components/SoapBubbleField';
 import { AppStoreProvider } from './hooks/useAppStore';
 import { Admin } from './pages/Admin';
@@ -25,6 +26,7 @@ import { Today } from './pages/Today';
 function AppChrome() {
   return (
     <>
+      <BackgroundGifOverlay />
       <SoapBubbleField />
       <Outlet />
     </>

@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { CategoryImagePicker } from '../components/CategoryImagePicker';
+import { TaskCard } from '../components/TaskCard';
 import { TaskListRow } from '../components/TaskListRow';
 import { useAppStore } from '../hooks/useAppStore';
 import {
   canJoinCategory,
-  joinRequirementMessage,
-} from '../lib/categoryMembership';
+  getCategoryCompletionStats,
+  getCategoryUnlockBlockReason,
+  isCategoryUnlocked,
+} from '../lib/categoryProgression';
 import {
   isCategoryImagePreview,
   MAX_CATEGORY_IMAGE_BYTES,
@@ -47,6 +50,7 @@ export function CategoryDetail() {
     updateTask,
     deleteTask,
     joinCategory,
+    leaveCategory,
   } = useAppStore();
   const isAdmin = session?.role === 'admin';
 
@@ -54,10 +58,15 @@ export function CategoryDetail() {
   const isMember =
     isAdmin ||
     (categoryId != null && state.joinedCategoryIds.includes(categoryId));
-  const joinBlocked =
-    category != null &&
-    !isMember &&
-    !canJoinCategory(category, state.progress.currentLevel);
+  const joinGate = category
+    ? canJoinCategory(state, category, state.progress.currentLevel)
+    : { ok: false as const, reason: '' };
+  const joinBlocked = category != null && !isMember && !joinGate.ok;
+  const categoryLocked =
+    category != null && !isAdmin && !isCategoryUnlocked(state, category);
+  const completion = category
+    ? getCategoryCompletionStats(state, category.id)
+    : { completed: 0, total: 0, percent: 0 };
 
   const categoryTasks = useMemo(
     () =>
@@ -88,6 +97,7 @@ export function CategoryDetail() {
   const [joinMessage, setJoinMessage] = useState('');
   const [joinError, setJoinError] = useState('');
   const [joining, setJoining] = useState(false);
+  const [leaving, setLeaving] = useState(false);
 
   const [profiles, setProfiles] = useState<AdminProfileRow[]>([]);
   const [taskDraft, setTaskDraft] = useState<Task>({
@@ -138,6 +148,27 @@ export function CategoryDetail() {
       return;
     }
     setJoinMessage('You joined this category. Tasks are now available.');
+  };
+
+  const handleLeave = async () => {
+    if (!categoryId) return;
+    if (
+      !window.confirm(
+        'Leave this category? Progress is kept but tasks will be hidden.',
+      )
+    ) {
+      return;
+    }
+    setJoinError('');
+    setJoinMessage('');
+    setLeaving(true);
+    const result = await leaveCategory(categoryId);
+    setLeaving(false);
+    if (!result.ok) {
+      setJoinError(result.error);
+      return;
+    }
+    setJoinMessage('You left this category.');
   };
 
   const saveImageUrl = (url: string) => {
@@ -256,20 +287,50 @@ export function CategoryDetail() {
               Join requirement: {getStageLabel(category.requiredStage)}
             </p>
           )}
+          {completion.total > 0 && (
+            <div className="category-detail__completion">
+              <div
+                className="category-detail__progress-bar"
+                role="progressbar"
+                aria-valuenow={completion.percent}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <span
+                  className="category-detail__progress-fill"
+                  style={{ width: `${completion.percent}%` }}
+                />
+              </div>
+              <p className="muted">
+                {completion.percent}% complete ({completion.completed}/
+                {completion.total} tasks)
+              </p>
+            </div>
+          )}
         </div>
       </header>
 
-      {!isAdmin && !isMember && (
+      {categoryLocked && (
+        <section className="card">
+          <p className="login-error" role="alert">
+            {getCategoryUnlockBlockReason(state, category)}
+          </p>
+        </section>
+      )}
+
+      {!isAdmin && !isMember && !categoryLocked && (
         <section className="card">
           {joinBlocked ? (
             <>
               <p className="login-error" role="alert">
-                {joinRequirementMessage(category)}
+                {joinGate.reason}
               </p>
-              <p className="muted">
-                Your current stage:{' '}
-                {getStageLabel(getUserStage(state.progress.currentLevel))}
-              </p>
+              {category.requiredStage && (
+                <p className="muted">
+                  Your current stage:{' '}
+                  {getStageLabel(getUserStage(state.progress.currentLevel))}
+                </p>
+              )}
             </>
           ) : (
             <>
@@ -296,10 +357,20 @@ export function CategoryDetail() {
       )}
 
       {!isAdmin && isMember && (
-        <p className="notice">You are a member of this category.</p>
+        <section className="card category-detail__member-actions">
+          <p className="notice">You are a member of this category.</p>
+          <button
+            type="button"
+            className="btn btn--ghost btn--small"
+            disabled={leaving}
+            onClick={() => void handleLeave()}
+          >
+            {leaving ? 'Leaving…' : 'Leave category'}
+          </button>
+        </section>
       )}
 
-      {isMember ? (
+      {isMember && !categoryLocked ? (
         grouped.length === 0 ? (
           <section className="card">
             <p className="muted">

@@ -5,16 +5,35 @@ import type { Category } from '../types';
 interface CategoryCardProps {
   category: Category;
   taskCount: number;
+  completionPercent: number;
+  completedCount: number;
   isMember?: boolean;
+  isUnlocked: boolean;
+  lockReason?: string | null;
+  canJoin?: boolean;
+  joinDisabledReason?: string | null;
+  onJoin?: () => void;
+  joining?: boolean;
 }
 
-export function CategoryCard({ category, taskCount, isMember }: CategoryCardProps) {
-  return (
-    <Link
-      to={`/category/${category.id}`}
-      className="category-card"
-      style={{ '--cat-color': category.color } as CSSProperties}
-    >
+export function CategoryCard({
+  category,
+  taskCount,
+  completionPercent,
+  completedCount,
+  isMember,
+  isUnlocked,
+  lockReason,
+  canJoin,
+  joinDisabledReason,
+  onJoin,
+  joining,
+}: CategoryCardProps) {
+  const locked = !isUnlocked;
+  const showJoin = isUnlocked && !isMember && onJoin != null;
+
+  const body = (
+    <>
       <div className="category-card__image-wrap">
         {category.imageUrl ? (
           <img
@@ -27,6 +46,17 @@ export function CategoryCard({ category, taskCount, isMember }: CategoryCardProp
             <span className="category-card__icon">{category.icon}</span>
           </div>
         )}
+        {locked && (
+          <div
+            className="category-card__lock-overlay"
+            title={lockReason ?? 'Locked'}
+          >
+            <span className="category-card__lock-icon" aria-hidden>
+              🔒
+            </span>
+            <p className="category-card__lock-text">{lockReason}</p>
+          </div>
+        )}
       </div>
       <div className="category-card__body">
         <h3 className="category-card__name">{category.name}</h3>
@@ -36,7 +66,63 @@ export function CategoryCard({ category, taskCount, isMember }: CategoryCardProp
             <> · {isMember ? 'Joined' : 'Not joined'}</>
           )}
         </p>
+        {(isMember || completionPercent > 0) && taskCount > 0 && (
+          <div className="category-card__progress">
+            <div
+              className="category-card__progress-bar"
+              role="progressbar"
+              aria-valuenow={completionPercent}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={`${completionPercent}% complete`}
+            >
+              <span
+                className="category-card__progress-fill"
+                style={{ width: `${completionPercent}%` }}
+              />
+            </div>
+            <span className="category-card__progress-label muted">
+              {completionPercent}% · {completedCount}/{taskCount}
+            </span>
+          </div>
+        )}
+        {showJoin && (
+          <button
+            type="button"
+            className="btn btn--primary btn--small btn--block category-card__join"
+            disabled={!canJoin || joining}
+            title={!canJoin ? joinDisabledReason ?? undefined : undefined}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onJoin?.();
+            }}
+          >
+            {joining ? 'Joining…' : 'Join'}
+          </button>
+        )}
       </div>
+    </>
+  );
+
+  if (locked) {
+    return (
+      <div
+        className="category-card category-card--locked"
+        style={{ '--cat-color': category.color } as CSSProperties}
+      >
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <Link
+      to={`/category/${category.id}`}
+      className="category-card"
+      style={{ '--cat-color': category.color } as CSSProperties}
+    >
+      {body}
     </Link>
   );
 }

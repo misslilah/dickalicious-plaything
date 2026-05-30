@@ -17,7 +17,7 @@ type DbUserProgress = {
   punishments: Punishment[];
 };
 
-export function userSliceFromState(state: AppState): Omit<AppState, 'categories' | 'tasks' | 'rewards' | 'badges' | 'punishmentTemplates' | 'videoCategories' | 'videos' | 'version' | 'joinedCategoryIds'> {
+export function userSliceFromState(state: AppState): Omit<AppState, 'categories' | 'tasks' | 'rewards' | 'badges' | 'punishmentTemplates' | 'videoCategories' | 'videos' | 'version' | 'joinedCategoryIds' | 'categoryMemberProgress'> {
   return {
     progress: state.progress,
     dailyPlans: state.dailyPlans,

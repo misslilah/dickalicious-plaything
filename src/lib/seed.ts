@@ -79,6 +79,7 @@ export function createInitialState(): AppState {
     unlockedRewardIds: [],
     unlockedBadgeIds: [],
     joinedCategoryIds: [],
+    categoryMemberProgress: [],
     version: 7,
   };
 }

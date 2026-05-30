@@ -38,6 +38,8 @@ type DbCategory = {
   image_url: string | null;
   sort_order: number;
   required_stage: UserStage | null;
+  category_group: Category['categoryGroup'] | null;
+  unlock_after_category_id: string | null;
 };
 
 type DbTask = {
@@ -121,6 +123,8 @@ function mapCategory(row: DbCategory): Category {
     icon: row.icon,
     imageUrl: row.image_url ?? undefined,
     requiredStage: row.required_stage ?? null,
+    categoryGroup: row.category_group ?? 'beginner',
+    unlockAfterCategoryId: row.unlock_after_category_id ?? null,
   };
 }
 
@@ -324,6 +328,8 @@ export async function upsertCategory(
     icon: category.icon,
     image_url: category.imageUrl ?? null,
     required_stage: category.requiredStage ?? null,
+    category_group: category.categoryGroup ?? 'beginner',
+    unlock_after_category_id: category.unlockAfterCategoryId ?? null,
   };
 
   if (mode === 'update') {

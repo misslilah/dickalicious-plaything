@@ -52,7 +52,13 @@ import {
 } from '../lib/auth';
 import { updateProfileLastSeen } from '../lib/profileDb';
 import { useOnlinePresence } from './useOnlinePresence';
-import { fetchCategoryMemberIds, joinCategoryDb } from '../lib/categoryMembersDb';
+import {
+  fetchCategoryMembers,
+  joinCategoryDb,
+  leaveCategoryDb,
+  syncCategoryProgressDb,
+} from '../lib/categoryMembersDb';
+import { canJoinCategory } from '../lib/categoryProgression';
 import {
   acceptPunishment,
   applyTaskMalus,
@@ -120,6 +126,7 @@ interface AppStoreValue {
   applyTaskMalus: (taskId: string) => void;
   dismissPunishment: (id: string) => void;
   joinCategory: (categoryId: string) => Promise<MutateResult>;
+  leaveCategory: (categoryId: string) => Promise<MutateResult>;
   updateSettings: (partial: Partial<AppState['settings']>) => void;
   updateCategory: (category: Category) => Promise<MutateResult>;
   addCategory: (category: Category) => Promise<MutateResult>;
@@ -201,7 +208,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         await Promise.all([
           fetchSharedCatalog(),
           fetchUserProgress(userId),
-          fetchCategoryMemberIds(userId),
+          fetchCategoryMembers(userId),
           fetchUserBadgeIds(userId),
         ]);
 
@@ -226,6 +233,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       merged = {
         ...merged,
         joinedCategoryIds: membersResult.categoryIds,
+        categoryMemberProgress: membersResult.progress,
         unlockedBadgeIds: badgesResult.badgeIds,
       };
       merged = processDayRollover(merged, userId);
@@ -379,8 +387,32 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         if (denied) return denied;
         return createUser(username, password, role);
       },
-      completeTask: (taskId) =>
-        applyUserState(completeTask(state, taskId, session?.userId ?? null)),
+      completeTask: (taskId) => {
+        const task = state.tasks.find((t) => t.id === taskId);
+        const next = completeTask(state, taskId, session?.userId ?? null);
+        applyUserState(next);
+        const userId = userIdRef.current;
+        const categoryId = task?.categoryId;
+        if (
+          userId &&
+          categoryId &&
+          (task?.taskScope ?? 'category') === 'category' &&
+          next.joinedCategoryIds.includes(categoryId)
+        ) {
+          void syncCategoryProgressDb(userId, categoryId, next).then((result) => {
+            if (!result.ok) return;
+            setState((s) => ({
+              ...s,
+              categoryMemberProgress: [
+                ...s.categoryMemberProgress.filter(
+                  (p) => p.categoryId !== categoryId,
+                ),
+                result.progress,
+              ],
+            }));
+          });
+        }
+      },
       uncompleteTask: (taskId) => applyUserState(uncompleteTask(state, taskId)),
       markTaskStarted: (taskId) =>
         applyUserState(markTaskStarted(state, taskId)),
@@ -393,6 +425,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       joinCategory: async (categoryId) => {
         const userId = userIdRef.current;
         if (!userId) return { ok: false, error: 'Not signed in.' };
+        const category = state.categories.find((c) => c.id === categoryId);
+        if (!category) return { ok: false, error: 'Category not found.' };
+        const gate = canJoinCategory(
+          state,
+          category,
+          state.progress.currentLevel,
+        );
+        if (!gate.ok) return { ok: false, error: gate.reason };
         const result = await joinCategoryDb(userId, categoryId);
         if (!result.ok) return result;
         setState((s) => ({
@@ -400,6 +440,28 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
           joinedCategoryIds: s.joinedCategoryIds.includes(categoryId)
             ? s.joinedCategoryIds
             : [...s.joinedCategoryIds, categoryId],
+          categoryMemberProgress: [
+            ...s.categoryMemberProgress.filter((p) => p.categoryId !== categoryId),
+            {
+              categoryId,
+              tasksCompletedCount: 0,
+              markedCompleteAt: null,
+            },
+          ],
+        }));
+        return { ok: true };
+      },
+      leaveCategory: async (categoryId) => {
+        const userId = userIdRef.current;
+        if (!userId) return { ok: false, error: 'Not signed in.' };
+        const result = await leaveCategoryDb(userId, categoryId);
+        if (!result.ok) return result;
+        setState((s) => ({
+          ...s,
+          joinedCategoryIds: s.joinedCategoryIds.filter((id) => id !== categoryId),
+          categoryMemberProgress: s.categoryMemberProgress.filter(
+            (p) => p.categoryId !== categoryId,
+          ),
         }));
         return { ok: true };
       },
@@ -690,9 +752,13 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
           next = mergeCatalogIntoState(fresh, catalogResult.catalog);
         }
         next = ensureDailyPlan(next, undefined, userId);
-        const membersResult = await fetchCategoryMemberIds(userId);
+        const membersResult = await fetchCategoryMembers(userId);
         if (membersResult.ok) {
-          next = { ...next, joinedCategoryIds: membersResult.categoryIds };
+          next = {
+            ...next,
+            joinedCategoryIds: membersResult.categoryIds,
+            categoryMemberProgress: membersResult.progress,
+          };
         }
         const badgesResult = await fetchUserBadgeIds(userId);
         if (badgesResult.ok) {

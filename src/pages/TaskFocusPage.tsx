@@ -11,8 +11,9 @@ import { useTaskCompletion } from '../hooks/useTaskCompletion';
 import { isCategoryImagePreview } from '../lib/categoryImage';
 import {
   canJoinCategory,
-  joinRequirementMessage,
-} from '../lib/categoryMembership';
+  getCategoryUnlockBlockReason,
+  isCategoryUnlocked,
+} from '../lib/categoryProgression';
 import { getTaskPlanEntry } from '../lib/gameLogic';
 import { isCategoryScopeTask } from '../lib/taskScope';
 import type { Task } from '../types';
@@ -106,14 +107,23 @@ export function TaskFocusPage() {
   }
 
   if (!isMember) {
-    const joinBlocked =
-      !canJoinCategory(category, state.progress.currentLevel);
+    const locked = !isCategoryUnlocked(state, category);
+    const joinGate = canJoinCategory(
+      state,
+      category,
+      state.progress.currentLevel,
+    );
     return (
       <div className="page">
         <p className="muted">Join this category to work on its tasks.</p>
-        {joinBlocked && (
+        {locked && (
           <p className="login-error" role="alert">
-            {joinRequirementMessage(category)}
+            {getCategoryUnlockBlockReason(state, category)}
+          </p>
+        )}
+        {!locked && !joinGate.ok && (
+          <p className="login-error" role="alert">
+            {joinGate.reason}
           </p>
         )}
         <Link to={`/category/${categoryId}`} className="btn btn--ghost">
