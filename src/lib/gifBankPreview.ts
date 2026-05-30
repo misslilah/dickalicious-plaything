@@ -3,9 +3,21 @@ import type { GifBankEntry } from './gifBank';
 const GIF_BANK_PREVIEW_EVENT = 'gif-bank-preview';
 const GIF_BANK_PREVIEW_CLEAR_EVENT = 'gif-bank-preview-clear';
 
-export function previewGifAsBackground(entry: GifBankEntry): void {
+export const GIF_BANK_PREVIEW_OPACITY = 0.3;
+
+export interface GifBankPreviewDetail {
+  entry: GifBankEntry;
+  opacity: number;
+}
+
+export function previewGifAsBackground(
+  entry: GifBankEntry,
+  opacity = GIF_BANK_PREVIEW_OPACITY,
+): void {
   window.dispatchEvent(
-    new CustomEvent<GifBankEntry>(GIF_BANK_PREVIEW_EVENT, { detail: entry }),
+    new CustomEvent<GifBankPreviewDetail>(GIF_BANK_PREVIEW_EVENT, {
+      detail: { entry, opacity },
+    }),
   );
 }
 
@@ -14,11 +26,11 @@ export function clearGifBankPreview(): void {
 }
 
 export function subscribeGifBankPreview(
-  onPreview: (entry: GifBankEntry) => void,
+  onPreview: (detail: GifBankPreviewDetail) => void,
   onClear?: () => void,
 ): () => void {
   const handlePreview = (event: Event) => {
-    onPreview((event as CustomEvent<GifBankEntry>).detail);
+    onPreview((event as CustomEvent<GifBankPreviewDetail>).detail);
   };
   const handleClear = () => onClear?.();
 

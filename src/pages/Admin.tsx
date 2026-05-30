@@ -50,10 +50,19 @@ import {
   resolveCategoryImageUrl,
 } from '../lib/categoryImage';
 import {
+  appearancePartsToMs,
   deleteGifBankEntry,
   fetchGifBank,
+  fetchGifBankAppearanceSettings,
   insertGifBankEntry,
+  isFixedAppearanceInterval,
   MAX_GIF_BYTES,
+  msToAppearanceParts,
+  updateGifBankAppearanceSettings,
+  validateAppearanceSettings,
+  validateRotationOpacity,
+  type GifAppearanceIntervalUnit,
+  type GifBankAppearanceSettings,
   type GifBankEntry,
 } from '../lib/gifBank';
 import {
@@ -2586,6 +2595,67 @@ function GifBankPreviewModal({
   );
 }
 
+const GIF_APPEARANCE_UNITS: { value: GifAppearanceIntervalUnit; label: string }[] = [
+  { value: 'seconds', label: 'Seconds' },
+  { value: 'minutes', label: 'Minutes' },
+];
+
+function formatAppearanceSummary(settings: GifBankAppearanceSettings): string {
+  if (isFixedAppearanceInterval(settings)) {
+    const { value, unit } = msToAppearanceParts(settings.minIntervalMs);
+    const unitLabel = unit === 'minutes' ? 'minute' : 'second';
+    return `every ${value} ${unitLabel}${value === 1 ? '' : 's'}`;
+  }
+
+  const min = msToAppearanceParts(settings.minIntervalMs);
+  const max = msToAppearanceParts(settings.maxIntervalMs);
+  const minUnit = min.unit === 'minutes' ? 'minute' : 'second';
+  const maxUnit = max.unit === 'minutes' ? 'minute' : 'second';
+  return `every ${min.value} ${minUnit}${min.value === 1 ? '' : 's'} to ${max.value} ${maxUnit}${max.value === 1 ? '' : 's'}`;
+}
+
+function GifAppearanceIntervalField({
+  label,
+  htmlFor,
+  value,
+  unit,
+  onValueChange,
+  onUnitChange,
+}: {
+  label: string;
+  htmlFor: string;
+  value: number;
+  unit: GifAppearanceIntervalUnit;
+  onValueChange: (value: number) => void;
+  onUnitChange: (unit: GifAppearanceIntervalUnit) => void;
+}) {
+  return (
+    <Field label={label} htmlFor={htmlFor}>
+      <div className="gif-appearance-interval-row">
+        <input
+          id={htmlFor}
+          type="number"
+          min={1}
+          step={1}
+          value={value}
+          onChange={(e) => onValueChange(Number(e.target.value))}
+        />
+        <select
+          aria-label={`${label} unit`}
+          value={unit}
+          onChange={(e) => onUnitChange(e.target.value as GifAppearanceIntervalUnit)}
+        >
+          {GIF_APPEARANCE_UNITS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
+    </Field>
+  );
+}
+
 function GifBankAdmin() {
   const [gifs, setGifs] = useState<GifBankEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2596,6 +2666,44 @@ function GifBankAdmin() {
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState(false);
   const [previewEntry, setPreviewEntry] = useState<GifBankEntry | null>(null);
+  const [appearanceMode, setAppearanceMode] = useState<'fixed' | 'range'>('range');
+  const [fixedValue, setFixedValue] = useState(5);
+  const [fixedUnit, setFixedUnit] = useState<GifAppearanceIntervalUnit>('minutes');
+  const [minValue, setMinValue] = useState(5);
+  const [minUnit, setMinUnit] = useState<GifAppearanceIntervalUnit>('minutes');
+  const [maxValue, setMaxValue] = useState(10);
+  const [maxUnit, setMaxUnit] = useState<GifAppearanceIntervalUnit>('minutes');
+  const [rotationOpacityPercent, setRotationOpacityPercent] = useState(3);
+  const [appearanceSummary, setAppearanceSummary] = useState('every 5 minutes to 10 minutes');
+  const [settingsMessage, setSettingsMessage] = useState('');
+  const [settingsError, setSettingsError] = useState('');
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  const applyAppearanceSettings = (settings: GifBankAppearanceSettings) => {
+    setAppearanceSummary(formatAppearanceSummary(settings));
+    setRotationOpacityPercent(Math.round(settings.rotationOpacity * 100));
+    if (isFixedAppearanceInterval(settings)) {
+      setAppearanceMode('fixed');
+      const fixed = msToAppearanceParts(settings.minIntervalMs);
+      setFixedValue(fixed.value);
+      setFixedUnit(fixed.unit);
+      setMinValue(fixed.value);
+      setMinUnit(fixed.unit);
+      setMaxValue(fixed.value);
+      setMaxUnit(fixed.unit);
+      return;
+    }
+
+    setAppearanceMode('range');
+    const min = msToAppearanceParts(settings.minIntervalMs);
+    const max = msToAppearanceParts(settings.maxIntervalMs);
+    setMinValue(min.value);
+    setMinUnit(min.unit);
+    setMaxValue(max.value);
+    setMaxUnit(max.unit);
+    setFixedValue(min.value);
+    setFixedUnit(min.unit);
+  };
 
   const loadGifs = async () => {
     setLoading(true);
@@ -2609,8 +2717,19 @@ function GifBankAdmin() {
     setGifs(result.gifs);
   };
 
+  const loadAppearanceSettings = async () => {
+    setSettingsError('');
+    const result = await fetchGifBankAppearanceSettings();
+    if (!result.ok) {
+      setSettingsError(result.error);
+      return;
+    }
+    applyAppearanceSettings(result.settings);
+  };
+
   useEffect(() => {
     void loadGifs();
+    void loadAppearanceSettings();
   }, []);
 
   useEffect(() => {
@@ -2629,6 +2748,11 @@ function GifBankAdmin() {
     setPreviewEntry(null);
   };
 
+  const testAsBackground = (entry: GifBankEntry) => {
+    previewGifAsBackground(entry);
+    setPreviewEntry(null);
+  };
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return gifs;
@@ -2636,6 +2760,57 @@ function GifBankAdmin() {
       (g.title ?? '').toLowerCase().includes(q),
     );
   }, [gifs, search]);
+
+  const buildAppearanceSettings = (): GifBankAppearanceSettings | null => {
+    const rotationOpacity = rotationOpacityPercent / 100;
+    const opacityError = validateRotationOpacity(rotationOpacity);
+    if (opacityError) {
+      setSettingsError(opacityError);
+      return null;
+    }
+
+    if (appearanceMode === 'fixed') {
+      const intervalMs = appearancePartsToMs(fixedValue, fixedUnit);
+      const validationError = validateAppearanceSettings(intervalMs, intervalMs);
+      if (validationError) {
+        setSettingsError(validationError);
+        return null;
+      }
+      return {
+        minIntervalMs: intervalMs,
+        maxIntervalMs: intervalMs,
+        rotationOpacity,
+      };
+    }
+
+    const minIntervalMs = appearancePartsToMs(minValue, minUnit);
+    const maxIntervalMs = appearancePartsToMs(maxValue, maxUnit);
+    const validationError = validateAppearanceSettings(minIntervalMs, maxIntervalMs);
+    if (validationError) {
+      setSettingsError(validationError);
+      return null;
+    }
+    return { minIntervalMs, maxIntervalMs, rotationOpacity };
+  };
+
+  const saveAppearanceSettings = async () => {
+    setSettingsMessage('');
+    setSettingsError('');
+    const settings = buildAppearanceSettings();
+    if (!settings) return;
+
+    setSavingSettings(true);
+    const result = await updateGifBankAppearanceSettings(settings);
+    setSavingSettings(false);
+
+    if (!result.ok) {
+      setSettingsError(result.error);
+      return;
+    }
+
+    applyAppearanceSettings(settings);
+    setSettingsMessage('Appearance settings saved.');
+  };
 
   const submit = async () => {
     setError('');
@@ -2684,7 +2859,7 @@ function GifBankAdmin() {
     <AdminListCard
       title="GIF bank"
       count={filtered.length}
-      intro="GIFs appear randomly in the app background at 3% opacity every 5–10 minutes. Click to preview."
+      intro={`GIFs appear randomly in the app background at ${rotationOpacityPercent}% opacity ${appearanceSummary}. Each GIF shows for 5 seconds, then fades. Click to preview at 30% opacity.`}
       search={search}
       onSearchChange={setSearch}
     >
@@ -2746,54 +2921,154 @@ function GifBankAdmin() {
     </AdminListCard>
   );
 
-  const form = (
+  const appearanceForm = (
     <section className="card">
-      <h3 className="section-title">Upload GIF</h3>
-      <StatusMessage message={message} />
-      <StatusMessage message={error} variant="err" />
+      <h3 className="section-title">Background appearance</h3>
+      <p className="muted">
+        Control timing and opacity for random background GIF appearances.
+        Display duration, fade, and position are unchanged.
+      </p>
+      <StatusMessage message={settingsMessage} />
+      <StatusMessage message={settingsError} variant="err" />
 
-      <FormBlock title="Details">
-        <Field label="Title (optional)" htmlFor="gif-title">
-          <input
-            id="gif-title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Label for admin list"
-          />
-        </Field>
+      <FormBlock title="Opacity">
         <Field
-          label="GIF file"
-          htmlFor="gif-file"
-          hint={`accept image/gif · max ${Math.round(MAX_GIF_BYTES / (1024 * 1024))} MB`}
-          required
+          label="Background opacity"
+          htmlFor="gif-rotation-opacity"
+          hint="Opacity when GIFs appear in the app background (0–100%). Preview uses 30%."
         >
-          <input
-            id="gif-file"
-            type="file"
-            accept="image/gif"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-          {file && (
-            <p className="muted">
-              {file.name} ({Math.round(file.size / 1024)} KB)
-            </p>
-          )}
+          <div className="gif-appearance-interval-row">
+            <input
+              id="gif-rotation-opacity"
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={rotationOpacityPercent}
+              onChange={(e) => setRotationOpacityPercent(Number(e.target.value))}
+            />
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              aria-label="Background opacity percent"
+              value={rotationOpacityPercent}
+              onChange={(e) => setRotationOpacityPercent(Number(e.target.value))}
+            />
+            <span className="muted">%</span>
+          </div>
         </Field>
       </FormBlock>
 
-      <FormActions
-        editing={false}
-        entityLabel="GIF"
-        onSubmit={() => void submit()}
-        onClear={() => {
-          setTitle('');
-          setFile(null);
-          setError('');
-          setMessage('');
-        }}
-        disabled={uploading}
-      />
+      <FormBlock title="Schedule">
+        <Field label="Timing mode">
+          <ChipSelect
+            label="Timing mode"
+            options={[
+              { value: 'fixed' as const, label: 'Fixed interval' },
+              { value: 'range' as const, label: 'Random range' },
+            ]}
+            value={appearanceMode}
+            onChange={setAppearanceMode}
+          />
+        </Field>
+
+        {appearanceMode === 'fixed' ? (
+          <GifAppearanceIntervalField
+            label="Appear every"
+            htmlFor="gif-appearance-fixed"
+            value={fixedValue}
+            unit={fixedUnit}
+            onValueChange={setFixedValue}
+            onUnitChange={setFixedUnit}
+          />
+        ) : (
+          <>
+            <GifAppearanceIntervalField
+              label="Minimum wait"
+              htmlFor="gif-appearance-min"
+              value={minValue}
+              unit={minUnit}
+              onValueChange={setMinValue}
+              onUnitChange={setMinUnit}
+            />
+            <GifAppearanceIntervalField
+              label="Maximum wait"
+              htmlFor="gif-appearance-max"
+              value={maxValue}
+              unit={maxUnit}
+              onValueChange={setMaxValue}
+              onUnitChange={setMaxUnit}
+            />
+          </>
+        )}
+      </FormBlock>
+
+      <div className="btn-row admin-form-actions">
+        <button
+          type="button"
+          className="btn btn--primary"
+          onClick={() => void saveAppearanceSettings()}
+          disabled={savingSettings}
+        >
+          Save settings
+        </button>
+      </div>
     </section>
+  );
+
+  const form = (
+    <>
+      {appearanceForm}
+      <section className="card">
+        <h3 className="section-title">Upload GIF</h3>
+        <StatusMessage message={message} />
+        <StatusMessage message={error} variant="err" />
+
+        <FormBlock title="Details">
+          <Field label="Title (optional)" htmlFor="gif-title">
+            <input
+              id="gif-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Label for admin list"
+            />
+          </Field>
+          <Field
+            label="GIF file"
+            htmlFor="gif-file"
+            hint={`accept image/gif · max ${Math.round(MAX_GIF_BYTES / (1024 * 1024))} MB`}
+            required
+          >
+            <input
+              id="gif-file"
+              type="file"
+              accept="image/gif"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+            {file && (
+              <p className="muted">
+                {file.name} ({Math.round(file.size / 1024)} KB)
+              </p>
+            )}
+          </Field>
+        </FormBlock>
+
+        <FormActions
+          editing={false}
+          entityLabel="GIF"
+          onSubmit={() => void submit()}
+          onClear={() => {
+            setTitle('');
+            setFile(null);
+            setError('');
+            setMessage('');
+          }}
+          disabled={uploading}
+        />
+      </section>
+    </>
   );
 
   return (
@@ -2802,7 +3077,7 @@ function GifBankAdmin() {
         <GifBankPreviewModal
           entry={previewEntry}
           onClose={closePreview}
-          onTestBackground={() => previewGifAsBackground(previewEntry)}
+          onTestBackground={() => testAsBackground(previewEntry)}
         />
       )}
       <AdminSection list={list} form={form} />

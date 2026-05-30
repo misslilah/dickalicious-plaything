@@ -2609,6 +2609,10 @@ a.task-list-row {
   overflow: hidden;
 }
 
+.background-gif-overlay--preview {
+  z-index: 1;
+}
+
 .background-gif-overlay__img {
   position: fixed;
   max-width: min(28vw, 240px);
@@ -2619,26 +2623,6 @@ a.task-list-row {
   pointer-events: none;
   transition: opacity 1.5s ease;
   filter: saturate(0.85);
-}
-
-.background-gif-overlay__img--top-left {
-  top: 1rem;
-  left: 1rem;
-}
-
-.background-gif-overlay__img--top-right {
-  top: 1rem;
-  right: 1rem;
-}
-
-.background-gif-overlay__img--bottom-left {
-  bottom: 1rem;
-  left: 1rem;
-}
-
-.background-gif-overlay__img--bottom-right {
-  bottom: 1rem;
-  right: 1rem;
 }
 
 .admin-gif-bank-item__main {
@@ -2706,6 +2690,21 @@ a.task-list-row {
 
 .gif-bank-preview-modal__actions {
   margin-top: 1rem;
+}
+
+.gif-appearance-interval-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.gif-appearance-interval-row input {
+  flex: 1 1 6rem;
+  min-width: 0;
+}
+
+.gif-appearance-interval-row select {
+  flex: 0 0 auto;
 }
 
 /* —— Soap bubbles —— */
