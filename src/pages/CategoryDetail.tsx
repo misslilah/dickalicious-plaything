@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { CategoryImagePicker } from '../components/CategoryImagePicker';
-import { TaskCard } from '../components/TaskCard';
 import { TaskListRow } from '../components/TaskListRow';
 import { useAppStore } from '../hooks/useAppStore';
 import {
