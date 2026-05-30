@@ -11,6 +11,7 @@ import {
 } from '../lib/gifBank';
 import { subscribeGifBankPreview } from '../lib/gifBankPreview';
 
+/** How long each GIF stays fully visible — never tied to appearance interval settings. */
 const DISPLAY_MS = 5000;
 const FADE_MS = 1500;
 const POSITION_MARGIN_MIN = 3;
@@ -50,21 +51,48 @@ export function BackgroundGifOverlay() {
   const [previewEntry, setPreviewEntry] = useState<GifBankEntry | null>(null);
   const [previewOpacity, setPreviewOpacity] = useState<number | null>(null);
   const [scheduleEpoch, setScheduleEpoch] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const displayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const keyRef = useRef(0);
+  const isDisplayingRef = useRef(false);
+  const appearanceSettingsRef = useRef(appearanceSettings);
+  const catalogRef = useRef(catalog);
 
-  const clearTimers = () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    if (fadeRef.current) clearTimeout(fadeRef.current);
-    if (displayRef.current) clearTimeout(displayRef.current);
+  appearanceSettingsRef.current = appearanceSettings;
+  catalogRef.current = catalog;
+
+  const clearScheduleTimer = () => {
+    if (scheduleRef.current) {
+      clearTimeout(scheduleRef.current);
+      scheduleRef.current = null;
+    }
+  };
+
+  const clearDisplayTimers = () => {
+    if (displayRef.current) {
+      clearTimeout(displayRef.current);
+      displayRef.current = null;
+    }
+    if (fadeRef.current) {
+      clearTimeout(fadeRef.current);
+      fadeRef.current = null;
+    }
+    isDisplayingRef.current = false;
+  };
+
+  const clearAllTimers = () => {
+    clearScheduleTimer();
+    clearDisplayTimers();
   };
 
   const hideWithFade = (onHidden?: () => void) => {
+    if (fadeRef.current) clearTimeout(fadeRef.current);
     setVisible(false);
     fadeRef.current = setTimeout(() => {
+      fadeRef.current = null;
       setActive(null);
+      isDisplayingRef.current = false;
       onHidden?.();
     }, FADE_MS);
   };
@@ -73,6 +101,7 @@ export function BackgroundGifOverlay() {
     entry: GifBankEntry,
     onHidden?: () => void,
   ) => {
+    clearDisplayTimers();
     keyRef.current += 1;
     const position = randomPosition();
     setActive({
@@ -83,15 +112,34 @@ export function BackgroundGifOverlay() {
     });
     requestAnimationFrame(() => setVisible(true));
 
+    isDisplayingRef.current = true;
     displayRef.current = setTimeout(() => {
+      displayRef.current = null;
       hideWithFade(onHidden);
     }, DISPLAY_MS);
+  };
+
+  const scheduleNextAppearanceRef = useRef<() => void>(() => {});
+
+  scheduleNextAppearanceRef.current = () => {
+    clearScheduleTimer();
+    scheduleRef.current = setTimeout(() => {
+      scheduleRef.current = null;
+      const entry = pickRandom(catalogRef.current);
+      if (!entry) {
+        scheduleNextAppearanceRef.current();
+        return;
+      }
+      showWithAutoHide(entry, () => {
+        scheduleNextAppearanceRef.current();
+      });
+    }, randomAppearanceIntervalMs(appearanceSettingsRef.current));
   };
 
   useEffect(() => {
     return subscribeGifBankPreview(
       ({ entry, opacity }) => {
-        clearTimers();
+        clearAllTimers();
         setPreviewEntry(entry);
         setPreviewOpacity(opacity);
         showWithAutoHide(entry, () => {
@@ -101,7 +149,7 @@ export function BackgroundGifOverlay() {
         });
       },
       () => {
-        clearTimers();
+        clearAllTimers();
         setPreviewEntry(null);
         setPreviewOpacity(null);
         setVisible(false);
@@ -128,6 +176,7 @@ export function BackgroundGifOverlay() {
       setCatalog([]);
       setAppearanceSettings(DEFAULT_GIF_BANK_APPEARANCE_SETTINGS);
       if (!previewEntry) {
+        clearAllTimers();
         setActive(null);
         setVisible(false);
         setPreviewOpacity(null);
@@ -152,32 +201,24 @@ export function BackgroundGifOverlay() {
   }, [session, previewEntry]);
 
   useEffect(() => {
-    clearTimers();
+    clearScheduleTimer();
 
     if (previewEntry) return;
 
     if (!session || catalog.length === 0) {
-      setActive(null);
-      setVisible(false);
+      if (!isDisplayingRef.current) {
+        clearDisplayTimers();
+        setActive(null);
+        setVisible(false);
+      }
       return;
     }
 
-    const showNext = () => {
-      const entry = pickRandom(catalog);
-      if (!entry) return;
-      showWithAutoHide(entry);
-    };
+    if (!isDisplayingRef.current) {
+      scheduleNextAppearanceRef.current();
+    }
 
-    const schedule = () => {
-      timerRef.current = setTimeout(() => {
-        showNext();
-        schedule();
-      }, randomAppearanceIntervalMs(appearanceSettings));
-    };
-
-    schedule();
-
-    return clearTimers;
+    return clearScheduleTimer;
   }, [session, catalog, scheduleEpoch, previewEntry, appearanceSettings]);
 
   if (!active) return null;

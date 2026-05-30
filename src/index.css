@@ -10,13 +10,26 @@
   --warn: #fb923c;
   --danger: #f87171;
   --radius: 14px;
-  --nav-h: 64px;
+  --nav-row-h: 2.875rem;
+  --nav-chrome: calc(0.35rem * 2 + 1px);
+  --nav-h: calc(var(--nav-row-h) + var(--nav-chrome));
+  --nav-scroll-extra: 1rem;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --pad-inline: 1rem;
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   color: var(--text);
   background: var(--bg);
+}
+
+@media (max-width: 399px) {
+  :root {
+    --nav-h: calc(var(--nav-row-h) * 2 + 2px + var(--nav-chrome));
+  }
+
+  .app-shell:has(.bottom-nav .nav-link:nth-child(7)) {
+    --nav-h: calc(var(--nav-row-h) * 3 + 4px + var(--nav-chrome));
+  }
 }
 
 *,
@@ -111,12 +124,16 @@ select {
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
-  padding: 0 var(--pad-inline) calc(var(--nav-h) + var(--safe-bottom) + 1rem);
+  padding: 0 var(--pad-inline)
+    calc(var(--nav-h) + var(--safe-bottom) + var(--nav-scroll-extra));
   padding-left: max(var(--pad-inline), env(safe-area-inset-left, 0px));
   padding-right: max(var(--pad-inline), env(safe-area-inset-right, 0px));
   overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  scroll-padding-bottom: calc(
+    var(--nav-h) + var(--safe-bottom) + var(--nav-scroll-extra)
+  );
 }
 
 .app-content {
