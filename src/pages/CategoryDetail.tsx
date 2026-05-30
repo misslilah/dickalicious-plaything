@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { CategoryImagePicker } from '../components/CategoryImagePicker';
 import { TaskCard } from '../components/TaskCard';
+import { TaskListRow } from '../components/TaskListRow';
 import { useAppStore } from '../hooks/useAppStore';
 import {
   canJoinCategory,
@@ -17,6 +18,7 @@ import {
   USER_STAGE_OPTIONS,
   type TaskUserStage,
 } from '../lib/levels';
+import { getCategoryTaskStatus } from '../lib/gameLogic';
 import type { Task, TaskFrequency, TaskScope } from '../types';
 import { isCategoryScopeTask, TASK_SCOPE_OPTIONS } from '../lib/taskScope';
 import {
@@ -46,9 +48,6 @@ export function CategoryDetail() {
     updateTask,
     deleteTask,
     joinCategory,
-    markTaskStarted,
-    completeTask,
-    uncompleteTask,
   } = useAppStore();
   const isAdmin = session?.role === 'admin';
 
@@ -231,24 +230,24 @@ export function CategoryDetail() {
         ← Home
       </Link>
 
-      <header className="category-detail__hero">
-        <div className="category-detail__image-wrap">
+      <header className="category-detail__header">
+        <div className="category-detail__thumb">
           {category.imageUrl ? (
             <img
               src={category.imageUrl}
               alt=""
-              className="category-detail__image"
+              className="category-detail__thumb-image"
             />
           ) : (
             <div
-              className="category-detail__placeholder"
+              className="category-detail__thumb-placeholder"
               style={{ background: `${category.color}22` }}
             >
-              <span className="category-detail__icon">{category.icon}</span>
+              <span>{category.icon}</span>
             </div>
           )}
         </div>
-        <div>
+        <div className="category-detail__header-text">
           <h2>{category.name}</h2>
           {category.description && (
             <p className="muted">{category.description}</p>
@@ -316,12 +315,10 @@ export function CategoryDetail() {
               <ul className="task-list">
                 {tasks.map((task) => (
                   <li key={task.id}>
-                    <TaskCard
+                    <TaskListRow
                       task={task}
-                      showXp
-                      onStart={() => markTaskStarted(task.id)}
-                      onComplete={() => completeTask(task.id)}
-                      onUncomplete={() => uncompleteTask(task.id)}
+                      categoryId={category.id}
+                      status={getCategoryTaskStatus(state, task.id)}
                     />
                     {(task.malusPointsOnFail ?? 0) > 0 && (
                       <p className="muted task-malus-hint">

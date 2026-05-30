@@ -11,6 +11,7 @@ interface TaskCompletionGateProps {
   task: Task;
   completed: boolean;
   disabled?: boolean;
+  variant?: 'list' | 'focus';
   onStart?: () => void;
   onComplete: () => void;
   onUncomplete?: () => void;
@@ -21,6 +22,7 @@ export function TaskCompletionGate({
   task,
   completed,
   disabled = false,
+  variant = 'list',
   onStart,
   onComplete,
   onUncomplete,
@@ -29,6 +31,7 @@ export function TaskCompletionGate({
   const { applyTaskMalus } = useAppStore();
   const [showPhraseModal, setShowPhraseModal] = useState(false);
   const [phraseFailNotice, setPhraseFailNotice] = useState<string | null>(null);
+  const focusMode = variant === 'focus';
 
   const {
     hasTimer,
@@ -106,6 +109,12 @@ export function TaskCompletionGate({
     onComplete();
   };
 
+  const handleFinished = () => {
+    if (completed || disabled || !canComplete) return;
+    finishRequirements();
+    onComplete();
+  };
+
   const handlePhrasePassed = () => {
     refreshPhraseChallenge();
     setShowPhraseModal(false);
@@ -139,20 +148,8 @@ export function TaskCompletionGate({
     else if (hasPhrase && !phraseDone) requirementHints.push('Complete the phrase challenge');
   }
 
-  return (
+  const gateContent = (
     <>
-      <div className="task-card__shell">
-        <input
-          type="checkbox"
-          checked={completed}
-          disabled={checkboxDisabled}
-          onChange={handleToggle}
-          className="task-card__check"
-          aria-label={completed ? 'Mark incomplete' : 'Mark complete'}
-        />
-        {children}
-      </div>
-
       {(phraseFailNotice || phraseChallengeFailed) && !completed && (
         <p className="task-card__phrase-fail" role="alert">
           {phraseFailNotice ??
@@ -253,12 +250,58 @@ export function TaskCompletionGate({
         </div>
       )}
 
+      {focusMode && !completed && !disabled && (
+        <div className="task-focus__actions">
+          {canComplete ? (
+            <button
+              type="button"
+              className="btn btn--primary btn--block"
+              onClick={handleFinished}
+            >
+              Finished
+            </button>
+          ) : (
+            <p className="task-focus__lock muted">
+              {phraseChallengeFailed
+                ? 'This task cannot be completed today.'
+                : 'Complete all requirements above to finish.'}
+            </p>
+          )}
+        </div>
+      )}
+
       <PhraseChallengeModal
         task={task}
         open={showPhraseModal}
         onPassed={handlePhrasePassed}
         onFailed={handlePhraseFailed}
       />
+    </>
+  );
+
+  if (focusMode) {
+    return (
+      <div className="task-gate task-gate--focus">
+        {children}
+        {gateContent}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="task-card__shell">
+        <input
+          type="checkbox"
+          checked={completed}
+          disabled={checkboxDisabled}
+          onChange={handleToggle}
+          className="task-card__check"
+          aria-label={completed ? 'Mark incomplete' : 'Mark complete'}
+        />
+        {children}
+      </div>
+      {gateContent}
     </>
   );
 }

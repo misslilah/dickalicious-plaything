@@ -1,4 +1,9 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import {
+  createBrowserRouter,
+  Navigate,
+  Outlet,
+  RouterProvider,
+} from 'react-router-dom';
 import { AdminRoute } from './components/AdminRoute';
 import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -6,6 +11,7 @@ import { SoapBubbleField } from './components/SoapBubbleField';
 import { AppStoreProvider } from './hooks/useAppStore';
 import { Admin } from './pages/Admin';
 import { CategoryDetail } from './pages/CategoryDetail';
+import { TaskFocusPage } from './pages/TaskFocusPage';
 import { Dashboard } from './pages/Dashboard';
 import { Videos } from './pages/Videos';
 import { VideoCategoryDetail } from './pages/VideoCategoryDetail';
@@ -16,36 +22,63 @@ import { Profile } from './pages/Profile';
 import { Settings } from './pages/Settings';
 import { Today } from './pages/Today';
 
+function AppChrome() {
+  return (
+    <>
+      <SoapBubbleField />
+      <Outlet />
+    </>
+  );
+}
+
+const router = createBrowserRouter([
+  {
+    element: <AppChrome />,
+    children: [
+      { path: '/login', element: <Login /> },
+      {
+        element: <ProtectedRoute />,
+        children: [
+          {
+            element: <Layout />,
+            children: [
+              { index: true, element: <Dashboard /> },
+              { path: 'today', element: <Today /> },
+              { path: 'category/:categoryId', element: <CategoryDetail /> },
+              {
+                path: 'category/:categoryId/task/:taskId',
+                element: <TaskFocusPage />,
+              },
+              { path: 'videos', element: <Videos /> },
+              {
+                path: 'videos/category/:categoryId',
+                element: <VideoCategoryDetail />,
+              },
+              {
+                path: 'library',
+                element: <Navigate to="/videos" replace />,
+              },
+              { path: 'rewards', element: <Rewards /> },
+              { path: 'punishments', element: <Punishments /> },
+              { path: 'profile', element: <Profile /> },
+              { path: 'settings', element: <Settings /> },
+            ],
+          },
+          {
+            element: <AdminRoute />,
+            children: [{ path: 'admin', element: <Admin /> }],
+          },
+        ],
+      },
+      { path: '*', element: <Navigate to="/" replace /> },
+    ],
+  },
+]);
+
 export default function App() {
   return (
     <AppStoreProvider>
-      <BrowserRouter>
-        <SoapBubbleField />
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route element={<ProtectedRoute />}>
-            <Route element={<Layout />}>
-              <Route index element={<Dashboard />} />
-              <Route path="today" element={<Today />} />
-              <Route path="category/:categoryId" element={<CategoryDetail />} />
-              <Route path="videos" element={<Videos />} />
-              <Route
-                path="videos/category/:categoryId"
-                element={<VideoCategoryDetail />}
-              />
-              <Route path="library" element={<Navigate to="/videos" replace />} />
-              <Route path="rewards" element={<Rewards />} />
-              <Route path="punishments" element={<Punishments />} />
-              <Route path="profile" element={<Profile />} />
-              <Route path="settings" element={<Settings />} />
-            </Route>
-            <Route element={<AdminRoute />}>
-              <Route path="admin" element={<Admin />} />
-            </Route>
-          </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
+      <RouterProvider router={router} />
     </AppStoreProvider>
   );
 }

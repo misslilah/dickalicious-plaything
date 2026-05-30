@@ -1189,6 +1189,248 @@ select {
   color: var(--accent);
 }
 
+.back-link--disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.category-detail__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.category-detail__header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.category-detail__header-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.category-detail__thumb {
+  flex-shrink: 0;
+  width: 4.25rem;
+  height: 4.25rem;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid rgba(192, 132, 252, 0.12);
+  background: var(--bg-card);
+}
+
+.category-detail__thumb-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.category-detail__thumb-placeholder {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-size: 1.5rem;
+}
+
+.task-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(192, 132, 252, 0.12);
+  background: var(--bg-elevated);
+  color: inherit;
+  text-decoration: none;
+  text-align: left;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+button.task-list-row,
+a.task-list-row {
+  cursor: pointer;
+}
+
+.task-list-row:hover:not(.task-list-row--disabled) {
+  border-color: rgba(192, 132, 252, 0.35);
+  background: rgba(192, 132, 252, 0.06);
+}
+
+.task-list-row--done {
+  opacity: 0.78;
+  border-color: rgba(74, 222, 128, 0.3);
+}
+
+.task-list-row--disabled {
+  opacity: 0.55;
+}
+
+.task-list-row__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-list-row__title {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.task-list-row__desc {
+  margin: 0.2rem 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.task-list-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.task-list-row__xp {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.task-list-row__aside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.task-list-row__status {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(192, 132, 252, 0.25);
+  color: var(--text-muted);
+}
+
+.task-list-row__status--in_progress {
+  border-color: rgba(251, 191, 36, 0.45);
+  color: #fbbf24;
+}
+
+.task-list-row__status--done {
+  border-color: rgba(74, 222, 128, 0.45);
+  color: #4ade80;
+}
+
+.task-list-row__chevron {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.task-focus__layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  margin-top: 0.75rem;
+}
+
+@media (min-width: 768px) {
+  .task-focus__layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    align-items: start;
+  }
+}
+
+.task-focus__media {
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid rgba(192, 132, 252, 0.12);
+  background: var(--bg-card);
+  aspect-ratio: 4 / 3;
+}
+
+.task-focus__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.task-focus__placeholder {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+}
+
+.task-focus__icon {
+  font-size: 3.5rem;
+}
+
+.task-focus__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.task-focus__header {
+  margin: 0;
+}
+
+.task-focus__category {
+  margin: 0 0 0.25rem;
+  font-size: 0.8rem;
+}
+
+.task-focus__title {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.task-focus__desc {
+  margin: 0.35rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.task-focus__rewards {
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.task-gate--focus {
+  padding: 1rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(192, 132, 252, 0.15);
+  background: var(--bg-elevated);
+}
+
+.task-focus__actions {
+  margin-top: 1rem;
+}
+
+.task-focus__lock {
+  margin: 1rem 0 0;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.task-focus__done-notice {
+  margin: 0;
+}
+
 .category-detail__hero {
   display: flex;
   flex-direction: column;

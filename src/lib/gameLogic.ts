@@ -124,9 +124,60 @@ function normalizeStartedIds(plan: DailyPlan): string[] {
   return plan.startedTaskIds ?? [];
 }
 
-export function markTaskStarted(state: AppState, taskId: string): AppState {
+/** Ensure a category (or other non-home) task has a plan entry for today when acted on. */
+function ensureTaskInTodayPlan(state: AppState, taskId: string): AppState {
   const date = todayKey(getResetHour(state));
   let next = ensureDailyPlan(state, date);
+  const plan = next.dailyPlans[date];
+  if (!plan || plan.tasks.some((t) => t.taskId === taskId)) return next;
+
+  const task = next.tasks.find((t) => t.id === taskId);
+  if (!task || !frequencyMatchesPlanDate(task, date, next)) return next;
+
+  return {
+    ...next,
+    dailyPlans: {
+      ...next.dailyPlans,
+      [date]: {
+        ...plan,
+        tasks: [...plan.tasks, { taskId, completed: false }],
+      },
+    },
+  };
+}
+
+export function getTaskPlanEntry(
+  state: AppState,
+  taskId: string,
+  dateKey?: string,
+) {
+  const date = dateKey ?? todayKey(getResetHour(state));
+  const plan = state.dailyPlans[date];
+  return plan?.tasks.find((t) => t.taskId === taskId);
+}
+
+export function isTaskStartedToday(state: AppState, taskId: string): boolean {
+  const date = todayKey(getResetHour(state));
+  const plan = state.dailyPlans[date];
+  if (!plan) return false;
+  return normalizeStartedIds(plan).includes(taskId);
+}
+
+export type CategoryTaskStatus = 'not_started' | 'in_progress' | 'done';
+
+export function getCategoryTaskStatus(
+  state: AppState,
+  taskId: string,
+): CategoryTaskStatus {
+  const entry = getTaskPlanEntry(state, taskId);
+  if (entry?.completed) return 'done';
+  if (isTaskStartedToday(state, taskId)) return 'in_progress';
+  return 'not_started';
+}
+
+export function markTaskStarted(state: AppState, taskId: string): AppState {
+  const date = todayKey(getResetHour(state));
+  let next = ensureTaskInTodayPlan(ensureDailyPlan(state, date), taskId);
   const plan = next.dailyPlans[date];
   if (!plan || plan.closed) return next;
 
