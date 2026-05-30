@@ -21,6 +21,7 @@ const EMPTY_TASK: Task = {
   id: '',
   title: '',
   description: '',
+  taskScope: 'category',
   frequency: 'daily',
   xpReward: 0,
 };
