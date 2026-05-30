@@ -2333,6 +2333,17 @@ a.task-list-row {
   cursor: help;
 }
 
+.badge-tooltip--measuring {
+  position: fixed !important;
+  left: 0 !important;
+  top: 0 !important;
+  bottom: auto !important;
+  transform: none !important;
+  visibility: hidden !important;
+  opacity: 1 !important;
+  pointer-events: none !important;
+}
+
 .badge-tooltip {
   position: absolute;
   left: 50%;
@@ -2366,11 +2377,18 @@ a.task-list-row {
   content: '';
   position: absolute;
   top: 100%;
-  left: 50%;
+  left: var(--tooltip-arrow-left, 50%);
   transform: translateX(-50%);
   border: 6px solid transparent;
   border-top-color: rgba(26, 16, 36, 0.97);
   filter: drop-shadow(0 1px 0 rgba(192, 132, 252, 0.25));
+}
+
+.badge-tooltip[data-placement='below']::after {
+  top: auto;
+  bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: rgba(26, 16, 36, 0.97);
 }
 
 .profile-badge__icon-wrap:hover .badge-tooltip,
