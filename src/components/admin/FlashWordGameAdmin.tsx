@@ -119,11 +119,6 @@ export function FlashWordGameAdmin() {
   const [libraryBusy, setLibraryBusy] = useState(false);
   const [saveToLibraryOnCreate, setSaveToLibraryOnCreate] = useState(true);
 
-  const editingGame = useMemo(
-    () => games.find((game) => game.id === editingId) ?? null,
-    [games, editingId],
-  );
-
   const selectedCard = form.cards[selectedCardIndex] ?? null;
   const zoneImageUrl =
     selectedCard?.pendingPreviewUrl ?? selectedCard?.imageUrl ?? null;
@@ -405,7 +400,7 @@ export function FlashWordGameAdmin() {
     }
 
     const newCardsWithoutFile = form.cards.some(
-      (card, index) => !card.id && !card.pendingFile,
+      (card) => !card.id && !card.pendingFile,
     );
     if (newCardsWithoutFile) {
       setError('Each new flash card needs an image upload.');
