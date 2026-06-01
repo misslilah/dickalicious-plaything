@@ -5,7 +5,6 @@ import { AdminLockCardComposeModal } from '../components/AdminLockCardComposeMod
 import { CategoryCard } from '../components/CategoryCard';
 import { DailyTasksSection } from '../components/DailyTasksSection';
 import { XpBar } from '../components/XpBar';
-import { useAudioPlayer } from '../contexts/AudioPlayerProvider';
 import { useAppStore } from '../hooks/useAppStore';
 import { useSendAdminBroadcast } from '../hooks/useAdminBroadcast';
 import { useAdminLockCards } from '../hooks/useLockCard';
@@ -34,7 +33,6 @@ type LockTarget = { userId: string; username: string };
 
 export function Dashboard() {
   const { state, session, joinCategory } = useAppStore();
-  const { hasPlaylistContent, setShowPreview } = useAudioPlayer();
   const isAdmin = session?.role === 'admin';
   const sendAdminBroadcast = useSendAdminBroadcast(
     session?.userId,
@@ -121,18 +119,6 @@ export function Dashboard() {
 
   return (
     <div className="page page--home">
-      {hasPlaylistContent && (
-        <button
-          type="button"
-          className="home-audio-preview-btn"
-          onClick={() => setShowPreview(true)}
-          aria-label="Open audio playlist preview"
-          title="Audio playlist"
-        >
-          🎧
-        </button>
-      )}
-
       <section className="home-stats card card--hero">
         <XpBar
           totalXp={progress.totalXp}

@@ -16,6 +16,7 @@
   --player-h: 0px;
   --nav-scroll-extra: 1rem;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
   --pad-inline: 1rem;
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   line-height: 1.5;
@@ -3346,31 +3347,62 @@ a.task-list-row {
   box-shadow: 0 0 0 2px rgba(232, 121, 249, 0.5);
 }
 
-.page--home {
-  position: relative;
-}
+/* —— Audio playlist preview bubble —— */
 
-.home-audio-preview-btn {
-  position: absolute;
-  top: 0;
+.audio-playlist-bubble {
+  position: fixed;
   right: max(var(--pad-inline), env(safe-area-inset-right, 0px));
-  z-index: 5;
-  width: 2.5rem;
-  height: 2.5rem;
-  border: 1px solid rgba(232, 121, 249, 0.25);
-  border-radius: 50%;
-  background: var(--bg-card);
-  color: var(--text);
-  cursor: pointer;
-  font-size: 1.1rem;
+  top: calc(var(--safe-top) + 0.85rem);
+  z-index: 150;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  color: var(--text);
+  background: rgba(26, 16, 36, 0.88);
+  border: 1px solid rgba(232, 121, 249, 0.28);
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  font-size: 1.1rem;
+  padding: 0;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease;
 }
 
-.home-audio-preview-btn:hover {
-  border-color: rgba(232, 121, 249, 0.45);
+.audio-playlist-bubble--with-nav {
+  top: calc(var(--safe-top) + 4.25rem);
+}
+
+.audio-playlist-bubble:hover {
+  border-color: rgba(232, 121, 249, 0.55);
+  background: rgba(36, 21, 51, 0.94);
+  box-shadow:
+    0 4px 16px rgba(232, 121, 249, 0.18),
+    0 2px 12px rgba(0, 0, 0, 0.4);
+  transform: translateY(-2px);
+}
+
+.audio-playlist-bubble:focus-visible {
+  outline: 2px solid rgba(232, 121, 249, 0.75);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .audio-playlist-bubble {
+    transition: none;
+  }
+
+  .audio-playlist-bubble:hover {
+    transform: none;
+  }
 }
 
 .audio-preview-modal {

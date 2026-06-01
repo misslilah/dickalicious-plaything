@@ -1,6 +1,7 @@
 import { Link, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { AdminMessageListener } from './AdminMessageListener';
 import { LockCardOverlay } from './LockCardOverlay';
+import { AudioPlaylistBubble } from './AudioPlaylistBubble';
 import { PatreonBubble } from './PatreonBubble';
 import { useAppStore } from '../hooks/useAppStore';
 
@@ -61,6 +62,7 @@ export function ProtectedRoute() {
     <>
       <AdminMessageListener />
       <LockCardOverlay />
+      <AudioPlaylistBubble />
       <PatreonBubble />
       <Outlet />
     </>
