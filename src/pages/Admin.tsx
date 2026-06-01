@@ -2351,11 +2351,13 @@ function VideoCategoryAdmin() {
 }
 
 function VideoUploadAdmin() {
-  const { state, addVideo, deleteVideo } = useAppStore();
+  const { state, addVideo, updateVideo, deleteVideo } = useAppStore();
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [requiredTier, setRequiredTier] = useState<ContentTier>('sweetie');
+  const [forcedMode, setForcedMode] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [search, setSearch] = useState('');
   const [message, setMessage] = useState('');
@@ -2375,6 +2377,30 @@ function VideoUploadAdmin() {
   const categoryName = (id: string) =>
     state.videoCategories.find((c) => c.id === id)?.name ?? 'Unknown';
 
+  const clearForm = () => {
+    setEditingId(null);
+    setTitle('');
+    setDescription('');
+    setCategoryId('');
+    setRequiredTier('sweetie');
+    setForcedMode(false);
+    setFile(null);
+    setError('');
+    setMessage('');
+  };
+
+  const loadForEdit = (video: Video) => {
+    setEditingId(video.id);
+    setTitle(video.title);
+    setDescription(video.description ?? '');
+    setCategoryId(video.categoryId);
+    setRequiredTier(video.requiredTier ?? 'sweetie');
+    setForcedMode(video.forcedMode ?? false);
+    setFile(null);
+    setError('');
+    setMessage('');
+  };
+
   const submit = async () => {
     setError('');
     setMessage('');
@@ -2386,6 +2412,32 @@ function VideoUploadAdmin() {
       setError('Pick a video category.');
       return;
     }
+
+    if (editingId) {
+      const existing = state.videos.find((v) => v.id === editingId);
+      if (!existing) {
+        setError('Video not found.');
+        return;
+      }
+      setUploading(true);
+      const result = await updateVideo({
+        ...existing,
+        categoryId,
+        title: title.trim(),
+        description: description.trim() || undefined,
+        requiredTier,
+        forcedMode,
+      });
+      setUploading(false);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      clearForm();
+      setMessage('Video updated.');
+      return;
+    }
+
     if (!file) {
       setError('Choose a video file.');
       return;
@@ -2405,6 +2457,7 @@ function VideoUploadAdmin() {
       sizeBytes: file.size,
       createdAt: new Date().toISOString(),
       requiredTier,
+      forcedMode,
     };
 
     setUploading(true);
@@ -2415,9 +2468,7 @@ function VideoUploadAdmin() {
       setError(result.error);
       return;
     }
-    setTitle('');
-    setDescription('');
-    setFile(null);
+    clearForm();
     setMessage(`Video uploaded (${formatMb(file.size)}).`);
   };
 
@@ -2464,12 +2515,12 @@ function VideoUploadAdmin() {
                 <>
                   {categoryName(v.categoryId)} ·{' '}
                   <TierBadge tier={v.requiredTier ?? 'sweetie'} accessStyle /> ·{' '}
+                  {v.forcedMode ? 'Forced Mode · ' : ''}
                   {formatMb(v.sizeBytes)}
                 </>
               }
-              onEdit={() => {}}
+              onEdit={() => loadForEdit(v)}
               onDelete={() => remove(v.id)}
-              hideEdit
             />
           ))}
         </ul>
@@ -2479,7 +2530,9 @@ function VideoUploadAdmin() {
 
   const form = (
     <section className="card">
-      <h3 className="section-title">Upload video</h3>
+      <h3 className="section-title">
+        {editingId ? 'Edit video' : 'Upload video'}
+      </h3>
       <StatusMessage message={error} variant="err" />
       <StatusMessage message={message} />
 
@@ -2528,38 +2581,45 @@ function VideoUploadAdmin() {
           </p>
         </Field>
         <Field
-          label="Video file"
-          htmlFor="vid-file"
-          hint={`accept video/* · max ${MAX_VIDEO_SIZE_LABEL}`}
-          required
+          label="Forced Mode"
+          hint="Viewers must confirm before play; the app tries to lock the page until the video ends (best-effort)."
         >
-          <input
-            id="vid-file"
-            type="file"
-            accept="video/*"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-          {file && (
-            <p className="muted">
-              {file.name} ({formatMb(file.size)})
-            </p>
-          )}
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={forcedMode}
+              onChange={(e) => setForcedMode(e.target.checked)}
+            />
+            <span>Enable Forced Mode for this video</span>
+          </label>
         </Field>
+        {!editingId && (
+          <Field
+            label="Video file"
+            htmlFor="vid-file"
+            hint={`accept video/* · max ${MAX_VIDEO_SIZE_LABEL}`}
+            required
+          >
+            <input
+              id="vid-file"
+              type="file"
+              accept="video/*"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+            {file && (
+              <p className="muted">
+                {file.name} ({formatMb(file.size)})
+              </p>
+            )}
+          </Field>
+        )}
       </FormBlock>
 
       <FormActions
-        editing={false}
+        editing={!!editingId}
         entityLabel="video"
         onSubmit={() => void submit()}
-        onClear={() => {
-          setTitle('');
-          setDescription('');
-          setCategoryId('');
-          setRequiredTier('sweetie');
-          setFile(null);
-          setError('');
-          setMessage('');
-        }}
+        onClear={clearForm}
         disabled={uploading}
       />
     </section>

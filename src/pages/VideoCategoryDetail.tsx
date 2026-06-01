@@ -9,6 +9,7 @@ import {
   effectiveVideoTier,
   requiresTierMessage,
 } from '../lib/tiers';
+import { ForcedModeVideoPlayer } from '../components/ForcedModeVideoPlayer';
 import type { ContentTier, Video, VideoCategory } from '../types';
 
 const VIDEO_LOOP_SESSION_KEY = 'video-loop-enabled';
@@ -130,6 +131,11 @@ function VideoListItem({
         <span className="video-list-item__tier">
           <TierBadge tier={required} accessStyle />
         </span>
+        {video.forcedMode && !locked && (
+          <span className="video-list-item__forced" aria-label="Forced Mode enabled">
+            Forced Mode
+          </span>
+        )}
         {locked ? (
           <span className="muted video-list-item__desc">
             {requiresTierMessage(required)}
@@ -148,6 +154,7 @@ export function VideoCategoryDetail() {
   const { categoryId } = useParams<{ categoryId: string }>();
   const { state, session } = useAppStore();
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [forcedSessionActive, setForcedSessionActive] = useState(false);
 
   const category = state.videoCategories.find((c) => c.id === categoryId);
   const isAdmin = session?.role === 'admin';
@@ -251,6 +258,17 @@ export function VideoCategoryDetail() {
                     category.requiredTier,
                   )}
                 />
+              ) : playing.forcedMode ? (
+                <>
+                  <ForcedModeVideoPlayer
+                    key={playing.id}
+                    video={playing}
+                    onSessionEnd={() => setForcedSessionActive(false)}
+                  />
+                  {playing.description && (
+                    <p className="muted video-watch-card__desc">{playing.description}</p>
+                  )}
+                </>
               ) : (
                 <>
                   <VideoPlayer video={playing} />
@@ -274,7 +292,11 @@ export function VideoCategoryDetail() {
                     category={category}
                     selected={playing?.id === v.id}
                     locked={locked}
-                    onSelect={() => setPlayingId(v.id)}
+                    onSelect={() => {
+                      if (forcedSessionActive) return;
+                      setPlayingId(v.id);
+                      if (v.forcedMode) setForcedSessionActive(true);
+                    }}
                   />
                 );
               })}

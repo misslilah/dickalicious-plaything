@@ -112,6 +112,7 @@ type DbVideo = {
   size_bytes: number;
   created_at: string;
   required_tier: ContentTier | null;
+  forced_mode?: boolean | null;
 };
 
 function mapCategory(row: DbCategory): Category {
@@ -229,6 +230,7 @@ function mapVideo(row: DbVideo): Video {
     sizeBytes: row.size_bytes,
     createdAt: row.created_at,
     requiredTier: row.required_tier ?? undefined,
+    forcedMode: row.forced_mode ?? false,
   };
 }
 
@@ -607,6 +609,7 @@ export async function insertVideoRow(
     mime_type: video.mimeType,
     size_bytes: video.sizeBytes,
     required_tier: video.requiredTier ?? 'sweetie',
+    forced_mode: video.forcedMode ?? false,
   };
 
   const { data, error } = await supabase
@@ -616,6 +619,30 @@ export async function insertVideoRow(
     .single();
 
   if (error || !data) return { ok: false, error: error?.message ?? 'Save failed.' };
+  return { ok: true, video: mapVideo(data as DbVideo) };
+}
+
+export async function updateVideoRow(
+  video: Video,
+): Promise<{ ok: true; video: Video } | { ok: false; error: string }> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+  if (!video.id) return { ok: false, error: 'Video id is required.' };
+
+  const { data, error } = await supabase
+    .from('videos')
+    .update({
+      video_category_id: video.categoryId,
+      title: video.title,
+      description: video.description ?? null,
+      required_tier: video.requiredTier ?? 'sweetie',
+      forced_mode: video.forcedMode ?? false,
+    })
+    .eq('id', video.id)
+    .select()
+    .single();
+
+  if (error || !data) return { ok: false, error: error?.message ?? 'Update failed.' };
   return { ok: true, video: mapVideo(data as DbVideo) };
 }
 

@@ -228,6 +228,8 @@ export interface Video {
   sizeBytes: number;
   createdAt: string;
   requiredTier?: ContentTier | null;
+  /** When true, playback uses forced mode until the video ends. */
+  forcedMode?: boolean;
 }
 
 export interface AppState {

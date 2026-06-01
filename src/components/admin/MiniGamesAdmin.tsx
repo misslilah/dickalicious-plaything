@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { FlashWordGameAdmin } from './FlashWordGameAdmin';
+import { FollowInstinctGameAdmin } from './FollowInstinctGameAdmin';
 
 const MINI_GAMES_TABS = [
   { id: 'flash-cards' as const, label: 'Flash Cards' },
+  { id: 'follow-instinct' as const, label: 'Follow your instinct' },
 ] as const;
 
 type MiniGamesTabId = (typeof MINI_GAMES_TABS)[number]['id'];
@@ -31,6 +33,7 @@ export function MiniGamesAdmin() {
         ))}
       </div>
       {tab === 'flash-cards' && <FlashWordGameAdmin />}
+      {tab === 'follow-instinct' && <FollowInstinctGameAdmin />}
     </div>
   );
 }
