@@ -86,6 +86,7 @@ import {
   updateAudioPlaylistOrder,
   updateAudioPlaylistsOrder,
 } from '../lib/audioPlaylist';
+import { MiniGamesAdmin } from '../components/admin/MiniGamesAdmin';
 
 const ADMIN_SECTIONS = [
   {
@@ -136,6 +137,12 @@ const ADMIN_SECTIONS = [
     icon: '🎧',
     hint: 'Multiple sequential playlists',
   },
+  {
+    id: 'minigames' as const,
+    label: 'Mini games',
+    icon: '🎮',
+    hint: 'Game settings',
+  },
 ];
 
 const CATEGORY_COLORS = [
@@ -166,7 +173,7 @@ export function Admin() {
       <header className="page-header">
         <h2>Admin</h2>
         <p className="muted">
-          Manage categories, tasks, rewards, punishments, videos, audio playlist, and users.
+          Manage categories, tasks, rewards, punishments, videos, audio playlist, mini games, and users.
         </p>
       </header>
 
@@ -208,6 +215,7 @@ export function Admin() {
           {section === 'videos' && <VideosAdmin />}
           {section === 'gifbank' && <GifBankAdmin />}
           {section === 'audio' && <AudioPlaylistAdmin />}
+          {section === 'minigames' && <MiniGamesAdmin />}
         </div>
       </div>
 

@@ -10,6 +10,7 @@ const baseNavItems = [
   { to: '/rewards', label: 'Rewards', icon: '🏆' },
   { to: '/punishments', label: 'Punishments', icon: '⚡' },
   { to: '/profile', label: 'Profile', icon: '👤' },
+  { to: '/mini-games', label: 'Games', icon: '🎮' },
   { to: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 

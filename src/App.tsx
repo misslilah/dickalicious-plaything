@@ -23,6 +23,8 @@ import { Rewards } from './pages/Rewards';
 import { Profile } from './pages/Profile';
 import { Settings } from './pages/Settings';
 import { Today } from './pages/Today';
+import { MiniGames } from './pages/MiniGames';
+import { FlashWordGamePage } from './pages/FlashWordGamePage';
 
 function AppChrome() {
   return (
@@ -64,6 +66,8 @@ const router = createBrowserRouter([
               { path: 'rewards', element: <Rewards /> },
               { path: 'punishments', element: <Punishments /> },
               { path: 'profile', element: <Profile /> },
+              { path: 'mini-games', element: <MiniGames /> },
+              { path: 'mini-games/:gameId', element: <FlashWordGamePage /> },
               { path: 'settings', element: <Settings /> },
             ],
           },
