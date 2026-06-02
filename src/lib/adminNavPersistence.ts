@@ -87,13 +87,11 @@ export function parseAdminNavFromSearchParams(
     (section === 'videos' ? params.get(ADMIN_VIDEOS_TAB_SHORT_PARAM) : null);
   const videosTab = normalizeVideosTabParam(videosTabRaw) ?? undefined;
 
-  const rewardsTab = isAdminRewardsTab(params.get(ADMIN_REWARDS_TAB_PARAM))
-    ? params.get(ADMIN_REWARDS_TAB_PARAM)!
-    : undefined;
+  const rewardsTabRaw = params.get(ADMIN_REWARDS_TAB_PARAM);
+  const rewardsTab = isAdminRewardsTab(rewardsTabRaw) ? rewardsTabRaw : undefined;
 
-  const minigamesTab = isAdminMinigamesTab(params.get(ADMIN_MINIGAMES_TAB_PARAM))
-    ? params.get(ADMIN_MINIGAMES_TAB_PARAM)!
-    : undefined;
+  const minigamesTabRaw = params.get(ADMIN_MINIGAMES_TAB_PARAM);
+  const minigamesTab = isAdminMinigamesTab(minigamesTabRaw) ? minigamesTabRaw : undefined;
 
   return { section, videosTab, rewardsTab, minigamesTab };
 }

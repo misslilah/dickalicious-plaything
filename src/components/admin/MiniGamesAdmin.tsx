@@ -8,8 +8,6 @@ const MINI_GAMES_TABS = [
   { id: 'follow-instinct' as const, label: 'Follow your instinct' },
 ] as const;
 
-type MiniGamesTabId = (typeof MINI_GAMES_TABS)[number]['id'];
-
 export function MiniGamesAdmin() {
   const [tab, setTab] = usePersistedSearchParam(
     'minigamesTab',

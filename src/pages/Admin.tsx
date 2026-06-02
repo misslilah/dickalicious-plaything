@@ -173,8 +173,6 @@ const FREQUENCIES: { value: TaskFrequency; label: string }[] = [
   { value: 'once', label: 'One-time' },
 ];
 
-type AdminSectionId = (typeof ADMIN_SECTIONS)[number]['id'];
-
 export function Admin() {
   useRestoreAdminNavFromStorage();
   const [section, setSection] = useAdminSection();
