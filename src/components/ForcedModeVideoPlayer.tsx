@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useBlocker } from 'react-router-dom';
 import { useOptionalAudioPlayer } from '../contexts/AudioPlayerProvider';
+import { useVideoPlaybackActive } from '../contexts/VideoPlaybackContext';
 import { useVideoPlaybackUrl } from '../hooks/useVideoBlobUrl';
 import { ForcedModeWarningModal } from './ForcedModeWarningModal';
 import type { Video } from '../types';
@@ -49,6 +50,8 @@ export function ForcedModeVideoPlayer({
   const [warningOpen, setWarningOpen] = useState(true);
   const [sessionActive, setSessionActive] = useState(false);
   const [playError, setPlayError] = useState<string | null>(null);
+
+  useVideoPlaybackActive(sessionActive);
 
   const endSession = useCallback(() => {
     sessionActiveRef.current = false;

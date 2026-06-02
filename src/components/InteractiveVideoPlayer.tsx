@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useVideoPlaybackActive } from '../contexts/VideoPlaybackContext';
 import { FaceLandmarker, FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 import {
   isMouthOpen,
@@ -113,6 +114,8 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
   const [overlayMessage, setOverlayMessage] = useState('');
   const [started, setStarted] = useState(false);
   const [firedCount, setFiredCount] = useState(0);
+
+  useVideoPlaybackActive(started && phase !== 'done');
 
   const sortedCues = video.cues;
 

@@ -11,6 +11,7 @@ import { BackgroundGifOverlay } from './components/BackgroundGifOverlay';
 import { SoapBubbleField } from './components/SoapBubbleField';
 import { AppStoreProvider } from './hooks/useAppStore';
 import { AudioPlayerProvider } from './contexts/AudioPlayerProvider';
+import { VideoPlaybackProvider } from './contexts/VideoPlaybackContext';
 import { Admin } from './pages/Admin';
 import { CategoryDetail } from './pages/CategoryDetail';
 import { TaskFocusPage } from './pages/TaskFocusPage';
@@ -30,11 +31,11 @@ import { InteractiveVideoPlay } from './pages/InteractiveVideoPlay';
 
 function AppChrome() {
   return (
-    <>
+    <VideoPlaybackProvider>
       <BackgroundGifOverlay />
       <SoapBubbleField />
       <Outlet />
-    </>
+    </VideoPlaybackProvider>
   );
 }
 

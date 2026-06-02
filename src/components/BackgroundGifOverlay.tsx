@@ -1,4 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
+import {
+  isVideoSectionPath,
+  useVideoPlayback,
+} from '../contexts/VideoPlaybackContext';
 import { useAppStore } from '../hooks/useAppStore';
 import {
   DEFAULT_GIF_BANK_APPEARANCE_SETTINGS,
@@ -43,6 +48,8 @@ function pickRandom<T>(items: T[]): T | null {
 
 export function BackgroundGifOverlay() {
   const { session } = useAppStore();
+  const { pathname } = useLocation();
+  const { isPlaybackActive } = useVideoPlayback();
   const [catalog, setCatalog] = useState<GifBankEntry[]>([]);
   const [appearanceSettings, setAppearanceSettings] = useState<GifBankAppearanceSettings>(
     DEFAULT_GIF_BANK_APPEARANCE_SETTINGS,
@@ -64,6 +71,9 @@ export function BackgroundGifOverlay() {
   appearanceSettingsRef.current = appearanceSettings;
   catalogRef.current = catalog;
   activeEntryIdRef.current = active?.entry.id ?? null;
+
+  const suppressGifs =
+    !previewEntry && (isVideoSectionPath(pathname) || isPlaybackActive);
 
   const clearScheduleTimer = () => {
     if (scheduleRef.current) {
@@ -226,9 +236,24 @@ export function BackgroundGifOverlay() {
   }, [session, previewEntry]);
 
   useEffect(() => {
+    if (suppressGifs) {
+      clearAllTimers();
+      setActive(null);
+      setVisible(false);
+    }
+  }, [suppressGifs]);
+
+  useEffect(() => {
     clearScheduleTimer();
 
     if (previewEntry) return;
+
+    if (suppressGifs) {
+      clearAllTimers();
+      setActive(null);
+      setVisible(false);
+      return;
+    }
 
     if (!session || catalog.length === 0) {
       clearAllTimers();
@@ -242,9 +267,16 @@ export function BackgroundGifOverlay() {
     }
 
     return clearScheduleTimer;
-  }, [session, catalog, scheduleEpoch, previewEntry, appearanceSettings]);
+  }, [
+    session,
+    catalog,
+    scheduleEpoch,
+    previewEntry,
+    appearanceSettings,
+    suppressGifs,
+  ]);
 
-  if (!active) return null;
+  if (suppressGifs || !active) return null;
 
   const opacity = visible
     ? previewOpacity ?? appearanceSettings.rotationOpacity

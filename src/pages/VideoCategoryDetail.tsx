@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useAppStore } from '../hooks/useAppStore';
 import { useVideoPlaybackUrl } from '../hooks/useVideoBlobUrl';
 import { useOptionalAudioPlayer } from '../contexts/AudioPlayerProvider';
+import { useVideoPlaybackActive } from '../contexts/VideoPlaybackContext';
 import { getPatreonPageUrl } from '../lib/patreon';
 import { TierBadge } from '../components/TierBadge';
 import { VideoLoopToast } from '../components/VideoLoopToast';
@@ -84,6 +85,7 @@ function VideoPlayModePicker({
 function VideoPlayer({ video }: { video: Video }) {
   const audio = useOptionalAudioPlayer();
   const { url, loading, error } = useVideoPlaybackUrl(video.storagePath);
+  useVideoPlaybackActive(true);
   const autoLoop = video.autoLoop ?? false;
   const [loop, setLoop] = useState(() => (autoLoop ? true : readLoopPreference()));
   const [showLoopNotice, setShowLoopNotice] = useState(false);
