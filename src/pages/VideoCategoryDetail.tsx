@@ -1,12 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAppStore } from '../hooks/useAppStore';
-import { useVideoPlaybackUrl } from '../hooks/useVideoBlobUrl';
-import { useOptionalAudioPlayer } from '../contexts/AudioPlayerProvider';
-import { useVideoPlaybackActive } from '../contexts/VideoPlaybackContext';
+import { useOptionalVideoPlayer } from '../contexts/VideoPlayerProvider';
 import { getPatreonPageUrl } from '../lib/patreon';
 import { TierBadge } from '../components/TierBadge';
-import { VideoLoopToast } from '../components/VideoLoopToast';
+import { NormalVideoPlayerSurface } from '../components/NormalVideoPlayerSurface';
 import {
   canAccessTier,
   effectiveVideoTier,
@@ -15,25 +13,7 @@ import {
 import { ForcedModeVideoPlayer } from '../components/ForcedModeVideoPlayer';
 import type { ContentTier, Video, VideoCategory } from '../types';
 
-const VIDEO_LOOP_SESSION_KEY = 'video-loop-enabled';
-
 type PlaybackMode = 'normal' | 'forced';
-
-function readLoopPreference(): boolean {
-  try {
-    return sessionStorage.getItem(VIDEO_LOOP_SESSION_KEY) === 'true';
-  } catch {
-    return false;
-  }
-}
-
-function writeLoopPreference(enabled: boolean): void {
-  try {
-    sessionStorage.setItem(VIDEO_LOOP_SESSION_KEY, String(enabled));
-  } catch {
-    // sessionStorage unavailable
-  }
-}
 
 function TierUpgradeBanner({ requiredTier }: { requiredTier: ContentTier }) {
   const patreonUrl = getPatreonPageUrl();
@@ -79,93 +59,6 @@ function VideoPlayModePicker({
         Forced Mode locks the view until the video ends. Loop is not available.
       </p>
     </div>
-  );
-}
-
-function VideoPlayer({ video }: { video: Video }) {
-  const audio = useOptionalAudioPlayer();
-  const { url, loading, error } = useVideoPlaybackUrl(video.storagePath);
-  useVideoPlaybackActive(true);
-  const autoLoop = video.autoLoop ?? false;
-  const [loop, setLoop] = useState(() => (autoLoop ? true : readLoopPreference()));
-  const [showLoopNotice, setShowLoopNotice] = useState(false);
-  const loopNoticeShownRef = useRef(false);
-
-  useEffect(() => {
-    const initialLoop = autoLoop ? true : readLoopPreference();
-    setLoop(initialLoop);
-    loopNoticeShownRef.current = false;
-    setShowLoopNotice(false);
-  }, [video.id, autoLoop]);
-
-  useEffect(() => {
-    if (autoLoop && loop && !loopNoticeShownRef.current) {
-      loopNoticeShownRef.current = true;
-      setShowLoopNotice(true);
-    }
-  }, [autoLoop, loop]);
-
-  const toggleLoop = useCallback(() => {
-    setLoop((prev) => {
-      const next = !prev;
-      writeLoopPreference(next);
-      if (!next) setShowLoopNotice(false);
-      return next;
-    });
-  }, []);
-
-  const dismissLoopNotice = useCallback(() => {
-    setShowLoopNotice(false);
-  }, []);
-
-  const turnOffLoop = useCallback(() => {
-    setLoop(false);
-    writeLoopPreference(false);
-    setShowLoopNotice(false);
-  }, []);
-
-  const onVideoPlay = useCallback(() => {
-    audio?.pausePlayback();
-  }, [audio]);
-
-  if (loading) {
-    return <p className="muted">Loading video…</p>;
-  }
-  if (error || !url) {
-    return <p className="login-error">{error ?? 'Video unavailable.'}</p>;
-  }
-
-  return (
-    <>
-      <div className="video-player-wrap">
-        <video
-          className="video-player"
-          controls
-          controlsList="nodownload"
-          disablePictureInPicture
-          loop={loop}
-          src={url}
-          preload="metadata"
-          aria-label={video.title}
-          onPlay={onVideoPlay}
-        />
-        <div className="video-player-controls">
-          <button
-            type="button"
-            className={loop ? 'chip chip--active' : 'chip'}
-            aria-pressed={loop}
-            onClick={toggleLoop}
-          >
-            Loop
-          </button>
-        </div>
-      </div>
-      <VideoLoopToast
-        visible={showLoopNotice}
-        onDismiss={dismissLoopNotice}
-        onTurnOffLoop={turnOffLoop}
-      />
-    </>
   );
 }
 
@@ -222,6 +115,7 @@ function VideoListItem({
 export function VideoCategoryDetail() {
   const { categoryId } = useParams<{ categoryId: string }>();
   const { state, session } = useAppStore();
+  const globalVideo = useOptionalVideoPlayer();
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode | null>(null);
   const [forcedSessionActive, setForcedSessionActive] = useState(false);
@@ -257,13 +151,51 @@ export function VideoCategoryDetail() {
   const playingLocked = playing != null && !canWatch(playing);
 
   useEffect(() => {
+    const gv = globalVideo?.session;
+    if (!categoryId || !gv || gv.categoryId !== categoryId) return;
+    setPlayingId(gv.videoId);
+    setPlaybackMode('normal');
+  }, [categoryId, globalVideo?.session?.videoId, globalVideo?.session?.categoryId]);
+
+  useEffect(() => {
+    const gv = globalVideo?.session;
+    if (
+      gv &&
+      gv.categoryId === categoryId &&
+      gv.videoId === playingId
+    ) {
+      return;
+    }
     setPlaybackMode(null);
-  }, [playingId]);
+  }, [playingId, categoryId, globalVideo?.session?.videoId, globalVideo?.session?.categoryId]);
 
   const endForcedSession = useCallback(() => {
     setForcedSessionActive(false);
     setPlaybackMode(null);
   }, []);
+
+  const startNormal = useCallback(() => {
+    if (!playing || !categoryId) return;
+    globalVideo?.startNormalPlayback(playing, categoryId);
+    setPlaybackMode('normal');
+  }, [playing, categoryId, globalVideo]);
+
+  const startForced = useCallback(() => {
+    globalVideo?.clearNormalPlayback();
+    setPlaybackMode('forced');
+    setForcedSessionActive(true);
+  }, [globalVideo]);
+
+  const selectVideo = useCallback(
+    (videoId: string) => {
+      if (forcedSessionActive) return;
+      if (globalVideo?.session && globalVideo.session.videoId !== videoId) {
+        globalVideo.clearNormalPlayback();
+      }
+      setPlayingId(videoId);
+    },
+    [forcedSessionActive, globalVideo],
+  );
 
   if (!category) {
     return (
@@ -284,6 +216,10 @@ export function VideoCategoryDetail() {
     session?.patreonStatus,
     isAdmin,
   );
+
+  const globalMatchesPlaying =
+    globalVideo?.session?.videoId === playing?.id &&
+    globalVideo.session.categoryId === categoryId;
 
   return (
     <div className="page">
@@ -339,11 +275,8 @@ export function VideoCategoryDetail() {
                 />
               ) : playbackMode === null ? (
                 <VideoPlayModePicker
-                  onNormal={() => setPlaybackMode('normal')}
-                  onForced={() => {
-                    setPlaybackMode('forced');
-                    setForcedSessionActive(true);
-                  }}
+                  onNormal={startNormal}
+                  onForced={startForced}
                 />
               ) : playbackMode === 'forced' ? (
                 <>
@@ -356,13 +289,15 @@ export function VideoCategoryDetail() {
                     <p className="muted video-watch-card__desc">{playing.description}</p>
                   )}
                 </>
-              ) : (
+              ) : globalMatchesPlaying ? (
                 <>
-                  <VideoPlayer key={playing.id} video={playing} />
+                  <NormalVideoPlayerSurface />
                   {playing.description && (
                     <p className="muted video-watch-card__desc">{playing.description}</p>
                   )}
                 </>
+              ) : (
+                <p className="muted">Starting playback…</p>
               )}
             </section>
           )}
@@ -379,10 +314,7 @@ export function VideoCategoryDetail() {
                     category={category}
                     selected={playing?.id === v.id}
                     locked={locked}
-                    onSelect={() => {
-                      if (forcedSessionActive) return;
-                      setPlayingId(v.id);
-                    }}
+                    onSelect={() => selectVideo(v.id)}
                   />
                 );
               })}
