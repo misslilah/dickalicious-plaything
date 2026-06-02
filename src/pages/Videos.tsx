@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { loadMediaPageTab, saveMediaPageTab } from '../lib/adminNavPersistence';
 import { Link } from 'react-router-dom';
 import { AudioPlaylistSection } from '../components/AudioPlaylistSection';
 import { VideoCategoryCard } from '../components/VideoCategoryCard';
@@ -11,7 +12,11 @@ type MediaTab = 'videos' | 'interactive' | 'audio';
 
 export function Videos() {
   const { state, session } = useAppStore();
-  const [tab, setTab] = useState<MediaTab>('videos');
+  const [tab, setTab] = useState<MediaTab>(() => loadMediaPageTab());
+  const setMediaTab = (next: MediaTab) => {
+    setTab(next);
+    saveMediaPageTab(next);
+  };
   const [search, setSearch] = useState('');
   const isAdmin = session?.role === 'admin';
 
@@ -66,7 +71,7 @@ export function Videos() {
           role="tab"
           aria-selected={tab === 'videos'}
           className={tab === 'videos' ? 'media-tab media-tab--active' : 'media-tab'}
-          onClick={() => setTab('videos')}
+          onClick={() => setMediaTab('videos')}
         >
           Videos
         </button>
@@ -75,7 +80,7 @@ export function Videos() {
           role="tab"
           aria-selected={tab === 'interactive'}
           className={tab === 'interactive' ? 'media-tab media-tab--active' : 'media-tab'}
-          onClick={() => setTab('interactive')}
+          onClick={() => setMediaTab('interactive')}
         >
           Interactive
         </button>
@@ -84,7 +89,7 @@ export function Videos() {
           role="tab"
           aria-selected={tab === 'audio'}
           className={tab === 'audio' ? 'media-tab media-tab--active' : 'media-tab'}
-          onClick={() => setTab('audio')}
+          onClick={() => setMediaTab('audio')}
         >
           Audio
         </button>

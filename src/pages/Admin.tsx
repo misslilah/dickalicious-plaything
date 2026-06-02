@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import {
+  useAdminSection,
+  usePersistedSearchParam,
+  useRestoreAdminNavFromStorage,
+} from '../hooks/usePersistedSearchParam';
+import {
+  ADMIN_REWARDS_TABS,
+  ADMIN_VIDEOS_TABS,
+} from '../lib/adminNavPersistence';
 import type {
   Badge,
   Category,
@@ -167,7 +176,8 @@ const FREQUENCIES: { value: TaskFrequency; label: string }[] = [
 type AdminSectionId = (typeof ADMIN_SECTIONS)[number]['id'];
 
 export function Admin() {
-  const [section, setSection] = useState<AdminSectionId>('categories');
+  useRestoreAdminNavFromStorage();
+  const [section, setSection] = useAdminSection();
   const active = ADMIN_SECTIONS.find((s) => s.id === section)!;
 
   return (
@@ -1447,10 +1457,12 @@ function TaskAdmin() {
   return <AdminSection list={list} form={form} />;
 }
 
-type RewardsTab = 'catalog' | 'badges';
-
 function RewardsAdmin() {
-  const [tab, setTab] = useState<RewardsTab>('catalog');
+  const [tab, setTab] = usePersistedSearchParam(
+    'rewardsTab',
+    ADMIN_REWARDS_TABS,
+    'catalog',
+  );
 
   return (
     <div className="admin-rewards">
@@ -3253,7 +3265,11 @@ function GifBankAdmin() {
 }
 
 function VideosAdmin() {
-  const [tab, setTab] = useState<'categories' | 'uploads' | 'interactive'>('categories');
+  const [tab, setTab] = usePersistedSearchParam(
+    'videosTab',
+    ADMIN_VIDEOS_TABS,
+    'categories',
+  );
 
   return (
     <div className="admin-videos">
