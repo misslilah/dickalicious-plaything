@@ -55,6 +55,21 @@ function isPersistentMonitoringActive(
   return currentMs < cue.endTimeMs;
 }
 
+function findNextUnfiredCue(
+  cues: InteractiveVideoCue[],
+  firedIds: Set<string>,
+): InteractiveVideoCue | undefined {
+  return cues.find((c) => !firedIds.has(c.id));
+}
+
+function shouldFireCueAtTime(cue: InteractiveVideoCue, currentMs: number): boolean {
+  return currentMs >= cue.timeMs - CUE_TOLERANCE_MS;
+}
+
+function isStartCue(cue: InteractiveVideoCue): boolean {
+  return cue.timeMs <= CUE_TOLERANCE_MS;
+}
+
 function detectCommandSuccess(
   command: InteractiveCueCommand,
   faceLandmarks: NormalizedLandmark[] | undefined,
@@ -85,6 +100,7 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
   const firedCueIdsRef = useRef<Set<string>>(new Set());
   const tongueFramesRef = useRef(0);
   const monitoringCueRef = useRef<InteractiveVideoCue | null>(null);
+  const phaseRef = useRef<PlayerPhase>('loading');
 
   const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -92,6 +108,7 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
   const [modelsReady, setModelsReady] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [phase, setPhase] = useState<PlayerPhase>('loading');
+  phaseRef.current = phase;
   const [activeCue, setActiveCue] = useState<InteractiveVideoCue | null>(null);
   const [overlayMessage, setOverlayMessage] = useState('');
   const [started, setStarted] = useState(false);
@@ -110,6 +127,7 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
       el.currentTime = 0;
       el.pause();
     }
+    phaseRef.current = 'ready';
     setPhase('ready');
     setStarted(false);
     setFiredCount(0);
@@ -207,7 +225,7 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
 
   const triggerCue = useCallback((cue: InteractiveVideoCue) => {
     const el = playbackRef.current;
-    if (!el) return;
+    if (!el || firedCueIdsRef.current.has(cue.id)) return;
     el.pause();
     firedCueIdsRef.current.add(cue.id);
     setFiredCount(firedCueIdsRef.current.size);
@@ -215,35 +233,26 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
     tongueFramesRef.current = 0;
     setActiveCue(cue);
     setOverlayMessage(CUE_COMMAND_LABELS[cue.commandType]);
+    phaseRef.current = 'awaiting_action';
     setPhase('awaiting_action');
   }, []);
 
+  const checkForCueAtTime = useCallback(
+    (currentMs: number) => {
+      if (phaseRef.current !== 'playing') return;
+      const nextCue = findNextUnfiredCue(sortedCues, firedCueIdsRef.current);
+      if (nextCue && shouldFireCueAtTime(nextCue, currentMs)) {
+        triggerCue(nextCue);
+      }
+    },
+    [sortedCues, triggerCue],
+  );
+
   const handleTimeUpdate = useCallback(() => {
     const el = playbackRef.current;
-    if (!el || phase === 'done') return;
-
-    const currentMs = el.currentTime * 1000;
-
-    if (monitoringCueRef.current) {
-      const monitor = monitoringCueRef.current;
-      const nextCue = sortedCues.find(
-        (c) => c.timeMs > monitor.timeMs && !firedCueIdsRef.current.has(c.id),
-      );
-      if (nextCue && currentMs >= nextCue.timeMs - CUE_TOLERANCE_MS) {
-        monitoringCueRef.current = null;
-      }
-    }
-
-    const nextCue = sortedCues.find(
-      (c) =>
-        !firedCueIdsRef.current.has(c.id) &&
-        currentMs >= c.timeMs - CUE_TOLERANCE_MS &&
-        currentMs <= c.timeMs + CUE_TOLERANCE_MS * 4,
-    );
-    if (nextCue && phase === 'playing') {
-      triggerCue(nextCue);
-    }
-  }, [phase, sortedCues, triggerCue]);
+    if (!el || phaseRef.current === 'done') return;
+    checkForCueAtTime(el.currentTime * 1000);
+  }, [checkForCueAtTime]);
 
   const releasePersistentMonitor = useCallback(() => {
     monitoringCueRef.current = null;
@@ -251,39 +260,48 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
     setOverlayMessage('');
   }, []);
 
-  const resumeAfterCue = useCallback(
-    (cue: InteractiveVideoCue) => {
-      const el = playbackRef.current;
-      if (!el) return;
-      setActiveCue(null);
-      setOverlayMessage('');
-      if (cue.persistent) {
-        monitoringCueRef.current = cue;
-        setPhase('playing');
-        void el.play();
-      } else {
-        monitoringCueRef.current = null;
-        setPhase('playing');
-        void el.play();
-      }
-    },
-    [],
-  );
+  const resumeAfterCue = useCallback((cue: InteractiveVideoCue) => {
+    const el = playbackRef.current;
+    if (!el) return;
+    const currentPhase = phaseRef.current;
+    if (currentPhase !== 'awaiting_action' && currentPhase !== 'keep_action') return;
 
-  const startPlayback = useCallback(async () => {
+    setActiveCue(null);
+    setOverlayMessage('');
+    phaseRef.current = 'playing';
+    setPhase('playing');
+    monitoringCueRef.current = cue.persistent ? cue : null;
+
+    void el.play().catch(() => {
+      setLoadError('Could not resume playback.');
+    });
+  }, []);
+
+  const startPlayback = useCallback(() => {
     const el = playbackRef.current;
     if (!el || !playbackUrl) return;
     firedCueIdsRef.current = new Set();
     monitoringCueRef.current = null;
-    setStarted(true);
-    setPhase('playing');
+    tongueFramesRef.current = 0;
+    setActiveCue(null);
     setOverlayMessage('');
-    try {
-      await el.play();
-    } catch {
-      setLoadError('Could not start playback.');
+    setFiredCount(0);
+    el.currentTime = 0;
+    el.pause();
+    setStarted(true);
+
+    const firstCue = findNextUnfiredCue(sortedCues, firedCueIdsRef.current);
+    if (firstCue && isStartCue(firstCue)) {
+      triggerCue(firstCue);
+      return;
     }
-  }, [playbackUrl]);
+
+    phaseRef.current = 'playing';
+    setPhase('playing');
+    void el.play().catch(() => {
+      setLoadError('Could not start playback.');
+    });
+  }, [playbackUrl, sortedCues, triggerCue]);
 
   useEffect(() => {
     if (!started || !cameraReady || !modelsReady) return;
@@ -297,6 +315,20 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
     const tick = () => {
       const playback = playbackRef.current;
       if (!playback) return;
+
+      const currentPhase = phaseRef.current;
+      const currentMs = playback.currentTime * 1000;
+
+      if (
+        (currentPhase === 'awaiting_action' || currentPhase === 'keep_action') &&
+        !playback.paused
+      ) {
+        playback.pause();
+      }
+
+      if (currentPhase === 'playing' && !playback.paused) {
+        checkForCueAtTime(currentMs);
+      }
 
       if (cam.readyState >= 2) {
         const now = performance.now();
@@ -315,14 +347,14 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
 
         const monitor = monitoringCueRef.current;
         if (monitor) {
-          const currentMs = playback.currentTime * 1000;
           if (!isPersistentMonitoringActive(monitor, currentMs)) {
             releasePersistentMonitor();
-            if (phase === 'keep_action') {
+            if (phaseRef.current === 'keep_action') {
+              phaseRef.current = 'playing';
               setPhase('playing');
               void playback.play();
             }
-          } else if (phase === 'playing' && !playback.paused) {
+          } else if (phaseRef.current === 'playing' && !playback.paused) {
             const ok = detectCommandSuccess(
               monitor.commandType,
               faceLandmarks,
@@ -333,6 +365,7 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
               playback.pause();
               setActiveCue(monitor);
               setOverlayMessage(CUE_KEEP_LABELS[monitor.commandType]);
+              phaseRef.current = 'keep_action';
               setPhase('keep_action');
             }
           }
@@ -340,9 +373,12 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
 
         const cue =
           activeCue ??
-          (phase === 'keep_action' ? monitoringCueRef.current : null);
+          (phaseRef.current === 'keep_action' ? monitoringCueRef.current : null);
 
-        if (cue && (phase === 'awaiting_action' || phase === 'keep_action')) {
+        if (
+          cue &&
+          (phaseRef.current === 'awaiting_action' || phaseRef.current === 'keep_action')
+        ) {
           const ok = detectCommandSuccess(
             cue.commandType,
             faceLandmarks,
@@ -362,7 +398,16 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
-  }, [started, cameraReady, modelsReady, phase, activeCue, resumeAfterCue, releasePersistentMonitor]);
+  }, [
+    started,
+    cameraReady,
+    modelsReady,
+    phase,
+    activeCue,
+    resumeAfterCue,
+    releasePersistentMonitor,
+    checkForCueAtTime,
+  ]);
 
   useEffect(() => {
     const el = playbackRef.current;
@@ -370,6 +415,7 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
     const onEnded = () => {
       monitoringCueRef.current = null;
       setActiveCue(null);
+      phaseRef.current = 'done';
       setPhase('done');
     };
     el.addEventListener('timeupdate', handleTimeUpdate);
@@ -423,6 +469,11 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
             src={playbackUrl}
             playsInline
             preload="metadata"
+            onLoadedMetadata={(e) => {
+              const v = e.currentTarget;
+              v.currentTime = 0;
+              v.pause();
+            }}
           />
         ) : (
           <p className="muted">Loading video…</p>

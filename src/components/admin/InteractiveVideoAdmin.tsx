@@ -21,6 +21,17 @@ function blankForm(): InteractiveVideoInput {
 }
 
 const DEFAULT_PERSISTENT_DURATION_MS = 5000;
+/** Slider + video timeupdate can land within a few ms of cue start. */
+const SCRUB_END_TOLERANCE_MS = 50;
+
+function defaultPersistentEndMs(cueStartMs: number, durationMs: number): number {
+  const end = cueStartMs + DEFAULT_PERSISTENT_DURATION_MS;
+  return durationMs > 0 ? Math.min(durationMs, end) : end;
+}
+
+function isScrubPastCueStart(scrubMs: number, cueStartMs: number): boolean {
+  return scrubMs > cueStartMs + SCRUB_END_TOLERANCE_MS;
+}
 
 function newDraftCue(timeMs: number): DraftCue {
   return {
@@ -69,6 +80,8 @@ export function InteractiveVideoAdmin() {
   const [draftCues, setDraftCues] = useState<DraftCue[]>([]);
   const [scrubMs, setScrubMs] = useState(0);
   const [durationMs, setDurationMs] = useState(0);
+  /** While focused, end time fields edit this draft; otherwise display comes from cue.endTimeMs. */
+  const [endTimeInputDraft, setEndTimeInputDraft] = useState<Record<string, string>>({});
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -123,6 +136,7 @@ export function InteractiveVideoAdmin() {
     setDraftCues([]);
     setScrubMs(0);
     setDurationMs(0);
+    setEndTimeInputDraft({});
   };
 
   const startEdit = (video: InteractiveVideo) => {
@@ -145,6 +159,12 @@ export function InteractiveVideoAdmin() {
     );
     setMessage('');
     setError('');
+    setEndTimeInputDraft({});
+    if (video.durationSeconds != null && Number.isFinite(video.durationSeconds)) {
+      setDurationMs(video.durationSeconds * 1000);
+    } else {
+      setDurationMs(0);
+    }
   };
 
   const onVideoMetadata = () => {
@@ -180,6 +200,37 @@ export function InteractiveVideoAdmin() {
 
   const removeDraftCue = (localId: string) => {
     setDraftCues((prev) => prev.filter((c) => c.localId !== localId));
+    setEndTimeInputDraft((prev) => {
+      if (prev[localId] === undefined) return prev;
+      const next = { ...prev };
+      delete next[localId];
+      return next;
+    });
+  };
+
+  const endTimeInputValue = (cue: DraftCue): string => {
+    const draft = endTimeInputDraft[cue.localId];
+    if (draft !== undefined) return draft;
+    return cue.endTimeMs != null ? formatTimeInput(cue.endTimeMs) : '';
+  };
+
+  const clearEndTimeInputDraft = (localId: string) => {
+    setEndTimeInputDraft((prev) => {
+      if (prev[localId] === undefined) return prev;
+      const next = { ...prev };
+      delete next[localId];
+      return next;
+    });
+  };
+
+  const setEndAtScrubForCue = (cue: DraftCue) => {
+    const endMs = isScrubPastCueStart(scrubMs, cue.timeMs)
+      ? scrubMs
+      : defaultPersistentEndMs(cue.timeMs, durationMs);
+    updateDraftCue(cue.localId, { endTimeMs: endMs });
+    clearEndTimeInputDraft(cue.localId);
+    setError('');
+    setMessage(`Cue end set to ${formatTimeInput(endMs)}`);
   };
 
   const validateDraftCues = (): string | null => {
@@ -508,14 +559,14 @@ export function InteractiveVideoAdmin() {
                         checked={cue.persistent}
                         onChange={(e) => {
                           const persistent = e.target.checked;
+                          clearEndTimeInputDraft(cue.localId);
                           updateDraftCue(cue.localId, {
                             persistent,
                             endTimeMs: persistent
                               ? cue.endTimeMs ??
-                                Math.min(
-                                  durationMs || cue.timeMs + DEFAULT_PERSISTENT_DURATION_MS,
-                                  cue.timeMs + DEFAULT_PERSISTENT_DURATION_MS,
-                                )
+                                (isScrubPastCueStart(scrubMs, cue.timeMs)
+                                  ? scrubMs
+                                  : defaultPersistentEndMs(cue.timeMs, durationMs))
                               : null,
                           });
                         }}
@@ -528,24 +579,40 @@ export function InteractiveVideoAdmin() {
                           type="text"
                           className="interactive-video-admin__time-input"
                           aria-label="End time"
-                          defaultValue={
-                            cue.endTimeMs != null ? formatTimeInput(cue.endTimeMs) : ''
-                          }
+                          value={endTimeInputValue(cue)}
                           placeholder="End"
+                          onFocus={() => {
+                            setEndTimeInputDraft((prev) => ({
+                              ...prev,
+                              [cue.localId]: endTimeInputValue(cue),
+                            }));
+                          }}
+                          onChange={(e) => {
+                            setEndTimeInputDraft((prev) => ({
+                              ...prev,
+                              [cue.localId]: e.target.value,
+                            }));
+                          }}
                           onBlur={(e) => {
                             const ms = parseTimeInput(e.target.value);
+                            clearEndTimeInputDraft(cue.localId);
                             if (ms !== null) {
                               updateDraftCue(cue.localId, { endTimeMs: ms });
-                            } else if (cue.endTimeMs != null) {
-                              e.target.value = formatTimeInput(cue.endTimeMs);
                             }
                           }}
                         />
                         <button
                           type="button"
                           className="btn btn--ghost btn--sm"
-                          disabled={durationMs <= 0 || scrubMs <= cue.timeMs}
-                          onClick={() => updateDraftCue(cue.localId, { endTimeMs: scrubMs })}
+                          disabled={durationMs <= 0}
+                          title={
+                            durationMs <= 0
+                              ? 'Load the video preview first'
+                              : isScrubPastCueStart(scrubMs, cue.timeMs)
+                                ? `Set end to ${formatTimeInput(scrubMs)}`
+                                : `Scrub past start (${formatTimeInput(cue.timeMs)}) — click uses start + 5s`
+                          }
+                          onClick={() => setEndAtScrubForCue(cue)}
                         >
                           Set end at scrub
                         </button>

@@ -6,6 +6,10 @@ export const INTERACTIVE_VIDEOS_BUCKET = 'interactive-videos';
 const MIGRATION_HINT =
   'Interactive videos are not set up yet. In Supabase SQL Editor, run supabase/migrations/035_interactive_videos.sql, then retry.';
 
+/** Requires 036_interactive_cue_end.sql / 037_fix_end_time_ms.sql on `interactive_video_cues`. */
+const CUE_END_MIGRATION_HINT =
+  'Interactive video cue ranges need a database update. In Supabase SQL Editor, run supabase/migrations/037_fix_end_time_ms.sql (or 036_interactive_cue_end.sql), wait a few seconds, then retry.';
+
 const BUCKET_HINT =
   'The interactive-videos storage bucket is not set up yet. Run supabase/migrations/035_interactive_videos.sql, then retry.';
 
@@ -81,6 +85,12 @@ function formatDbError(error: { message?: string; code?: string }): string {
     message.includes("Could not find the table 'public.interactive_videos'")
   ) {
     return MIGRATION_HINT;
+  }
+  if (
+    message.includes("Could not find the 'end_time_ms' column") ||
+    (message.includes('interactive_video_cues') && message.includes('end_time_ms'))
+  ) {
+    return CUE_END_MIGRATION_HINT;
   }
   return message;
 }
@@ -384,17 +394,19 @@ export async function replaceInteractiveVideoCues(
   const validated = validateCueInputs(cues);
   if (!validated.ok) return validated;
 
-  const rows = cues.map((cue, index) => ({
-    video_id: videoId,
-    time_ms: Math.max(0, Math.round(cue.timeMs)),
-    end_time_ms:
-      cue.persistent && cue.endTimeMs != null
-        ? Math.max(0, Math.round(cue.endTimeMs))
-        : null,
-    command_type: cue.commandType,
-    persistent: cue.persistent,
-    sort_order: cue.sortOrder ?? index,
-  }));
+  const rows = cues.map((cue, index) => {
+    const row: Record<string, unknown> = {
+      video_id: videoId,
+      time_ms: Math.max(0, Math.round(cue.timeMs)),
+      command_type: cue.commandType,
+      persistent: cue.persistent,
+      sort_order: cue.sortOrder ?? index,
+    };
+    if (cue.persistent && cue.endTimeMs != null) {
+      row.end_time_ms = Math.max(0, Math.round(cue.endTimeMs));
+    }
+    return row;
+  });
 
   const { data, error } = await supabase
     .from('interactive_video_cues')
