@@ -20,10 +20,13 @@ function blankForm(): InteractiveVideoInput {
   return { title: '', description: '', durationSeconds: null };
 }
 
+const DEFAULT_PERSISTENT_DURATION_MS = 5000;
+
 function newDraftCue(timeMs: number): DraftCue {
   return {
     localId: crypto.randomUUID(),
     timeMs,
+    endTimeMs: null,
     commandType: 'mouth_open',
     persistent: false,
   };
@@ -134,6 +137,7 @@ export function InteractiveVideoAdmin() {
       video.cues.map((c) => ({
         localId: c.id,
         timeMs: c.timeMs,
+        endTimeMs: c.endTimeMs,
         commandType: c.commandType,
         persistent: c.persistent,
         sortOrder: c.sortOrder,
@@ -178,10 +182,33 @@ export function InteractiveVideoAdmin() {
     setDraftCues((prev) => prev.filter((c) => c.localId !== localId));
   };
 
+  const validateDraftCues = (): string | null => {
+    for (let i = 0; i < draftCues.length; i++) {
+      const cue = draftCues[i];
+      const label = `Cue ${i + 1}`;
+      if (cue.persistent) {
+        if (cue.endTimeMs == null) {
+          return `${label}: set an end time for persistent cues.`;
+        }
+        if (cue.endTimeMs <= cue.timeMs) {
+          return `${label}: end time must be after start time.`;
+        }
+      }
+    }
+    return null;
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setError('');
     setMessage('');
+
+    const cueValidation = validateDraftCues();
+    if (cueValidation) {
+      setSaving(false);
+      setError(cueValidation);
+      return;
+    }
 
     const input: InteractiveVideoInput = {
       title: form.title,
@@ -390,21 +417,51 @@ export function InteractiveVideoAdmin() {
                   className="interactive-video-admin__playhead"
                   style={{ left: `${timelinePercent}%` }}
                 />
+                {draftCues.map((cue) =>
+                  cue.persistent && cue.endTimeMs != null && durationMs > 0 ? (
+                    <div
+                      key={`${cue.localId}-range`}
+                      className="interactive-video-admin__range"
+                      style={{
+                        left: `${(cue.timeMs / durationMs) * 100}%`,
+                        width: `${((cue.endTimeMs - cue.timeMs) / durationMs) * 100}%`,
+                      }}
+                      title={`${formatTimeInput(cue.timeMs)} → ${formatTimeInput(cue.endTimeMs)}`}
+                    />
+                  ) : null,
+                )}
                 {draftCues.map((cue) => (
                   <button
                     key={cue.localId}
                     type="button"
-                    className="interactive-video-admin__marker"
+                    className="interactive-video-admin__marker interactive-video-admin__marker--start"
                     style={{
                       left: `${durationMs > 0 ? (cue.timeMs / durationMs) * 100 : 0}%`,
                     }}
-                    title={`${formatTimeInput(cue.timeMs)} — ${CUE_COMMAND_LABELS[cue.commandType]}`}
+                    title={`Start ${formatTimeInput(cue.timeMs)} — ${CUE_COMMAND_LABELS[cue.commandType]}`}
                     onClick={(e) => {
                       e.stopPropagation();
                       onScrub(cue.timeMs);
                     }}
                   />
                 ))}
+                {draftCues.map((cue) =>
+                  cue.persistent && cue.endTimeMs != null ? (
+                    <button
+                      key={`${cue.localId}-end`}
+                      type="button"
+                      className="interactive-video-admin__marker interactive-video-admin__marker--end"
+                      style={{
+                        left: `${durationMs > 0 ? (cue.endTimeMs / durationMs) * 100 : 0}%`,
+                      }}
+                      title={`End ${formatTimeInput(cue.endTimeMs)}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onScrub(cue.endTimeMs!);
+                      }}
+                    />
+                  ) : null,
+                )}
               </div>
 
               <button
@@ -449,12 +506,51 @@ export function InteractiveVideoAdmin() {
                       <input
                         type="checkbox"
                         checked={cue.persistent}
-                        onChange={(e) =>
-                          updateDraftCue(cue.localId, { persistent: e.target.checked })
-                        }
+                        onChange={(e) => {
+                          const persistent = e.target.checked;
+                          updateDraftCue(cue.localId, {
+                            persistent,
+                            endTimeMs: persistent
+                              ? cue.endTimeMs ??
+                                Math.min(
+                                  durationMs || cue.timeMs + DEFAULT_PERSISTENT_DURATION_MS,
+                                  cue.timeMs + DEFAULT_PERSISTENT_DURATION_MS,
+                                )
+                              : null,
+                          });
+                        }}
                       />
                       Persistent
                     </label>
+                    {cue.persistent && (
+                      <>
+                        <input
+                          type="text"
+                          className="interactive-video-admin__time-input"
+                          aria-label="End time"
+                          defaultValue={
+                            cue.endTimeMs != null ? formatTimeInput(cue.endTimeMs) : ''
+                          }
+                          placeholder="End"
+                          onBlur={(e) => {
+                            const ms = parseTimeInput(e.target.value);
+                            if (ms !== null) {
+                              updateDraftCue(cue.localId, { endTimeMs: ms });
+                            } else if (cue.endTimeMs != null) {
+                              e.target.value = formatTimeInput(cue.endTimeMs);
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn--ghost btn--sm"
+                          disabled={durationMs <= 0 || scrubMs <= cue.timeMs}
+                          onClick={() => updateDraftCue(cue.localId, { endTimeMs: scrubMs })}
+                        >
+                          Set end at scrub
+                        </button>
+                      </>
+                    )}
                     <button
                       type="button"
                       className="btn btn--ghost btn--sm btn--danger"

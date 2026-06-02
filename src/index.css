@@ -4721,6 +4721,16 @@ a.task-list-row {
   pointer-events: none;
 }
 
+.interactive-video-admin__range {
+  position: absolute;
+  top: 50%;
+  height: 6px;
+  background: rgba(232, 121, 249, 0.35);
+  border-radius: 3px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
 .interactive-video-admin__marker {
   position: absolute;
   top: 50%;
@@ -4733,6 +4743,11 @@ a.task-list-row {
   background: #e879f9;
   transform: translate(-50%, -50%);
   cursor: pointer;
+  z-index: 1;
+}
+
+.interactive-video-admin__marker--end {
+  background: #a78bfa;
 }
 
 .interactive-video-admin__cue-list {

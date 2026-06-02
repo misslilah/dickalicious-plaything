@@ -15,6 +15,8 @@ export interface InteractiveVideoCue {
   id: string;
   videoId: string;
   timeMs: number;
+  /** Set for persistent cues with a timeline end; null = quick cue or legacy persistent. */
+  endTimeMs: number | null;
   commandType: InteractiveCueCommand;
   persistent: boolean;
   sortOrder: number;
@@ -47,6 +49,7 @@ export interface InteractiveVideoInput {
 
 export interface InteractiveCueInput {
   timeMs: number;
+  endTimeMs?: number | null;
   commandType: InteractiveCueCommand;
   persistent: boolean;
   sortOrder?: number;
@@ -65,6 +68,7 @@ type DbInteractiveCue = {
   id: string;
   video_id: string;
   time_ms: number;
+  end_time_ms: number | null;
   command_type: InteractiveCueCommand;
   persistent: boolean;
   sort_order: number;
@@ -92,10 +96,34 @@ function mapCue(row: DbInteractiveCue): InteractiveVideoCue {
     id: row.id,
     videoId: row.video_id,
     timeMs: row.time_ms,
+    endTimeMs: row.end_time_ms ?? null,
     commandType: row.command_type,
     persistent: row.persistent,
     sortOrder: row.sort_order,
   };
+}
+
+function validateCueInputs(
+  cues: InteractiveCueInput[],
+): { ok: true } | { ok: false; error: string } {
+  for (let i = 0; i < cues.length; i++) {
+    const cue = cues[i];
+    const label = `Cue ${i + 1}`;
+    if (cue.persistent) {
+      if (cue.endTimeMs == null) {
+        return {
+          ok: false,
+          error: `${label}: persistent cues need an end time on the timeline.`,
+        };
+      }
+      if (cue.endTimeMs <= cue.timeMs) {
+        return { ok: false, error: `${label}: end time must be after start time.` };
+      }
+    } else if (cue.endTimeMs != null && cue.endTimeMs <= cue.timeMs) {
+      return { ok: false, error: `${label}: end time must be after start time.` };
+    }
+  }
+  return { ok: true };
 }
 
 function mapVideo(
@@ -353,9 +381,16 @@ export async function replaceInteractiveVideoCues(
 
   if (cues.length === 0) return { ok: true, cues: [] };
 
+  const validated = validateCueInputs(cues);
+  if (!validated.ok) return validated;
+
   const rows = cues.map((cue, index) => ({
     video_id: videoId,
     time_ms: Math.max(0, Math.round(cue.timeMs)),
+    end_time_ms:
+      cue.persistent && cue.endTimeMs != null
+        ? Math.max(0, Math.round(cue.endTimeMs))
+        : null,
     command_type: cue.commandType,
     persistent: cue.persistent,
     sort_order: cue.sortOrder ?? index,

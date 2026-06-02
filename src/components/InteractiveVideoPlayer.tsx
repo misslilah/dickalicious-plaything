@@ -46,6 +46,15 @@ function formatTimeMs(ms: number): string {
   return `${min}:${sec.toString().padStart(2, '0')}`;
 }
 
+function isPersistentMonitoringActive(
+  cue: InteractiveVideoCue,
+  currentMs: number,
+): boolean {
+  if (!cue.persistent) return false;
+  if (cue.endTimeMs == null) return true;
+  return currentMs < cue.endTimeMs;
+}
+
 function detectCommandSuccess(
   command: InteractiveCueCommand,
   faceLandmarks: NormalizedLandmark[] | undefined,
@@ -236,6 +245,12 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
     }
   }, [phase, sortedCues, triggerCue]);
 
+  const releasePersistentMonitor = useCallback(() => {
+    monitoringCueRef.current = null;
+    setActiveCue(null);
+    setOverlayMessage('');
+  }, []);
+
   const resumeAfterCue = useCallback(
     (cue: InteractiveVideoCue) => {
       const el = playbackRef.current;
@@ -299,18 +314,27 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
         }
 
         const monitor = monitoringCueRef.current;
-        if (monitor && phase === 'playing' && !playback.paused) {
-          const ok = detectCommandSuccess(
-            monitor.commandType,
-            faceLandmarks,
-            handLandmarks,
-            tongueFramesRef.current,
-          );
-          if (!ok) {
-            playback.pause();
-            setActiveCue(monitor);
-            setOverlayMessage(CUE_KEEP_LABELS[monitor.commandType]);
-            setPhase('keep_action');
+        if (monitor) {
+          const currentMs = playback.currentTime * 1000;
+          if (!isPersistentMonitoringActive(monitor, currentMs)) {
+            releasePersistentMonitor();
+            if (phase === 'keep_action') {
+              setPhase('playing');
+              void playback.play();
+            }
+          } else if (phase === 'playing' && !playback.paused) {
+            const ok = detectCommandSuccess(
+              monitor.commandType,
+              faceLandmarks,
+              handLandmarks,
+              tongueFramesRef.current,
+            );
+            if (!ok) {
+              playback.pause();
+              setActiveCue(monitor);
+              setOverlayMessage(CUE_KEEP_LABELS[monitor.commandType]);
+              setPhase('keep_action');
+            }
           }
         }
 
@@ -338,7 +362,7 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
-  }, [started, cameraReady, modelsReady, phase, activeCue, resumeAfterCue]);
+  }, [started, cameraReady, modelsReady, phase, activeCue, resumeAfterCue, releasePersistentMonitor]);
 
   useEffect(() => {
     const el = playbackRef.current;
@@ -451,8 +475,16 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
           <ul>
             {sortedCues.map((cue) => (
               <li key={cue.id}>
-                {formatTimeMs(cue.timeMs)} — {CUE_COMMAND_LABELS[cue.commandType]}
-                {cue.persistent ? ' (persistent)' : ' (quick)'}
+                {formatTimeMs(cue.timeMs)}
+                {cue.persistent && cue.endTimeMs != null
+                  ? ` → ${formatTimeMs(cue.endTimeMs)}`
+                  : ''}{' '}
+                — {CUE_COMMAND_LABELS[cue.commandType]}
+                {cue.persistent
+                  ? cue.endTimeMs != null
+                    ? ' (persistent range)'
+                    : ' (persistent)'
+                  : ' (quick)'}
                 {firedCueIdsRef.current.has(cue.id) ? ' ✓' : ''}
               </li>
             ))}
