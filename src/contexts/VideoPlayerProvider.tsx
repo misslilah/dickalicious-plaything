@@ -164,7 +164,7 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
       shouldAutoplayRef.current = false;
       void el.play().catch(() => setIsPlaying(false));
     }
-  }, [url, session?.videoId]);
+  }, [url, session?.videoId, inlineHost]);
 
   useEffect(() => {
     const el = videoRef.current;

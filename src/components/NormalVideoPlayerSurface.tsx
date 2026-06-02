@@ -1,9 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useCallback } from 'react';
 import { useVideoPlayer } from '../contexts/VideoPlayerProvider';
 import { VideoLoopToast } from './VideoLoopToast';
 
 export function NormalVideoPlayerSurface() {
-  const hostRef = useRef<HTMLDivElement>(null);
   const {
     session,
     url,
@@ -17,40 +16,44 @@ export function NormalVideoPlayerSurface() {
     registerInlineHost,
   } = useVideoPlayer();
 
-  useEffect(() => {
-    const el = hostRef.current;
-    if (!el) return;
-    registerInlineHost(el);
-    return () => registerInlineHost(null);
-  }, [registerInlineHost, session?.videoId]);
+  const attachHost = useCallback(
+    (el: HTMLDivElement | null) => {
+      registerInlineHost(el);
+    },
+    [registerInlineHost],
+  );
 
   if (!session) return null;
 
-  if (loading) {
-    return <p className="muted">Loading video…</p>;
-  }
-  if (error || !url) {
-    return <p className="login-error">{error ?? 'Video unavailable.'}</p>;
-  }
+  const ready = !loading && !error && url;
 
   return (
     <>
-      <div className="video-player-wrap" ref={hostRef} />
-      <div className="video-player-controls">
-        <button
-          type="button"
-          className={loop ? 'chip chip--active' : 'chip'}
-          aria-pressed={loop}
-          onClick={toggleLoop}
-        >
-          Loop
-        </button>
-      </div>
-      <VideoLoopToast
-        visible={showLoopNotice}
-        onDismiss={dismissLoopNotice}
-        onTurnOffLoop={turnOffLoop}
-      />
+      <div className="video-player-wrap" ref={attachHost} />
+      {loading ? (
+        <p className="muted">Loading video…</p>
+      ) : error || !url ? (
+        <p className="login-error">{error ?? 'Video unavailable.'}</p>
+      ) : null}
+      {ready ? (
+        <>
+          <div className="video-player-controls">
+            <button
+              type="button"
+              className={loop ? 'chip chip--active' : 'chip'}
+              aria-pressed={loop}
+              onClick={toggleLoop}
+            >
+              Loop
+            </button>
+          </div>
+          <VideoLoopToast
+            visible={showLoopNotice}
+            onDismiss={dismissLoopNotice}
+            onTurnOffLoop={turnOffLoop}
+          />
+        </>
+      ) : null}
     </>
   );
 }
