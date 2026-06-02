@@ -87,6 +87,7 @@ import {
   updateAudioPlaylistsOrder,
 } from '../lib/audioPlaylist';
 import { MiniGamesAdmin } from '../components/admin/MiniGamesAdmin';
+import { InteractiveVideoAdmin } from '../components/admin/InteractiveVideoAdmin';
 
 const ADMIN_SECTIONS = [
   {
@@ -3178,7 +3179,7 @@ function GifBankAdmin() {
 }
 
 function VideosAdmin() {
-  const [tab, setTab] = useState<'categories' | 'uploads'>('categories');
+  const [tab, setTab] = useState<'categories' | 'uploads' | 'interactive'>('categories');
 
   return (
     <div className="admin-videos">
@@ -3209,8 +3210,27 @@ function VideosAdmin() {
         >
           Uploads
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'interactive'}
+          className={
+            tab === 'interactive'
+              ? 'admin-videos-tab admin-videos-tab--active'
+              : 'admin-videos-tab'
+          }
+          onClick={() => setTab('interactive')}
+        >
+          Interactive
+        </button>
       </div>
-      {tab === 'categories' ? <VideoCategoryAdmin /> : <VideoUploadAdmin />}
+      {tab === 'categories' ? (
+        <VideoCategoryAdmin />
+      ) : tab === 'uploads' ? (
+        <VideoUploadAdmin />
+      ) : (
+        <InteractiveVideoAdmin />
+      )}
     </div>
   );
 }

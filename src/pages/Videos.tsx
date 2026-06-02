@@ -5,8 +5,9 @@ import { VideoCategoryCard } from '../components/VideoCategoryCard';
 import { useAppStore } from '../hooks/useAppStore';
 import { canAccessTier, effectiveVideoTier, requiresTierMessage } from '../lib/tiers';
 import type { Video, VideoCategory } from '../types';
+import { InteractiveVideos } from './InteractiveVideos';
 
-type MediaTab = 'videos' | 'audio';
+type MediaTab = 'videos' | 'interactive' | 'audio';
 
 export function Videos() {
   const { state, session } = useAppStore();
@@ -64,6 +65,15 @@ export function Videos() {
         <button
           type="button"
           role="tab"
+          aria-selected={tab === 'interactive'}
+          className={tab === 'interactive' ? 'media-tab media-tab--active' : 'media-tab'}
+          onClick={() => setTab('interactive')}
+        >
+          Interactive
+        </button>
+        <button
+          type="button"
+          role="tab"
           aria-selected={tab === 'audio'}
           className={tab === 'audio' ? 'media-tab media-tab--active' : 'media-tab'}
           onClick={() => setTab('audio')}
@@ -74,6 +84,8 @@ export function Videos() {
 
       {tab === 'audio' ? (
         <AudioPlaylistSection />
+      ) : tab === 'interactive' ? (
+        <InteractiveVideos embedded />
       ) : (
         <>
           {state.videoCategories.length > 0 && (

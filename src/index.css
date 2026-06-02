@@ -4558,3 +4558,220 @@ a.task-list-row {
     grid-template-columns: 1fr;
   }
 }
+
+/* --- Interactive videos --- */
+.interactive-videos__warning {
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.interactive-videos__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.interactive-videos__card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s;
+}
+
+.interactive-videos__card:hover {
+  border-color: rgba(232, 121, 249, 0.4);
+}
+
+.interactive-videos__card h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+}
+
+.interactive-videos__meta {
+  margin: 0.35rem 0 0;
+  font-size: 0.85rem;
+}
+
+.interactive-video-player__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.interactive-video-player__header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.interactive-video-player__warning {
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.interactive-video-player__stage {
+  position: relative;
+  background: #000;
+  border-radius: var(--radius);
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  max-width: 960px;
+}
+
+.interactive-video-player__playback {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.interactive-video-player__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.72);
+  pointer-events: none;
+}
+
+.interactive-video-player__command {
+  margin: 0;
+  padding: 1rem 1.5rem;
+  font-size: clamp(1.25rem, 4vw, 2rem);
+  font-weight: 700;
+  text-align: center;
+  color: #f9a8d4;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+}
+
+.interactive-video-player__camera {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.interactive-video-player__controls {
+  margin-top: 1rem;
+}
+
+.interactive-video-player__cue-list {
+  margin-top: 1rem;
+  font-size: 0.88rem;
+}
+
+.interactive-video-player__cue-list ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.interactive-video-admin {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.interactive-video-admin__form h3 {
+  margin-top: 0;
+}
+
+.interactive-video-admin__preview {
+  width: 100%;
+  max-height: 360px;
+  background: #000;
+  border-radius: var(--radius);
+}
+
+.interactive-video-admin__editor {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.interactive-video-admin__timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.interactive-video-admin__track {
+  position: relative;
+  height: 2rem;
+  background: var(--bg-elevated);
+  border-radius: 6px;
+  border: 1px solid rgba(232, 121, 249, 0.2);
+  cursor: pointer;
+}
+
+.interactive-video-admin__playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #f9a8d4;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.interactive-video-admin__marker {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin: 0;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #e879f9;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+}
+
+.interactive-video-admin__cue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.interactive-video-admin__cue-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.interactive-video-admin__time-input {
+  width: 5.5rem;
+  font-family: inherit;
+}
+
+.interactive-video-admin__persistent {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.88rem;
+}
+
+.interactive-video-admin__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 520px) {
+  .interactive-video-admin__cue-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

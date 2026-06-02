@@ -25,6 +25,8 @@ import { Settings } from './pages/Settings';
 import { Today } from './pages/Today';
 import { MiniGames } from './pages/MiniGames';
 import { FlashWordGamePage } from './pages/FlashWordGamePage';
+import { InteractiveVideos } from './pages/InteractiveVideos';
+import { InteractiveVideoPlay } from './pages/InteractiveVideoPlay';
 
 function AppChrome() {
   return (
@@ -55,6 +57,11 @@ const router = createBrowserRouter([
                 element: <TaskFocusPage />,
               },
               { path: 'videos', element: <Videos /> },
+              { path: 'videos/interactive', element: <InteractiveVideos /> },
+              {
+                path: 'videos/interactive/:videoId',
+                element: <InteractiveVideoPlay />,
+              },
               {
                 path: 'videos/category/:categoryId',
                 element: <VideoCategoryDetail />,

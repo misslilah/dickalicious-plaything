@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import {
-  headYawRatio,
+  gazeYawRatio,
   isLookingLeft,
   isLookingRight,
   isMouthOpen,
   isTongueHeuristic,
   mouthAspectRatio,
+  smoothGazeSample,
   type NormalizedLandmark,
 } from '../lib/facePoseDetection';
 import type { FollowInstinctGame } from '../lib/followInstinctGames';
@@ -18,7 +19,14 @@ const FACE_MODEL =
 
 const ROUNDS_PER_SESSION = 8;
 const COMMAND_WINDOW_MS = 3500;
+/** Frames with MAR above tongue threshold before tongue_out validates. */
 const TONGUE_HOLD_FRAMES = 6;
+/** Neutral-face samples collected at the start of each gaze round. */
+const GAZE_CALIBRATION_FRAMES = 10;
+/** Consecutive frames gaze must hold before look_left / look_right succeeds. */
+const GAZE_HOLD_FRAMES = 7;
+/** EMA smoothing factor — higher reacts faster, lower is steadier. */
+const GAZE_EMA_ALPHA = 0.35;
 
 export type InstinctCommand = 'look_left' | 'look_right' | 'open_mouth' | 'tongue_out';
 
@@ -43,6 +51,10 @@ function randomCommand(): InstinctCommand {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
+function isGazeCommand(command: InstinctCommand): boolean {
+  return command === 'look_left' || command === 'look_right';
+}
+
 function heartSideForCommand(command: InstinctCommand): 'left' | 'right' {
   if (command === 'look_left') return 'left';
   if (command === 'look_right') return 'right';
@@ -53,14 +65,15 @@ function validateCommand(
   command: InstinctCommand,
   landmarks: NormalizedLandmark[],
   tongueFrameCount: number,
+  gazeHoldFrames: number,
+  gazeCalibrated: boolean,
 ): boolean {
-  const yaw = headYawRatio(landmarks);
   const mar = mouthAspectRatio(landmarks);
   switch (command) {
     case 'look_left':
-      return isLookingLeft(yaw);
+      return gazeCalibrated && gazeHoldFrames >= GAZE_HOLD_FRAMES;
     case 'look_right':
-      return isLookingRight(yaw);
+      return gazeCalibrated && gazeHoldFrames >= GAZE_HOLD_FRAMES;
     case 'open_mouth':
       return isMouthOpen(mar);
     case 'tongue_out':
@@ -81,6 +94,12 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
   const rafRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const tongueFramesRef = useRef(0);
+  const gazeBaselineRef = useRef<number | null>(null);
+  const gazeCalibrationSumRef = useRef(0);
+  const gazeCalibrationCountRef = useRef(0);
+  const gazeCalibratedRef = useRef(false);
+  const gazeHoldFramesRef = useRef(0);
+  const smoothedGazeRef = useRef<number | null>(null);
 
   const [cameraReady, setCameraReady] = useState(false);
   const [modelReady, setModelReady] = useState(false);
@@ -109,6 +128,12 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
     setFeedback('idle');
     judgedRef.current = false;
     tongueFramesRef.current = 0;
+    gazeBaselineRef.current = null;
+    gazeCalibrationSumRef.current = 0;
+    gazeCalibrationCountRef.current = 0;
+    gazeCalibratedRef.current = !isGazeCommand(nextCommand);
+    gazeHoldFramesRef.current = 0;
+    smoothedGazeRef.current = null;
     roundStartRef.current = performance.now();
     setDetecting(true);
   }, []);
@@ -213,7 +238,49 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
           tongueFramesRef.current = 0;
         }
 
-        if (validateCommand(command, landmarks, tongueFramesRef.current)) {
+        if (isGazeCommand(command)) {
+          const rawGaze = gazeYawRatio(landmarks);
+          if (rawGaze !== null) {
+            smoothedGazeRef.current = smoothGazeSample(
+              smoothedGazeRef.current,
+              rawGaze,
+              GAZE_EMA_ALPHA,
+            );
+
+            if (!gazeCalibratedRef.current) {
+              gazeCalibrationSumRef.current += smoothedGazeRef.current;
+              gazeCalibrationCountRef.current += 1;
+              if (gazeCalibrationCountRef.current >= GAZE_CALIBRATION_FRAMES) {
+                gazeBaselineRef.current =
+                  gazeCalibrationSumRef.current / gazeCalibrationCountRef.current;
+                gazeCalibratedRef.current = true;
+                roundStartRef.current = performance.now();
+              }
+            } else {
+              const gaze = smoothedGazeRef.current;
+              const baseline = gazeBaselineRef.current;
+              const looking =
+                command === 'look_left'
+                  ? isLookingLeft(gaze, baseline)
+                  : isLookingRight(gaze, baseline);
+              if (looking) {
+                gazeHoldFramesRef.current += 1;
+              } else {
+                gazeHoldFramesRef.current = 0;
+              }
+            }
+          }
+        }
+
+        if (
+          validateCommand(
+            command,
+            landmarks,
+            tongueFramesRef.current,
+            gazeHoldFramesRef.current,
+            gazeCalibratedRef.current,
+          )
+        ) {
           judgedRef.current = true;
           setDetecting(false);
           setFeedback('success');
