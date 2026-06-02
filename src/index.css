@@ -2133,6 +2133,23 @@ a.task-list-row {
   align-items: center;
 }
 
+.video-play-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.video-play-mode__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.video-play-mode__hint {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
 .video-watch-card__desc {
   margin: 0.5rem 0 0;
 }
@@ -3693,6 +3710,100 @@ a.task-list-row {
   color: var(--text-muted);
 }
 
+/* —— Video loop notice (above Patreon bubble) —— */
+
+.video-loop-toast {
+  position: fixed;
+  right: max(var(--pad-inline), env(safe-area-inset-right, 0px));
+  bottom: calc(var(--safe-bottom) + 4.25rem);
+  z-index: 149;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  max-width: min(18rem, calc(100vw - 2 * var(--pad-inline)));
+  padding: 0.55rem 0.65rem 0.55rem 0.85rem;
+  border-radius: 12px;
+  background: rgba(26, 16, 36, 0.92);
+  border: 1px solid rgba(232, 121, 249, 0.32);
+  color: var(--text);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  backdrop-filter: blur(10px);
+}
+
+.video-loop-toast--with-nav {
+  bottom: calc(var(--nav-h) + var(--safe-bottom) + 4.15rem);
+}
+
+.video-loop-toast--with-player {
+  bottom: calc(var(--nav-h) + 3.75rem + var(--safe-bottom) + 4.15rem);
+}
+
+.video-loop-toast__text {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.video-loop-toast__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.video-loop-toast__link {
+  border: none;
+  background: transparent;
+  color: var(--accent-2);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  padding: 0.15rem 0.25rem;
+}
+
+.video-loop-toast__link:hover {
+  color: var(--accent);
+}
+
+.video-loop-toast__link:focus-visible {
+  outline: 2px solid rgba(232, 121, 249, 0.75);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.video-loop-toast__dismiss {
+  border: none;
+  background: rgba(167, 139, 184, 0.15);
+  color: var(--text-muted);
+  width: 1.65rem;
+  height: 1.65rem;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.video-loop-toast__dismiss:hover {
+  color: var(--text);
+  background: rgba(167, 139, 184, 0.28);
+}
+
+.video-loop-toast__dismiss:focus-visible {
+  outline: 2px solid rgba(232, 121, 249, 0.75);
+  outline-offset: 2px;
+}
+
 /* —— Patreon support bubble —— */
 
 .patreon-bubble {
@@ -4789,4 +4900,30 @@ a.task-list-row {
     flex-direction: column;
     align-items: stretch;
   }
+}
+
+.upload-progress {
+  margin: 0.75rem 0 0;
+}
+
+.upload-progress__label {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.upload-progress__bar {
+  height: 0.4rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.upload-progress__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #f472b6, #c084fc);
+  transition: width 0.15s ease;
 }

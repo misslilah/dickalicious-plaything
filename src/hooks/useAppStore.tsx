@@ -39,6 +39,7 @@ import {
   upsertPunishmentTemplate,
   upsertReward,
   upsertTask,
+  updateVideoCategoriesOrder,
   upsertVideoCategory,
 } from '../lib/catalogDb';
 import {
@@ -149,11 +150,13 @@ interface AppStoreValue {
   deletePunishmentTemplate: (id: string) => Promise<MutateResult>;
   addVideoCategory: (category: VideoCategory) => Promise<MutateResult>;
   updateVideoCategory: (category: VideoCategory) => Promise<MutateResult>;
+  reorderVideoCategories: (orderedIds: string[]) => Promise<MutateResult>;
   deleteVideoCategory: (id: string) => Promise<MutateResult>;
   addVideo: (
     video: Video,
     file: Blob,
     fileName: string,
+    onUploadProgress?: (percent: number) => void,
   ) => Promise<MutateResult>;
   updateVideo: (video: Video) => Promise<MutateResult>;
   deleteVideo: (id: string) => Promise<MutateResult>;
@@ -674,7 +677,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         if (!result.ok) return result;
         setState((s) => ({
           ...s,
-          videoCategories: [...s.videoCategories, result.category],
+          videoCategories: [...s.videoCategories, result.category].sort(
+            (a, b) => a.sortOrder - b.sortOrder,
+          ),
         }));
         return { ok: true };
       },
@@ -685,10 +690,26 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         if (!result.ok) return result;
         setState((s) => ({
           ...s,
-          videoCategories: s.videoCategories.map((c) =>
-            c.id === result.category.id ? result.category : c,
-          ),
+          videoCategories: s.videoCategories
+            .map((c) => (c.id === result.category.id ? result.category : c))
+            .sort((a, b) => a.sortOrder - b.sortOrder),
         }));
+        return { ok: true };
+      },
+      reorderVideoCategories: async (orderedIds) => {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const result = await updateVideoCategoriesOrder(orderedIds);
+        if (!result.ok) return result;
+        setState((s) => {
+          const byId = new Map(s.videoCategories.map((c) => [c.id, c]));
+          const videoCategories = orderedIds.map((id, index) => {
+            const cat = byId.get(id);
+            if (!cat) return null;
+            return { ...cat, sortOrder: index };
+          }).filter((c): c is VideoCategory => c != null);
+          return { ...s, videoCategories };
+        });
         return { ok: true };
       },
       deleteVideoCategory: async (id) => {
@@ -707,7 +728,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         }));
         return { ok: true };
       },
-      addVideo: async (video, file, fileName) => {
+      addVideo: async (video, file, fileName, onUploadProgress) => {
         const denied = requireAdmin();
         if (denied) return denied;
         if (file.size > MAX_VIDEO_BYTES) {
@@ -715,7 +736,12 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         }
         const tempId = crypto.randomUUID();
         const path = videoStoragePath(tempId, fileName);
-        const upload = await uploadVideoFile(path, file, video.mimeType);
+        const upload = await uploadVideoFile(
+          path,
+          file,
+          video.mimeType,
+          onUploadProgress,
+        );
         if (!upload.ok) return upload;
 
         const row: Video = {

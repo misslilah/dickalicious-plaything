@@ -15,15 +15,23 @@ export function Videos() {
   const [search, setSearch] = useState('');
   const isAdmin = session?.role === 'admin';
 
+  const sortedCategories = useMemo(
+    () =>
+      [...state.videoCategories].sort(
+        (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
+      ),
+    [state.videoCategories],
+  );
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return state.videoCategories;
-    return state.videoCategories.filter(
+    if (!q) return sortedCategories;
+    return sortedCategories.filter(
       (c) =>
         c.name.toLowerCase().includes(q) ||
         (c.description ?? '').toLowerCase().includes(q),
     );
-  }, [state.videoCategories, search]);
+  }, [sortedCategories, search]);
 
   const canWatchVideo = (video: Video, category: VideoCategory | undefined) =>
     canAccessTier(

@@ -50,6 +50,8 @@ interface AudioPlayerContextValue {
   selectPlaylist: (playlistId: string | null) => void;
   playTrack: (trackId: string) => void;
   togglePlay: () => void;
+  /** Pause playback without clearing playlist progress. */
+  pausePlayback: () => void;
   previousTrack: () => void;
   toggleLoop: () => void;
   isTrackPlayable: (trackId: string) => boolean;
@@ -380,20 +382,27 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     [isTrackPlayable, allItems, loadTrack],
   );
 
+  const pausePlayback = useCallback(() => {
+    const audio = audioRef.current;
+    if (!audio || audio.paused) return;
+    audio.pause();
+    setIsPlaying(false);
+    const trackId = progressRef.current.lastTrackId;
+    if (trackId) savePosition(trackId, audio.currentTime);
+  }, [savePosition]);
+
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;
     if (!audio || !currentTrack) return;
     if (isPlaying) {
-      audio.pause();
-      setIsPlaying(false);
-      savePosition(currentTrack.id, audio.currentTime);
+      pausePlayback();
       return;
     }
     void audio.play().then(
       () => setIsPlaying(true),
       () => setIsPlaying(false),
     );
-  }, [currentTrack, isPlaying, savePosition]);
+  }, [currentTrack, isPlaying, pausePlayback]);
 
   const previousTrack = useCallback(() => {
     if (!currentTrack || currentIndex < 0) return;
@@ -530,6 +539,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       selectPlaylist,
       playTrack,
       togglePlay,
+      pausePlayback,
       previousTrack,
       toggleLoop,
       isTrackPlayable,
@@ -558,6 +568,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       selectPlaylist,
       playTrack,
       togglePlay,
+      pausePlayback,
       previousTrack,
       toggleLoop,
       isTrackPlayable,

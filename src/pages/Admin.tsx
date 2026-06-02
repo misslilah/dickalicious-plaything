@@ -88,6 +88,7 @@ import {
 } from '../lib/audioPlaylist';
 import { MiniGamesAdmin } from '../components/admin/MiniGamesAdmin';
 import { InteractiveVideoAdmin } from '../components/admin/InteractiveVideoAdmin';
+import { UploadProgressBar } from '../components/UploadProgressBar';
 
 const ADMIN_SECTIONS = [
   {
@@ -299,6 +300,10 @@ function AdminLibraryItem({
   onDelete,
   deleteLabel,
   hideEdit,
+  onMoveUp,
+  onMoveDown,
+  moveUpDisabled,
+  moveDownDisabled,
 }: {
   selected?: boolean;
   title: string;
@@ -307,6 +312,10 @@ function AdminLibraryItem({
   onDelete: () => void;
   deleteLabel?: string;
   hideEdit?: boolean;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  moveUpDisabled?: boolean;
+  moveDownDisabled?: boolean;
 }) {
   const main = (
     <>
@@ -336,6 +345,28 @@ function AdminLibraryItem({
         </button>
       )}
       <div className="admin-library-item__actions">
+        {onMoveUp && (
+          <button
+            type="button"
+            className="btn btn--ghost btn--small"
+            disabled={moveUpDisabled}
+            onClick={onMoveUp}
+            aria-label="Move up"
+          >
+            ↑
+          </button>
+        )}
+        {onMoveDown && (
+          <button
+            type="button"
+            className="btn btn--ghost btn--small"
+            disabled={moveDownDisabled}
+            onClick={onMoveDown}
+            aria-label="Move down"
+          >
+            ↓
+          </button>
+        )}
         {!hideEdit && (
           <button
             type="button"
@@ -2165,26 +2196,49 @@ function emptyVideoCategoryDraft(): VideoCategory {
     description: '',
     color: '#c084fc',
     icon: '🎬',
+    sortOrder: 0,
   };
 }
 
 function VideoCategoryAdmin() {
-  const { state, addVideoCategory, updateVideoCategory, deleteVideoCategory } =
-    useAppStore();
+  const {
+    state,
+    addVideoCategory,
+    updateVideoCategory,
+    reorderVideoCategories,
+    deleteVideoCategory,
+  } = useAppStore();
   const [draft, setDraft] = useState<VideoCategory>(emptyVideoCategoryDraft());
   const [search, setSearch] = useState('');
   const [message, setMessage] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [reordering, setReordering] = useState(false);
+
+  const categories = state.videoCategories;
+  const searchActive = search.trim().length > 0;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return state.videoCategories;
-    return state.videoCategories.filter(
+    if (!q) return categories;
+    return categories.filter(
       (c) =>
         c.name.toLowerCase().includes(q) ||
         (c.description ?? '').toLowerCase().includes(q),
     );
-  }, [state.videoCategories, search]);
+  }, [categories, search]);
+
+  const moveCategory = async (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= categories.length) return;
+    const next = [...categories];
+    const [removed] = next.splice(index, 1);
+    next.splice(target, 0, removed);
+    setReordering(true);
+    setMessage('');
+    const result = await reorderVideoCategories(next.map((c) => c.id));
+    setReordering(false);
+    if (!result.ok) setMessage(result.error);
+  };
 
   const validate = () => {
     const next: Record<string, string> = {};
@@ -2229,6 +2283,11 @@ function VideoCategoryAdmin() {
       search={search}
       onSearchChange={setSearch}
     >
+      {searchActive && categories.length > 0 && (
+        <p className="muted admin-list-hint">
+          Clear search to reorder categories with ↑ ↓.
+        </p>
+      )}
       {filtered.length === 0 ? (
         <AdminEmpty
           title={search ? 'No matches' : 'No video categories yet'}
@@ -2240,19 +2299,33 @@ function VideoCategoryAdmin() {
         />
       ) : (
         <ul className="admin-library">
-          {filtered.map((c) => (
-            <AdminLibraryItem
-              key={c.id}
-              selected={draft.id === c.id}
-              title={`${c.icon ?? '🎬'} ${c.name}`}
-              meta={c.description || 'No description'}
-              onEdit={() => {
-                setDraft(c);
-                setErrors({});
-              }}
-              onDelete={() => remove(c.id)}
-            />
-          ))}
+          {filtered.map((c) => {
+            const index = categories.findIndex((x) => x.id === c.id);
+            const showReorder = !searchActive && categories.length > 1;
+            return (
+              <AdminLibraryItem
+                key={c.id}
+                selected={draft.id === c.id}
+                title={`${c.icon ?? '🎬'} ${c.name}`}
+                meta={c.description || 'No description'}
+                onEdit={() => {
+                  setDraft(c);
+                  setErrors({});
+                }}
+                onDelete={() => remove(c.id)}
+                onMoveUp={
+                  showReorder ? () => void moveCategory(index, -1) : undefined
+                }
+                onMoveDown={
+                  showReorder ? () => void moveCategory(index, 1) : undefined
+                }
+                moveUpDisabled={index <= 0 || reordering}
+                moveDownDisabled={
+                  index < 0 || index >= categories.length - 1 || reordering
+                }
+              />
+            );
+          })}
         </ul>
       )}
     </AdminListCard>
@@ -2358,12 +2431,13 @@ function VideoUploadAdmin() {
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [requiredTier, setRequiredTier] = useState<ContentTier>('sweetie');
-  const [forcedMode, setForcedMode] = useState(false);
+  const [autoLoop, setAutoLoop] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [search, setSearch] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -2384,7 +2458,7 @@ function VideoUploadAdmin() {
     setDescription('');
     setCategoryId('');
     setRequiredTier('sweetie');
-    setForcedMode(false);
+    setAutoLoop(false);
     setFile(null);
     setError('');
     setMessage('');
@@ -2396,7 +2470,7 @@ function VideoUploadAdmin() {
     setDescription(video.description ?? '');
     setCategoryId(video.categoryId);
     setRequiredTier(video.requiredTier ?? 'sweetie');
-    setForcedMode(video.forcedMode ?? false);
+    setAutoLoop(video.autoLoop ?? false);
     setFile(null);
     setError('');
     setMessage('');
@@ -2427,7 +2501,7 @@ function VideoUploadAdmin() {
         title: title.trim(),
         description: description.trim() || undefined,
         requiredTier,
-        forcedMode,
+        autoLoop,
       });
       setUploading(false);
       if (!result.ok) {
@@ -2458,12 +2532,14 @@ function VideoUploadAdmin() {
       sizeBytes: file.size,
       createdAt: new Date().toISOString(),
       requiredTier,
-      forcedMode,
+      autoLoop,
     };
 
     setUploading(true);
-    const result = await addVideo(video, file, file.name);
+    setUploadProgress(0);
+    const result = await addVideo(video, file, file.name, setUploadProgress);
     setUploading(false);
+    setUploadProgress(null);
 
     if (!result.ok) {
       setError(result.error);
@@ -2515,9 +2591,8 @@ function VideoUploadAdmin() {
               meta={
                 <>
                   {categoryName(v.categoryId)} ·{' '}
-                  <TierBadge tier={v.requiredTier ?? 'sweetie'} accessStyle /> ·{' '}
-                  {v.forcedMode ? 'Forced Mode · ' : ''}
-                  {formatMb(v.sizeBytes)}
+                  <TierBadge tier={v.requiredTier ?? 'sweetie'} accessStyle />
+                  {v.autoLoop ? ' · Auto loop' : ''} · {formatMb(v.sizeBytes)}
                 </>
               }
               onEdit={() => loadForEdit(v)}
@@ -2581,17 +2656,14 @@ function VideoUploadAdmin() {
             {tierAccessHint(requiredTier)}
           </p>
         </Field>
-        <Field
-          label="Forced Mode"
-          hint="Viewers must confirm before play; the app tries to lock the page until the video ends (best-effort)."
-        >
+        <Field label="Playback">
           <label className="checkbox-row">
             <input
               type="checkbox"
-              checked={forcedMode}
-              onChange={(e) => setForcedMode(e.target.checked)}
+              checked={autoLoop}
+              onChange={(e) => setAutoLoop(e.target.checked)}
             />
-            <span>Enable Forced Mode for this video</span>
+            <span>Auto loop — start with loop enabled (normal play only)</span>
           </label>
         </Field>
         {!editingId && (
@@ -2615,6 +2687,8 @@ function VideoUploadAdmin() {
           </Field>
         )}
       </FormBlock>
+
+      <UploadProgressBar progress={uploadProgress} />
 
       <FormActions
         editing={!!editingId}
@@ -3254,6 +3328,7 @@ function AudioPlaylistAdmin() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [savingPlaylist, setSavingPlaylist] = useState(false);
   const [reordering, setReordering] = useState(false);
 
@@ -3402,14 +3477,17 @@ function AudioPlaylistAdmin() {
     }
 
     setUploading(true);
+    setUploadProgress(0);
     const duration = await readAudioDuration(file);
     const result = await insertAudioPlaylistItem(
       selectedPlaylistId,
       trackTitle,
       file,
       duration,
+      setUploadProgress,
     );
     setUploading(false);
+    setUploadProgress(null);
 
     if (!result.ok) {
       setError(result.error);
@@ -3753,6 +3831,7 @@ function AudioPlaylistAdmin() {
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
           </label>
+          <UploadProgressBar progress={uploadProgress} />
           <button
             type="button"
             className="btn btn--primary"

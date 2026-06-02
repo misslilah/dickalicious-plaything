@@ -1,9 +1,11 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAppStore } from '../hooks/useAppStore';
 import { useVideoPlaybackUrl } from '../hooks/useVideoBlobUrl';
+import { useOptionalAudioPlayer } from '../contexts/AudioPlayerProvider';
 import { getPatreonPageUrl } from '../lib/patreon';
 import { TierBadge } from '../components/TierBadge';
+import { VideoLoopToast } from '../components/VideoLoopToast';
 import {
   canAccessTier,
   effectiveVideoTier,
@@ -13,6 +15,8 @@ import { ForcedModeVideoPlayer } from '../components/ForcedModeVideoPlayer';
 import type { ContentTier, Video, VideoCategory } from '../types';
 
 const VIDEO_LOOP_SESSION_KEY = 'video-loop-enabled';
+
+type PlaybackMode = 'normal' | 'forced';
 
 function readLoopPreference(): boolean {
   try {
@@ -52,17 +56,75 @@ function TierUpgradeBanner({ requiredTier }: { requiredTier: ContentTier }) {
   );
 }
 
+function VideoPlayModePicker({
+  onNormal,
+  onForced,
+}: {
+  onNormal: () => void;
+  onForced: () => void;
+}) {
+  return (
+    <div className="video-play-mode">
+      <p className="muted">How do you want to watch?</p>
+      <div className="video-play-mode__actions">
+        <button type="button" className="btn btn--primary" onClick={onNormal}>
+          Normal play
+        </button>
+        <button type="button" className="btn btn--ghost" onClick={onForced}>
+          Forced Mode
+        </button>
+      </div>
+      <p className="muted video-play-mode__hint">
+        Forced Mode locks the view until the video ends. Loop is not available.
+      </p>
+    </div>
+  );
+}
+
 function VideoPlayer({ video }: { video: Video }) {
+  const audio = useOptionalAudioPlayer();
   const { url, loading, error } = useVideoPlaybackUrl(video.storagePath);
-  const [loop, setLoop] = useState(readLoopPreference);
+  const autoLoop = video.autoLoop ?? false;
+  const [loop, setLoop] = useState(() => (autoLoop ? true : readLoopPreference()));
+  const [showLoopNotice, setShowLoopNotice] = useState(false);
+  const loopNoticeShownRef = useRef(false);
+
+  useEffect(() => {
+    const initialLoop = autoLoop ? true : readLoopPreference();
+    setLoop(initialLoop);
+    loopNoticeShownRef.current = false;
+    setShowLoopNotice(false);
+  }, [video.id, autoLoop]);
+
+  useEffect(() => {
+    if (autoLoop && loop && !loopNoticeShownRef.current) {
+      loopNoticeShownRef.current = true;
+      setShowLoopNotice(true);
+    }
+  }, [autoLoop, loop]);
 
   const toggleLoop = useCallback(() => {
     setLoop((prev) => {
       const next = !prev;
       writeLoopPreference(next);
+      if (!next) setShowLoopNotice(false);
       return next;
     });
   }, []);
+
+  const dismissLoopNotice = useCallback(() => {
+    setShowLoopNotice(false);
+  }, []);
+
+  const turnOffLoop = useCallback(() => {
+    setLoop(false);
+    writeLoopPreference(false);
+    setShowLoopNotice(false);
+  }, []);
+
+  const onVideoPlay = useCallback(() => {
+    audio?.pausePlayback();
+  }, [audio]);
 
   if (loading) {
     return <p className="muted">Loading video…</p>;
@@ -72,26 +134,36 @@ function VideoPlayer({ video }: { video: Video }) {
   }
 
   return (
-    <div className="video-player-wrap">
-      <video
-        className="video-player"
-        controls
-        loop={loop}
-        src={url}
-        preload="metadata"
-        aria-label={video.title}
-      />
-      <div className="video-player-controls">
-        <button
-          type="button"
-          className={loop ? 'chip chip--active' : 'chip'}
-          aria-pressed={loop}
-          onClick={toggleLoop}
-        >
-          Loop
-        </button>
+    <>
+      <div className="video-player-wrap">
+        <video
+          className="video-player"
+          controls
+          controlsList="nodownload"
+          disablePictureInPicture
+          loop={loop}
+          src={url}
+          preload="metadata"
+          aria-label={video.title}
+          onPlay={onVideoPlay}
+        />
+        <div className="video-player-controls">
+          <button
+            type="button"
+            className={loop ? 'chip chip--active' : 'chip'}
+            aria-pressed={loop}
+            onClick={toggleLoop}
+          >
+            Loop
+          </button>
+        </div>
       </div>
-    </div>
+      <VideoLoopToast
+        visible={showLoopNotice}
+        onDismiss={dismissLoopNotice}
+        onTurnOffLoop={turnOffLoop}
+      />
+    </>
   );
 }
 
@@ -131,11 +203,6 @@ function VideoListItem({
         <span className="video-list-item__tier">
           <TierBadge tier={required} accessStyle />
         </span>
-        {video.forcedMode && !locked && (
-          <span className="video-list-item__forced" aria-label="Forced Mode enabled">
-            Forced Mode
-          </span>
-        )}
         {locked ? (
           <span className="muted video-list-item__desc">
             {requiresTierMessage(required)}
@@ -154,6 +221,7 @@ export function VideoCategoryDetail() {
   const { categoryId } = useParams<{ categoryId: string }>();
   const { state, session } = useAppStore();
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [playbackMode, setPlaybackMode] = useState<PlaybackMode | null>(null);
   const [forcedSessionActive, setForcedSessionActive] = useState(false);
 
   const category = state.videoCategories.find((c) => c.id === categoryId);
@@ -185,6 +253,15 @@ export function VideoCategoryDetail() {
     videos.find((v) => v.id === playingId) ?? videos.find((v) => canWatch(v)) ?? null;
 
   const playingLocked = playing != null && !canWatch(playing);
+
+  useEffect(() => {
+    setPlaybackMode(null);
+  }, [playingId]);
+
+  const endForcedSession = useCallback(() => {
+    setForcedSessionActive(false);
+    setPlaybackMode(null);
+  }, []);
 
   if (!category) {
     return (
@@ -258,12 +335,20 @@ export function VideoCategoryDetail() {
                     category.requiredTier,
                   )}
                 />
-              ) : playing.forcedMode ? (
+              ) : playbackMode === null ? (
+                <VideoPlayModePicker
+                  onNormal={() => setPlaybackMode('normal')}
+                  onForced={() => {
+                    setPlaybackMode('forced');
+                    setForcedSessionActive(true);
+                  }}
+                />
+              ) : playbackMode === 'forced' ? (
                 <>
                   <ForcedModeVideoPlayer
                     key={playing.id}
                     video={playing}
-                    onSessionEnd={() => setForcedSessionActive(false)}
+                    onSessionEnd={endForcedSession}
                   />
                   {playing.description && (
                     <p className="muted video-watch-card__desc">{playing.description}</p>
@@ -271,7 +356,7 @@ export function VideoCategoryDetail() {
                 </>
               ) : (
                 <>
-                  <VideoPlayer video={playing} />
+                  <VideoPlayer key={playing.id} video={playing} />
                   {playing.description && (
                     <p className="muted video-watch-card__desc">{playing.description}</p>
                   )}
@@ -295,7 +380,6 @@ export function VideoCategoryDetail() {
                     onSelect={() => {
                       if (forcedSessionActive) return;
                       setPlayingId(v.id);
-                      if (v.forcedMode) setForcedSessionActive(true);
                     }}
                   />
                 );

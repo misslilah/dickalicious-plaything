@@ -1,4 +1,8 @@
 import { getSupabase } from './supabase';
+import {
+  uploadToSupabaseStorage,
+  type UploadProgressCallback,
+} from './storageUploadWithProgress';
 import { formatVideoSizeError, MAX_VIDEO_BYTES } from './videoStorage';
 
 export const INTERACTIVE_VIDEOS_BUCKET = 'interactive-videos';
@@ -257,14 +261,17 @@ export async function fetchInteractiveVideo(
 async function uploadVideoFile(
   storagePath: string,
   file: File,
+  onProgress?: UploadProgressCallback,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const supabase = getSupabase();
-  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
-  const { error } = await supabase.storage.from(INTERACTIVE_VIDEOS_BUCKET).upload(storagePath, file, {
-    upsert: true,
+  const result = await uploadToSupabaseStorage({
+    bucket: INTERACTIVE_VIDEOS_BUCKET,
+    storagePath,
+    file,
     contentType: file.type || 'video/mp4',
+    upsert: true,
+    onProgress,
   });
-  if (error) return { ok: false, error: formatUploadError(error) };
+  if (!result.ok) return { ok: false, error: formatUploadError({ message: result.error }) };
   return { ok: true };
 }
 
@@ -277,6 +284,7 @@ async function removeStorage(paths: string[]): Promise<void> {
 export async function createInteractiveVideo(
   input: InteractiveVideoInput,
   file: File,
+  onProgress?: UploadProgressCallback,
 ): Promise<{ ok: true; video: InteractiveVideo } | { ok: false; error: string }> {
   if (!input.title.trim()) return { ok: false, error: 'Title is required.' };
   if (file.size > MAX_VIDEO_BYTES) {
@@ -288,7 +296,7 @@ export async function createInteractiveVideo(
 
   const videoId = crypto.randomUUID();
   const storagePath = interactiveVideoStoragePath(videoId, file.name);
-  const uploaded = await uploadVideoFile(storagePath, file);
+  const uploaded = await uploadVideoFile(storagePath, file, onProgress);
   if (!uploaded.ok) return uploaded;
 
   const { data, error } = await supabase
@@ -314,7 +322,7 @@ export async function createInteractiveVideo(
 export async function updateInteractiveVideo(
   videoId: string,
   input: InteractiveVideoInput,
-  options?: { file?: File },
+  options?: { file?: File; onProgress?: UploadProgressCallback },
 ): Promise<{ ok: true; video: InteractiveVideo } | { ok: false; error: string }> {
   if (!input.title.trim()) return { ok: false, error: 'Title is required.' };
 
@@ -332,7 +340,7 @@ export async function updateInteractiveVideo(
       return { ok: false, error: formatVideoSizeError(options.file.size) };
     }
     const nextPath = interactiveVideoStoragePath(videoId, options.file.name);
-    const uploaded = await uploadVideoFile(nextPath, options.file);
+    const uploaded = await uploadVideoFile(nextPath, options.file, options.onProgress);
     if (!uploaded.ok) return uploaded;
     if (nextPath !== storagePath) pathsToRemove.push(storagePath);
     storagePath = nextPath;

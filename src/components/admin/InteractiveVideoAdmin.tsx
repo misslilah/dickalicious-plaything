@@ -12,6 +12,7 @@ import {
   type InteractiveVideo,
   type InteractiveVideoInput,
 } from '../../lib/interactiveVideos';
+import { UploadProgressBar } from '../UploadProgressBar';
 import { formatMb, formatVideoSizeError, MAX_VIDEO_SIZE_LABEL } from '../../lib/videoStorage';
 
 type DraftCue = InteractiveCueInput & { localId: string };
@@ -73,6 +74,7 @@ export function InteractiveVideoAdmin() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(blankForm());
   const [videoFile, setVideoFile] = useState<File | undefined>();
@@ -268,11 +270,14 @@ export function InteractiveVideoAdmin() {
     };
 
     if (editingId) {
+      if (videoFile) setUploadProgress(0);
       const result = await updateInteractiveVideo(editingId, input, {
         file: videoFile,
+        onProgress: videoFile ? setUploadProgress : undefined,
       });
       if (!result.ok) {
         setSaving(false);
+        setUploadProgress(null);
         setError(result.error);
         return;
       }
@@ -281,6 +286,7 @@ export function InteractiveVideoAdmin() {
         draftCues.map(({ localId: _id, ...cue }) => cue),
       );
       setSaving(false);
+      setUploadProgress(null);
       if (!cuesResult.ok) {
         setError(cuesResult.error);
         return;
@@ -302,9 +308,11 @@ export function InteractiveVideoAdmin() {
       return;
     }
 
-    const created = await createInteractiveVideo(input, videoFile);
+    setUploadProgress(0);
+    const created = await createInteractiveVideo(input, videoFile, setUploadProgress);
     if (!created.ok) {
       setSaving(false);
+      setUploadProgress(null);
       setError(created.error);
       return;
     }
@@ -316,12 +324,14 @@ export function InteractiveVideoAdmin() {
       );
       if (!cuesResult.ok) {
         setSaving(false);
+        setUploadProgress(null);
         setError(cuesResult.error);
         return;
       }
     }
 
     setSaving(false);
+    setUploadProgress(null);
     setMessage(`Interactive video uploaded (${formatMb(videoFile.size)}).`);
     resetForm();
     await loadVideos();
@@ -430,6 +440,8 @@ export function InteractiveVideoAdmin() {
               src={previewUrl}
               className="interactive-video-admin__preview"
               controls
+              controlsList="nodownload"
+              disablePictureInPicture
               playsInline
               onLoadedMetadata={onVideoMetadata}
               onTimeUpdate={() => {
@@ -632,9 +644,22 @@ export function InteractiveVideoAdmin() {
           </div>
         )}
 
+        <UploadProgressBar progress={uploadProgress} />
+
         <div className="interactive-video-admin__actions">
-          <button type="button" className="btn btn--primary" disabled={saving} onClick={() => void handleSave()}>
-            {saving ? 'Saving…' : editingId ? 'Save changes' : 'Upload'}
+          <button
+            type="button"
+            className="btn btn--primary"
+            disabled={saving}
+            onClick={() => void handleSave()}
+          >
+            {saving
+              ? uploadProgress !== null
+                ? 'Uploading…'
+                : 'Saving…'
+              : editingId
+                ? 'Save changes'
+                : 'Upload'}
           </button>
           {editingId && (
             <button type="button" className="btn btn--ghost" onClick={resetForm}>

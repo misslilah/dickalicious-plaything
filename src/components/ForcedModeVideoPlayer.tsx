@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useBlocker } from 'react-router-dom';
+import { useOptionalAudioPlayer } from '../contexts/AudioPlayerProvider';
 import { useVideoPlaybackUrl } from '../hooks/useVideoBlobUrl';
 import { ForcedModeWarningModal } from './ForcedModeWarningModal';
 import type { Video } from '../types';
@@ -38,6 +39,7 @@ export function ForcedModeVideoPlayer({
   video,
   onSessionEnd,
 }: ForcedModeVideoPlayerProps) {
+  const audio = useOptionalAudioPlayer();
   const { url, loading, error } = useVideoPlaybackUrl(video.storagePath);
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -109,11 +111,12 @@ export function ForcedModeVideoPlayer({
     el.currentTime = 0;
     try {
       await el.play();
+      audio?.pausePlayback();
     } catch {
       setPlayError('Playback could not start. Forced Mode ended.');
       endSession();
     }
-  }, [url, tryEnterFullscreen, tryPointerLock, endSession]);
+  }, [url, tryEnterFullscreen, tryPointerLock, endSession, audio]);
 
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
@@ -241,6 +244,7 @@ export function ForcedModeVideoPlayer({
               src={url}
               autoPlay
               playsInline
+              loop={false}
               controls={false}
               controlsList="nodownload noplaybackrate"
               disablePictureInPicture

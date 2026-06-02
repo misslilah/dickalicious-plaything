@@ -1,4 +1,8 @@
 import { getSupabase } from './supabase';
+import {
+  uploadToSupabaseStorage,
+  type UploadProgressCallback,
+} from './storageUploadWithProgress';
 
 const VIDEOS_BUCKET = 'videos';
 const CATEGORY_IMAGES_BUCKET = 'category-images';
@@ -45,19 +49,16 @@ export async function uploadVideoFile(
   storagePath: string,
   file: Blob,
   mimeType: string,
+  onProgress?: UploadProgressCallback,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const supabase = getSupabase();
-  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
-
-  const { error } = await supabase.storage
-    .from(VIDEOS_BUCKET)
-    .upload(storagePath, file, {
-      contentType: mimeType,
-      upsert: true,
-    });
-
-  if (error) return { ok: false, error: error.message };
-  return { ok: true };
+  return uploadToSupabaseStorage({
+    bucket: VIDEOS_BUCKET,
+    storagePath,
+    file,
+    contentType: mimeType,
+    upsert: true,
+    onProgress,
+  });
 }
 
 export async function deleteVideoFile(

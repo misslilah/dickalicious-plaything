@@ -100,6 +100,7 @@ type DbVideoCategory = {
   color: string | null;
   icon: string | null;
   required_tier: ContentTier | null;
+  sort_order: number;
 };
 
 type DbVideo = {
@@ -112,7 +113,7 @@ type DbVideo = {
   size_bytes: number;
   created_at: string;
   required_tier: ContentTier | null;
-  forced_mode?: boolean | null;
+  auto_loop?: boolean | null;
 };
 
 function mapCategory(row: DbCategory): Category {
@@ -216,7 +217,21 @@ function mapVideoCategory(row: DbVideoCategory): VideoCategory {
     color: row.color ?? undefined,
     icon: row.icon ?? undefined,
     requiredTier: row.required_tier ?? undefined,
+    sortOrder: row.sort_order ?? 0,
   };
+}
+
+async function nextVideoCategorySortOrder(): Promise<number> {
+  const supabase = getSupabase();
+  if (!supabase) return 0;
+  const { data } = await supabase
+    .from('video_categories')
+    .select('sort_order')
+    .order('sort_order', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const row = data as { sort_order: number } | null;
+  return (row?.sort_order ?? -1) + 1;
 }
 
 function mapVideo(row: DbVideo): Video {
@@ -230,7 +245,7 @@ function mapVideo(row: DbVideo): Video {
     sizeBytes: row.size_bytes,
     createdAt: row.created_at,
     requiredTier: row.required_tier ?? undefined,
-    forcedMode: row.forced_mode ?? false,
+    autoLoop: row.auto_loop ?? false,
   };
 }
 
@@ -562,6 +577,7 @@ export async function upsertVideoCategory(
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
 
+  const isUpdate = Boolean(category.id);
   const row = {
     id: category.id || undefined,
     name: category.name,
@@ -569,9 +585,12 @@ export async function upsertVideoCategory(
     color: category.color ?? null,
     icon: category.icon ?? null,
     required_tier: category.requiredTier ?? null,
+    ...(isUpdate
+      ? { sort_order: category.sortOrder ?? 0 }
+      : { sort_order: category.sortOrder ?? (await nextVideoCategorySortOrder()) }),
   };
 
-  const { data, error } = category.id
+  const { data, error } = isUpdate
     ? await supabase
         .from('video_categories')
         .update(row)
@@ -594,6 +613,22 @@ export async function deleteVideoCategoryDb(
   return { ok: true };
 }
 
+export async function updateVideoCategoriesOrder(
+  orderedIds: string[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  for (let i = 0; i < orderedIds.length; i++) {
+    const { error } = await supabase
+      .from('video_categories')
+      .update({ sort_order: i })
+      .eq('id', orderedIds[i]);
+    if (error) return { ok: false, error: error.message };
+  }
+  return { ok: true };
+}
+
 export async function insertVideoRow(
   video: Video,
 ): Promise<{ ok: true; video: Video } | { ok: false; error: string }> {
@@ -609,7 +644,7 @@ export async function insertVideoRow(
     mime_type: video.mimeType,
     size_bytes: video.sizeBytes,
     required_tier: video.requiredTier ?? 'sweetie',
-    forced_mode: video.forcedMode ?? false,
+    auto_loop: video.autoLoop ?? false,
   };
 
   const { data, error } = await supabase
@@ -636,7 +671,7 @@ export async function updateVideoRow(
       title: video.title,
       description: video.description ?? null,
       required_tier: video.requiredTier ?? 'sweetie',
-      forced_mode: video.forcedMode ?? false,
+      auto_loop: video.autoLoop ?? false,
     })
     .eq('id', video.id)
     .select()

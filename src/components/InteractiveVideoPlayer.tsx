@@ -469,6 +469,8 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
             src={playbackUrl}
             playsInline
             preload="metadata"
+            controlsList="nodownload"
+            disablePictureInPicture
             onLoadedMetadata={(e) => {
               const v = e.currentTarget;
               v.currentTime = 0;

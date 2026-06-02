@@ -27,9 +27,9 @@ export function ForcedModeWarningModal({
           Forced Mode
         </h2>
         <p id="forced-mode-warning-desc" className="forced-mode-warning__desc">
-          <strong>{videoTitle}</strong> uses Forced Mode. The app will try to lock
-          your view to this video until it finishes: fullscreen, pointer capture on
-          the player, and blocked in-app navigation.
+          You chose Forced Mode for <strong>{videoTitle}</strong>. The app will try
+          to lock your view to this video until it finishes: fullscreen, pointer
+          capture on the player, and blocked in-app navigation.
         </p>
         <p className="forced-mode-warning__desc muted">
           You cannot pause or skip while it plays. OS shortcuts may still work (for

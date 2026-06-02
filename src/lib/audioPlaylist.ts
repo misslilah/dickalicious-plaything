@@ -1,6 +1,10 @@
 import type { AudioPlaylist, AudioPlaylistItem, PatreonMemberTier } from '../types';
 import { wouldCreateUnlockCycle } from './audioProgress';
 import { getSupabase } from './supabase';
+import {
+  uploadToSupabaseStorage,
+  type UploadProgressCallback,
+} from './storageUploadWithProgress';
 
 const AUDIO_BUCKET = 'audio-playlist';
 
@@ -143,15 +147,17 @@ export async function uploadAudioFile(
   storagePath: string,
   file: Blob,
   mimeType: string,
+  onProgress?: UploadProgressCallback,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const supabase = getSupabase();
-  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
-
-  const { error } = await supabase.storage
-    .from(AUDIO_BUCKET)
-    .upload(storagePath, file, { contentType: mimeType, upsert: true });
-
-  if (error) return { ok: false, error: formatUploadError(error) };
+  const result = await uploadToSupabaseStorage({
+    bucket: AUDIO_BUCKET,
+    storagePath,
+    file,
+    contentType: mimeType,
+    upsert: true,
+    onProgress,
+  });
+  if (!result.ok) return { ok: false, error: formatUploadError({ message: result.error }) };
   return { ok: true };
 }
 
@@ -328,6 +334,7 @@ export async function insertAudioPlaylistItem(
   title: string,
   file: File,
   durationSeconds: number | null,
+  onProgress?: UploadProgressCallback,
 ): Promise<
   { ok: true; item: AudioPlaylistItem } | { ok: false; error: string }
 > {
@@ -336,7 +343,12 @@ export async function insertAudioPlaylistItem(
 
   const id = crypto.randomUUID();
   const path = audioStoragePath(id, file.name);
-  const upload = await uploadAudioFile(path, file, file.type || 'audio/mpeg');
+  const upload = await uploadAudioFile(
+    path,
+    file,
+    file.type || 'audio/mpeg',
+    onProgress,
+  );
   if (!upload.ok) return upload;
 
   const sortOrder = await nextTrackSortOrder(playlistId);

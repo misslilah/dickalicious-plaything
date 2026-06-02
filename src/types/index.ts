@@ -191,6 +191,8 @@ export interface VideoCategory {
   color?: string;
   icon?: string;
   requiredTier?: ContentTier | null;
+  /** Display order on the Videos page (lower first). */
+  sortOrder: number;
 }
 
 /** Admin-defined audio playlist; tracks unlock sequentially within each playlist. */
@@ -228,8 +230,8 @@ export interface Video {
   sizeBytes: number;
   createdAt: string;
   requiredTier?: ContentTier | null;
-  /** When true, playback uses forced mode until the video ends. */
-  forcedMode?: boolean;
+  /** When true, normal play starts with loop on and a one-time notice. */
+  autoLoop?: boolean;
 }
 
 export interface AppState {
