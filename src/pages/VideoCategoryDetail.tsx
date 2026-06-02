@@ -219,7 +219,7 @@ export function VideoCategoryDetail() {
 
   const globalMatchesPlaying =
     globalVideo?.session?.videoId === playing?.id &&
-    globalVideo.session.categoryId === categoryId;
+    globalVideo?.session?.categoryId === categoryId;
 
   return (
     <div className="page">
