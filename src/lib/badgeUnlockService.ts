@@ -110,3 +110,33 @@ export async function processBadgeUnlockOnTimeAccumulated(
 
   return { ok: true, newlyUnlocked };
 }
+
+export async function processBadgeUnlockOnBubblePop(
+  userId: string,
+  state: AppState,
+  popCount: number,
+): Promise<
+  | { ok: true; newlyUnlocked: string[] }
+  | { ok: false; error: string }
+> {
+  if (popCount <= 0) return { ok: true, newlyUnlocked: [] };
+
+  const eligible = state.badges.filter((badge) => {
+    if (state.unlockedBadgeIds.includes(badge.id)) return false;
+    const req = badge.requirement;
+    if (!req || req.type !== 'bubble_pops') return false;
+    const min = req.minBubblePops ?? 0;
+    return min > 0 && popCount >= min;
+  });
+
+  const newlyUnlocked: string[] = [];
+
+  for (const badge of eligible) {
+    const unlock = await unlockBadgeForUser(userId, badge.id);
+    if (!unlock.ok) return unlock;
+    await markBadgeProgressComplete(userId, badge.id);
+    newlyUnlocked.push(badge.id);
+  }
+
+  return { ok: true, newlyUnlocked };
+}

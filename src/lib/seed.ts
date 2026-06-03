@@ -78,6 +78,7 @@ export function createInitialState(): AppState {
     punishments: [],
     settings: {},
     unlockedRewardIds: [],
+    purchasedVideoIds: [],
     unlockedBadgeIds: [],
     joinedCategoryIds: [],
     categoryMemberProgress: [],

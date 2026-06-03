@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  FlashWordStreakPortal,
+  type FlashWordStreakToast,
+  type StreakToastPlacement,
+} from './FlashWordStreakPortal';
+import { useAppStore } from '../hooks/useAppStore';
+import { useOptionalXpToast } from '../contexts/XpToastContext';
+import {
   getFlashedWord,
   pickRandomCard,
   pickRandomFlashIndex,
@@ -10,6 +17,10 @@ import {
   type FlashWordGame,
   type FlashWordGameTriplet,
 } from '../lib/flashWordGames';
+import {
+  fetchMiniGameUserBestStreak,
+  upsertMiniGameBestStreak,
+} from '../lib/miniGameLeaderboardDb';
 
 type GamePhase = 'ready' | 'waiting' | 'flash' | 'choose' | 'result';
 
@@ -19,55 +30,51 @@ const DISTRACTION_FLASH_MIN_MS = 300;
 const DISTRACTION_FLASH_RANGE_MS = 250;
 const DISTRACTION_GAP_MIN_MS = 800;
 const DISTRACTION_GAP_RANGE_MS = 1200;
+const STREAK_MESSAGE_MS = 4500;
 
-interface ImageLayout {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
+function focusTrainingStreakKey(gameId: string): string {
+  return `focus-training-streak-${gameId}`;
+}
+
+function readPersistedStreak(gameId: string): number {
+  try {
+    const raw = sessionStorage.getItem(focusTrainingStreakKey(gameId));
+    if (raw == null) return 0;
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writePersistedStreak(gameId: string, value: number): void {
+  try {
+    sessionStorage.setItem(focusTrainingStreakKey(gameId), String(Math.max(0, value)));
+  } catch {
+    /* sessionStorage unavailable */
+  }
+}
+
+export type FlashWordGameQuitHandler = () => void;
+
+function randomStreakSidePlacement(): StreakToastPlacement {
+  return Math.random() < 0.5 ? 'left' : 'right';
 }
 
 interface FlashWordGamePlayerProps {
   game: FlashWordGame;
+  /** Called on mount with quit handler; modal should invoke before closing. */
+  onRegisterQuitHandler?: (handler: FlashWordGameQuitHandler | null) => void;
 }
 
-function computeContainedImageLayout(
-  wrapWidth: number,
-  wrapHeight: number,
-  naturalWidth: number,
-  naturalHeight: number,
-): ImageLayout | null {
-  if (
-    wrapWidth <= 0 ||
-    wrapHeight <= 0 ||
-    naturalWidth <= 0 ||
-    naturalHeight <= 0
-  ) {
-    return null;
-  }
+export function FlashWordGamePlayer({
+  game,
+  onRegisterQuitHandler,
+}: FlashWordGamePlayerProps) {
+  const { awardBonusXp } = useAppStore();
+  const xpToast = useOptionalXpToast();
+  const streakTiers = game.streakTiers ?? [];
 
-  const imageAspect = naturalWidth / naturalHeight;
-  const wrapAspect = wrapWidth / wrapHeight;
-
-  let width: number;
-  let height: number;
-  if (imageAspect > wrapAspect) {
-    width = wrapWidth;
-    height = wrapWidth / imageAspect;
-  } else {
-    height = wrapHeight;
-    width = wrapHeight * imageAspect;
-  }
-
-  return {
-    left: (wrapWidth - width) / 2,
-    top: (wrapHeight - height) / 2,
-    width,
-    height,
-  };
-}
-
-export function FlashWordGamePlayer({ game }: FlashWordGamePlayerProps) {
   const [phase, setPhase] = useState<GamePhase>('ready');
   const [activeCard, setActiveCard] = useState<FlashWordCard | null>(null);
   const [activeTriplet, setActiveTriplet] = useState<FlashWordGameTriplet | null>(null);
@@ -75,8 +82,14 @@ export function FlashWordGamePlayer({ game }: FlashWordGamePlayerProps) {
   const [choices, setChoices] = useState<string[]>([]);
   const [selectedWord, setSelectedWord] = useState<string | null>(null);
   const [correct, setCorrect] = useState<boolean | null>(null);
-  const [streak, setStreak] = useState(0);
-  const [imageLayout, setImageLayout] = useState<ImageLayout | null>(null);
+  const [streak, setStreak] = useState(() => readPersistedStreak(game.id));
+  const [roundCommitted, setRoundCommitted] = useState(false);
+  const [sessionBestStreak, setSessionBestStreak] = useState(0);
+  const [allTimeBestStreak, setAllTimeBestStreak] = useState(0);
+  const sessionBestStreakRef = useRef(0);
+  const [streakToast, setStreakToast] = useState<FlashWordStreakToast | null>(null);
+  const playerRootRef = useRef<HTMLDivElement>(null);
+  const [imageFailed, setImageFailed] = useState(false);
   const [distractionFlash, setDistractionFlash] = useState<{
     zoneId: string;
     word: string;
@@ -84,13 +97,79 @@ export function FlashWordGamePlayer({ game }: FlashWordGamePlayerProps) {
   const waitTimerRef = useRef<number | null>(null);
   const flashTimerRef = useRef<number | null>(null);
   const distractionTimerRef = useRef<number | null>(null);
+  const streakToastTimerRef = useRef<number | null>(null);
+  const awardedStreakThresholdsRef = useRef<Set<number>>(new Set());
   const phaseRef = useRef<GamePhase>('ready');
-  const imageWrapRef = useRef<HTMLDivElement>(null);
-  const imageRef = useRef<HTMLImageElement>(null);
+  const streakAtRiskRef = useRef(false);
+  const streakRef = useRef(streak);
+
+  useEffect(() => {
+    streakRef.current = streak;
+  }, [streak]);
 
   useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
+
+  useEffect(() => {
+    if (phase === 'result') {
+      streakAtRiskRef.current = false;
+      setRoundCommitted(false);
+    }
+  }, [phase]);
+
+  useEffect(() => {
+    writePersistedStreak(game.id, streak);
+  }, [game.id, streak]);
+
+  const clearStreakToastTimer = useCallback(() => {
+    if (streakToastTimerRef.current != null) {
+      window.clearTimeout(streakToastTimerRef.current);
+      streakToastTimerRef.current = null;
+    }
+  }, []);
+
+  const showStreakMessage = useCallback(
+    (message: string, placement: StreakToastPlacement) => {
+      clearStreakToastTimer();
+      setStreakToast({ message, placement });
+      streakToastTimerRef.current = window.setTimeout(() => {
+        streakToastTimerRef.current = null;
+        setStreakToast(null);
+      }, STREAK_MESSAGE_MS);
+    },
+    [clearStreakToastTimer],
+  );
+
+  const playStreakAudio = useCallback((url: string) => {
+    const audio = new Audio(url);
+    audio.volume = 1;
+    void audio.play().catch(() => undefined);
+  }, []);
+
+  const applyStreakRewards = useCallback(
+    (newStreak: number) => {
+      const matching = streakTiers.filter(
+        (tier) => tier.streakThreshold === newStreak,
+      );
+      for (const tier of matching) {
+        if (awardedStreakThresholdsRef.current.has(tier.streakThreshold)) continue;
+        awardedStreakThresholdsRef.current.add(tier.streakThreshold);
+
+        if (tier.xpReward > 0) {
+          awardBonusXp(tier.xpReward);
+          xpToast?.showXpGain(tier.xpReward);
+        }
+        if (tier.message?.trim()) {
+          showStreakMessage(tier.message.trim(), randomStreakSidePlacement());
+        }
+        if (tier.audioUrl) {
+          playStreakAudio(tier.audioUrl);
+        }
+      }
+    },
+    [awardBonusXp, playStreakAudio, showStreakMessage, streakTiers, xpToast],
+  );
 
   const clearTimers = useCallback(() => {
     if (waitTimerRef.current != null) {
@@ -107,44 +186,84 @@ export function FlashWordGamePlayer({ game }: FlashWordGamePlayerProps) {
     }
   }, []);
 
-  const syncImageLayout = useCallback(() => {
-    const wrap = imageWrapRef.current;
-    const img = imageRef.current;
-    if (!wrap || !img || !img.complete || img.naturalWidth <= 0) {
-      setImageLayout(null);
-      return;
-    }
-
-    setImageLayout(
-      computeContainedImageLayout(
-        wrap.clientWidth,
-        wrap.clientHeight,
-        img.naturalWidth,
-        img.naturalHeight,
-      ),
-    );
-  }, []);
-
-  useEffect(() => () => clearTimers(), [clearTimers]);
+  useEffect(() => () => {
+    clearTimers();
+    clearStreakToastTimer();
+  }, [clearTimers, clearStreakToastTimer]);
 
   useEffect(() => {
-    syncImageLayout();
-  }, [syncImageLayout, activeCard?.imageUrl]);
-
-  useEffect(() => {
-    const wrap = imageWrapRef.current;
-    const img = imageRef.current;
-    if (!wrap) return;
-
-    const observer = new ResizeObserver(() => syncImageLayout());
-    observer.observe(wrap);
-    img?.addEventListener('load', syncImageLayout);
-
+    let cancelled = false;
+    void (async () => {
+      const result = await fetchMiniGameUserBestStreak('flash_cards', game.id);
+      if (cancelled || !result.ok) return;
+      setAllTimeBestStreak(result.bestStreak);
+    })();
     return () => {
-      observer.disconnect();
-      img?.removeEventListener('load', syncImageLayout);
+      cancelled = true;
     };
-  }, [syncImageLayout, activeCard?.imageUrl]);
+  }, [game.id]);
+
+  const persistSessionBestStreak = useCallback(() => {
+    const best = sessionBestStreakRef.current;
+    if (best <= 0) return;
+    void (async () => {
+      const result = await upsertMiniGameBestStreak('flash_cards', game.id, best);
+      if (result.ok && best > allTimeBestStreak) {
+        setAllTimeBestStreak(best);
+      }
+    })();
+  }, [game.id, allTimeBestStreak]);
+
+  useEffect(() => {
+    return () => {
+      if (streakAtRiskRef.current) {
+        writePersistedStreak(game.id, 0);
+      } else {
+        writePersistedStreak(game.id, streakRef.current);
+      }
+      persistSessionBestStreak();
+    };
+  }, [game.id, persistSessionBestStreak]);
+
+  const resetStreakToZero = useCallback(() => {
+    setStreak(0);
+    writePersistedStreak(game.id, 0);
+  }, [game.id]);
+
+  const applyQuitPenalty = useCallback(() => {
+    if (!streakAtRiskRef.current) return;
+    resetStreakToZero();
+  }, [resetStreakToZero]);
+
+  const applyQuitStreakRules = useCallback(() => {
+    applyQuitPenalty();
+    if (!streakAtRiskRef.current) {
+      writePersistedStreak(game.id, streakRef.current);
+    }
+    persistSessionBestStreak();
+  }, [applyQuitPenalty, game.id, persistSessionBestStreak]);
+
+  useEffect(() => {
+    onRegisterQuitHandler?.(applyQuitStreakRules);
+    return () => onRegisterQuitHandler?.(null);
+  }, [applyQuitStreakRules, onRegisterQuitHandler]);
+
+  const recordStreak = useCallback((next: number) => {
+    if (next > sessionBestStreakRef.current) {
+      sessionBestStreakRef.current = next;
+      setSessionBestStreak(next);
+      if (next > allTimeBestStreak) {
+        void (async () => {
+          const result = await upsertMiniGameBestStreak('flash_cards', game.id, next);
+          if (result.ok) setAllTimeBestStreak(next);
+        })();
+      }
+    }
+  }, [allTimeBestStreak, game.id]);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [activeCard?.imageUrl]);
 
   useEffect(() => {
     if (phase !== 'waiting' || !game.distractionZonesEnabled || !activeCard) {
@@ -199,6 +318,16 @@ export function FlashWordGamePlayer({ game }: FlashWordGamePlayerProps) {
     const triplet = pickRandomTriplet(game.triplets);
     if (!card || !triplet) return;
 
+    if (!card.imageUrl.trim()) {
+      if (import.meta.env.DEV) {
+        console.warn('[FlashWordGame] Card has empty imageUrl', card.id, card.imagePath);
+      }
+      setActiveCard(card);
+      setActiveTriplet(triplet);
+      setPhase('waiting');
+      return;
+    }
+
     const index = pickRandomFlashIndex();
     setActiveCard(card);
     setActiveTriplet(triplet);
@@ -207,6 +336,7 @@ export function FlashWordGamePlayer({ game }: FlashWordGamePlayerProps) {
     setSelectedWord(null);
     setCorrect(null);
     setDistractionFlash(null);
+    setImageFailed(false);
     setPhase('waiting');
 
     const delayMs = WAIT_MIN_MS + Math.random() * WAIT_RANGE_MS;
@@ -226,22 +356,53 @@ export function FlashWordGamePlayer({ game }: FlashWordGamePlayerProps) {
     setSelectedWord(word);
     const isCorrect = word === flashedWord;
     setCorrect(isCorrect);
-    setStreak((prev) => (isCorrect ? prev + 1 : 0));
+    if (isCorrect) {
+      setStreak((prev) => {
+        const next = prev + 1;
+        applyStreakRewards(next);
+        recordStreak(next);
+        return next;
+      });
+    } else {
+      resetStreakToZero();
+    }
     setPhase('result');
   };
 
-  const playAgain = () => {
+  const backToStart = () => {
+    if (streakAtRiskRef.current) {
+      resetStreakToZero();
+    }
+    clearTimers();
+    clearStreakToastTimer();
+    setStreakToast(null);
     setActiveCard(null);
     setActiveTriplet(null);
     setChoices([]);
     setSelectedWord(null);
     setCorrect(null);
     setDistractionFlash(null);
+    setImageFailed(false);
+    streakAtRiskRef.current = false;
+    setRoundCommitted(false);
     setPhase('ready');
   };
 
+  const playAgainFromResult = () => {
+    streakAtRiskRef.current = true;
+    setRoundCommitted(true);
+    beginRound();
+  };
+
+  const displayedBestStreak = Math.max(sessionBestStreak, allTimeBestStreak);
+
   const showCard = activeCard != null && phase !== 'ready';
   const zone = activeCard?.zone;
+  const imageUrl = activeCard?.imageUrl?.trim() ?? '';
+  const missingImageUrl = showCard && activeCard != null && !imageUrl;
+
+  const blurImageForChoices =
+    phase === 'choose' || phase === 'result';
 
   const zoneClassName = [
     'flash-word-player__zone',
@@ -252,10 +413,17 @@ export function FlashWordGamePlayer({ game }: FlashWordGamePlayerProps) {
     .join(' ');
 
   return (
-    <div className="flash-word-player">
+    <div className="flash-word-player" ref={playerRootRef}>
+      <FlashWordStreakPortal toast={streakToast} anchorRef={playerRootRef} />
       <div className="flash-word-player__stats">
         <span className="flash-word-player__streak">
           Streak: <strong>{streak}</strong>
+          {displayedBestStreak > 0 && (
+            <>
+              {' '}
+              · Best: <strong>{displayedBestStreak}</strong>
+            </>
+          )}
         </span>
         <span className="muted">
           {game.cards.length} card{game.cards.length === 1 ? '' : 's'} ·{' '}
@@ -264,71 +432,102 @@ export function FlashWordGamePlayer({ game }: FlashWordGamePlayerProps) {
         </span>
       </div>
 
-      <div className="flash-word-player__stage">
-        <div className="flash-word-player__image-wrap" ref={imageWrapRef}>
-          {showCard && activeCard && zone ? (
-            <>
-              <img
-                ref={imageRef}
-                src={activeCard.imageUrl}
-                alt=""
-                className="flash-word-player__image"
-                draggable={false}
-                onLoad={syncImageLayout}
-              />
-              {imageLayout && (
-                <div
-                  className="flash-word-player__image-overlay"
-                  style={{
-                    left: `${imageLayout.left}px`,
-                    top: `${imageLayout.top}px`,
-                    width: `${imageLayout.width}px`,
-                    height: `${imageLayout.height}px`,
-                  }}
-                >
-                  <div
-                    className={zoneClassName}
-                    style={{
-                      left: `${zone.xPct}%`,
-                      top: `${zone.yPct}%`,
-                      width: `${zone.widthPct}%`,
-                      height: `${zone.heightPct}%`,
-                    }}
-                  >
-                    {phase === 'flash' && (
-                      <span className="flash-word-player__flash-word" aria-live="off">
-                        {flashedWord}
-                      </span>
-                    )}
-                  </div>
-                  {game.distractionZonesEnabled &&
-                    activeCard.distractionZones.map((distractionZone) => (
+      <div className="flash-word-player__stage-layout">
+        <div className="flash-word-player__stage-row">
+          <div className="flash-word-player__stage">
+          <div
+            className={[
+              'flash-word-player__image-wrap',
+              imageFailed || missingImageUrl
+                ? 'flash-word-player__image-wrap--failed'
+                : '',
+              blurImageForChoices
+                ? 'flash-word-player__image-wrap--image-blurred'
+                : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+          >
+            {showCard && activeCard ? (
+              missingImageUrl ? (
+                <div className="flash-word-player__placeholder" role="alert">
+                  <span className="flash-word-player__placeholder-icon">🖼</span>
+                  <span>Card image URL is missing</span>
+                  {import.meta.env.DEV && (
+                    <span className="flash-word-player__debug">
+                      path: {activeCard.imagePath || '(empty)'}
+                    </span>
+                  )}
+                </div>
+              ) : imageFailed ? (
+                <div className="flash-word-player__placeholder" role="alert">
+                  <span className="flash-word-player__placeholder-icon">🖼</span>
+                  <span>Card image could not load</span>
+                  {import.meta.env.DEV && (
+                    <span className="flash-word-player__debug">{imageUrl}</span>
+                  )}
+                </div>
+              ) : (
+                <div className="flash-word-player__image-frame">
+                  <img
+                    key={imageUrl}
+                    src={imageUrl}
+                    alt=""
+                    className="flash-word-player__image"
+                    draggable={false}
+                    onError={() => setImageFailed(true)}
+                  />
+                  {zone && (
+                    <div className="flash-word-player__image-overlay">
                       <div
-                        key={distractionZone.id}
-                        className="flash-word-player__distraction-zone"
+                        className={zoneClassName}
                         style={{
-                          left: `${distractionZone.zone.xPct}%`,
-                          top: `${distractionZone.zone.yPct}%`,
-                          width: `${distractionZone.zone.widthPct}%`,
-                          height: `${distractionZone.zone.heightPct}%`,
+                          left: `${zone.xPct}%`,
+                          top: `${zone.yPct}%`,
+                          width: `${zone.widthPct}%`,
+                          height: `${zone.heightPct}%`,
                         }}
                       >
-                        {distractionFlash?.zoneId === distractionZone.id && (
+                        {phase === 'flash' && (
                           <span className="flash-word-player__flash-word" aria-live="off">
-                            {distractionFlash.word}
+                            {flashedWord}
                           </span>
                         )}
                       </div>
-                    ))}
+                      {game.distractionZonesEnabled &&
+                        activeCard.distractionZones.map((distractionZone) => (
+                          <div
+                            key={distractionZone.id}
+                            className="flash-word-player__distraction-zone"
+                            style={{
+                              left: `${distractionZone.zone.xPct}%`,
+                              top: `${distractionZone.zone.yPct}%`,
+                              width: `${distractionZone.zone.widthPct}%`,
+                              height: `${distractionZone.zone.heightPct}%`,
+                            }}
+                          >
+                            {distractionFlash?.zoneId === distractionZone.id && (
+                              <span className="flash-word-player__flash-word" aria-live="off">
+                                {distractionFlash.word}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  )}
                 </div>
-              )}
-            </>
-          ) : (
-            <div className="flash-word-player__placeholder" aria-hidden="true">
-              <span className="flash-word-player__placeholder-icon">⚡</span>
-              <span className="muted">Press Start when you&apos;re ready</span>
-            </div>
-          )}
+              )
+            ) : (
+              <div className="flash-word-player__placeholder">
+                <span className="flash-word-player__placeholder-icon" aria-hidden="true">
+                  ⚡
+                </span>
+                <span className="flash-word-player__placeholder-label">Press Start</span>
+                <span className="muted">when you&apos;re ready</span>
+              </div>
+            )}
+          </div>
+          </div>
         </div>
       </div>
 
@@ -343,10 +542,17 @@ export function FlashWordGamePlayer({ game }: FlashWordGamePlayerProps) {
               type="button"
               className="btn btn--primary btn--block"
               onClick={beginRound}
+              disabled={game.cards.length === 0}
             >
               Start
             </button>
           </>
+        )}
+
+        {roundCommitted && phase !== 'ready' && phase !== 'result' && (
+          <p className="flash-word-player__quit-hint muted" aria-live="polite">
+            Leaving now resets your streak.
+          </p>
         )}
 
         {phase === 'waiting' && (
@@ -394,14 +600,14 @@ export function FlashWordGamePlayer({ game }: FlashWordGamePlayerProps) {
               <button
                 type="button"
                 className="btn btn--primary"
-                onClick={beginRound}
+                onClick={playAgainFromResult}
               >
                 Play again
               </button>
               <button
                 type="button"
                 className="btn btn--ghost"
-                onClick={playAgain}
+                onClick={backToStart}
               >
                 Back to start
               </button>

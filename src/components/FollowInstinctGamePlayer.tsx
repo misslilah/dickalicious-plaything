@@ -11,6 +11,10 @@ import {
   type NormalizedLandmark,
 } from '../lib/facePoseDetection';
 import type { FollowInstinctGame } from '../lib/followInstinctGames';
+import {
+  fetchMiniGameUserBestStreak,
+  upsertMiniGameBestStreak,
+} from '../lib/miniGameLeaderboardDb';
 
 const MEDIAPIPE_WASM =
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
@@ -109,13 +113,44 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
   const [heartSide, setHeartSide] = useState<'left' | 'right'>('left');
   const [feedback, setFeedback] = useState<'idle' | 'success' | 'fail'>('idle');
   const [streak, setStreak] = useState(0);
+  const [sessionBestStreak, setSessionBestStreak] = useState(0);
+  const [allTimeBestStreak, setAllTimeBestStreak] = useState(0);
+  const sessionBestStreakRef = useRef(0);
   const [sessionDone, setSessionDone] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const roundStartRef = useRef(0);
   const judgedRef = useRef(false);
 
+  const persistSessionBestStreak = useCallback(() => {
+    const best = sessionBestStreakRef.current;
+    if (best <= 0) return;
+    void (async () => {
+      const result = await upsertMiniGameBestStreak('follow_instinct', game.id, best);
+      if (result.ok && best > allTimeBestStreak) {
+        setAllTimeBestStreak(best);
+      }
+    })();
+  }, [allTimeBestStreak, game.id]);
+
+  const recordStreak = useCallback(
+    (next: number) => {
+      if (next > sessionBestStreakRef.current) {
+        sessionBestStreakRef.current = next;
+        setSessionBestStreak(next);
+        if (next > allTimeBestStreak) {
+          void (async () => {
+            const result = await upsertMiniGameBestStreak('follow_instinct', game.id, next);
+            if (result.ok) setAllTimeBestStreak(next);
+          })();
+        }
+      }
+    },
+    [allTimeBestStreak, game.id],
+  );
+
   const startRound = useCallback((index: number) => {
     if (index >= ROUNDS_PER_SESSION) {
+      persistSessionBestStreak();
       setSessionDone(true);
       setCommand(null);
       setDetecting(false);
@@ -136,7 +171,25 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
     smoothedGazeRef.current = null;
     roundStartRef.current = performance.now();
     setDetecting(true);
-  }, []);
+  }, [game.id, persistSessionBestStreak]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const result = await fetchMiniGameUserBestStreak('follow_instinct', game.id);
+      if (cancelled || !result.ok) return;
+      setAllTimeBestStreak(result.bestStreak);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [game.id]);
+
+  useEffect(() => {
+    return () => {
+      persistSessionBestStreak();
+    };
+  }, [persistSessionBestStreak]);
 
   useEffect(() => {
     startRound(0);
@@ -284,7 +337,11 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
           judgedRef.current = true;
           setDetecting(false);
           setFeedback('success');
-          setStreak((value) => value + 1);
+          setStreak((value) => {
+            const next = value + 1;
+            recordStreak(next);
+            return next;
+          });
           window.setTimeout(() => startRound(roundIndex + 1), 900);
         }
       }
@@ -304,7 +361,9 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
-  }, [cameraReady, modelReady, detecting, command, roundIndex, sessionDone, startRound]);
+  }, [cameraReady, modelReady, detecting, command, roundIndex, sessionDone, startRound, recordStreak]);
+
+  const displayedBestStreak = Math.max(sessionBestStreak, allTimeBestStreak);
 
   if (cameraError) {
     return (
@@ -322,6 +381,12 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
         </span>
         <span className="follow-instinct-player__streak">
           Streak: <strong>{streak}</strong>
+          {displayedBestStreak > 0 && (
+            <>
+              {' '}
+              · Best: <strong>{displayedBestStreak}</strong>
+            </>
+          )}
         </span>
       </div>
 

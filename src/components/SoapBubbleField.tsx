@@ -6,6 +6,7 @@ import {
   type CSSProperties,
   type MouseEvent,
 } from 'react';
+import { useAppStore } from '../hooks/useAppStore';
 
 interface Bubble {
   id: number;
@@ -196,6 +197,7 @@ function playPopSound(getCtx: () => AudioContext | null) {
 }
 
 export function SoapBubbleField() {
+  const { recordSoapBubblePop } = useAppStore();
   const bubblesRef = useRef<Bubble[]>([]);
   const spawnTimerRef = useRef<number | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -261,12 +263,13 @@ export function SoapBubbleField() {
 
       setPops((prev) => [...prev, pop]);
       removeBubble(bubble.id);
+      recordSoapBubblePop();
 
       window.setTimeout(() => {
         setPops((prev) => prev.filter((p) => p.id !== pop.id));
       }, POP_DURATION_MS);
     },
-    [removeBubble],
+    [removeBubble, recordSoapBubblePop],
   );
 
   useEffect(() => {

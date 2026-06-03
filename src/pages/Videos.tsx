@@ -4,12 +4,12 @@ import { Link } from 'react-router-dom';
 import { AudioPlaylistSection } from '../components/AudioPlaylistSection';
 import { VideoCategoryCard } from '../components/VideoCategoryCard';
 import { useAppStore } from '../hooks/useAppStore';
+import { getVideoCategoryLockMessage, requiresTierMessage } from '../lib/tiers';
 import {
-  canAccessTier,
-  effectiveVideoTier,
-  getVideoCategoryLockMessage,
-  requiresTierMessage,
-} from '../lib/tiers';
+  canAccessVideoCategory,
+  canWatchVideo,
+  type VideoAccessContext,
+} from '../lib/videoAccess';
 import type { Video, VideoCategory } from '../types';
 import { InteractiveVideos } from './InteractiveVideos';
 
@@ -25,6 +25,21 @@ export function Videos() {
   const [search, setSearch] = useState('');
   const [lockMessage, setLockMessage] = useState<string | null>(null);
   const isAdmin = session?.role === 'admin';
+
+  const videoAccessCtx: VideoAccessContext = useMemo(
+    () => ({
+      patreonTier: session?.patreonTier,
+      patreonStatus: session?.patreonStatus,
+      isAdmin,
+      purchasedVideoIds: state.purchasedVideoIds,
+    }),
+    [
+      session?.patreonTier,
+      session?.patreonStatus,
+      isAdmin,
+      state.purchasedVideoIds,
+    ],
+  );
 
   const sortedCategories = useMemo(
     () =>
@@ -44,21 +59,13 @@ export function Videos() {
     );
   }, [sortedCategories, search]);
 
-  const canWatchVideo = (video: Video, category: VideoCategory | undefined) =>
-    canAccessTier(
-      effectiveVideoTier(video.requiredTier, category?.requiredTier),
-      session?.patreonTier,
-      session?.patreonStatus,
-      isAdmin,
-    );
+  const userCanWatchVideo = (video: Video, category: VideoCategory | undefined) =>
+    canWatchVideo(video, category, videoAccessCtx);
 
-  const canAccessCategory = (category: VideoCategory) =>
-    canAccessTier(
-      category.requiredTier ?? 'public',
-      session?.patreonTier,
-      session?.patreonStatus,
-      isAdmin,
-    );
+  const userCanAccessCategory = (category: VideoCategory) => {
+    const inCategory = state.videos.filter((v) => v.categoryId === category.id);
+    return canAccessVideoCategory(category, inCategory, videoAccessCtx);
+  };
 
   const totalVideoCountByCategory = (categoryId: string) =>
     state.videoCategoryCounts[categoryId] ??
@@ -67,7 +74,7 @@ export function Videos() {
   const lockedVideoCountByCategory = (categoryId: string) => {
     const cat = state.videoCategories.find((c) => c.id === categoryId);
     const inCategory = state.videos.filter((v) => v.categoryId === categoryId);
-    return inCategory.filter((v) => !canWatchVideo(v, cat)).length;
+    return inCategory.filter((v) => !userCanWatchVideo(v, cat)).length;
   };
 
   const showCategoryLockMessage = (category: VideoCategory) => {
@@ -163,7 +170,7 @@ export function Videos() {
               </p>
               <div className="category-grid">
                 {filtered.map((cat) => {
-                  const categoryLocked = !canAccessCategory(cat);
+                  const categoryLocked = !userCanAccessCategory(cat);
                   const lockedVideos = categoryLocked
                     ? 0
                     : lockedVideoCountByCategory(cat.id);

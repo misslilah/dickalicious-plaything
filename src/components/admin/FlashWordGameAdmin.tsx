@@ -12,6 +12,8 @@ import {
   deleteSavedCombination,
   fetchAllFlashWordGames,
   fetchSavedCombinations,
+  FLASH_GAME_AUDIO_ACCEPT,
+  MAX_FLASH_GAME_AUDIO_BYTES,
   saveCombinationToLibrary,
   saveCombinationsToLibrary,
   updateFlashWordGame,
@@ -21,8 +23,10 @@ import {
   type FlashWordGame,
   type FlashWordGameInput,
   type FlashWordSavedCombination,
+  type FlashWordStreakTier,
   type FlashWordTripletInput,
   type FlashWordZone,
+  type StreakTierAudioFileEntry,
 } from '../../lib/flashWordGames';
 import { FlashWordZoneEditor } from '../FlashWordZoneEditor';
 
@@ -41,6 +45,16 @@ type CardFormEntry = {
   pendingPreviewUrl?: string;
 };
 
+type StreakTierFormEntry = {
+  id?: string;
+  streakThreshold: number;
+  xpReward: number;
+  message: string;
+  audioUrl?: string;
+  pendingAudioFile?: File;
+  clearAudio?: boolean;
+};
+
 function blankForm(): {
   title: string;
   description: string;
@@ -48,6 +62,7 @@ function blankForm(): {
   distractionZonesEnabled: boolean;
   cards: CardFormEntry[];
   triplets: FlashWordTripletInput[];
+  streakTiers: StreakTierFormEntry[];
 } {
   return {
     title: '',
@@ -56,6 +71,7 @@ function blankForm(): {
     distractionZonesEnabled: false,
     cards: [],
     triplets: [{ ...EMPTY_TRIPLET }],
+    streakTiers: [],
   };
 }
 
@@ -72,6 +88,16 @@ function cardToFormEntry(card: FlashWordCard): CardFormEntry {
   };
 }
 
+function streakTierToFormEntry(tier: FlashWordStreakTier): StreakTierFormEntry {
+  return {
+    id: tier.id,
+    streakThreshold: tier.streakThreshold,
+    xpReward: tier.xpReward,
+    message: tier.message ?? '',
+    audioUrl: tier.audioUrl ?? undefined,
+  };
+}
+
 function gameToForm(game: FlashWordGame) {
   return {
     title: game.title,
@@ -85,6 +111,7 @@ function gameToForm(game: FlashWordGame) {
       word2: triplet.word2,
       word3: triplet.word3,
     })),
+    streakTiers: game.streakTiers.map(streakTierToFormEntry),
   };
 }
 
@@ -370,6 +397,65 @@ export function FlashWordGameAdmin() {
     setMessage('Combination removed from library.');
   };
 
+  const addStreakTier = () => {
+    setForm((prev) => ({
+      ...prev,
+      streakTiers: [
+        ...prev.streakTiers,
+        { streakThreshold: 3, xpReward: 10, message: '' },
+      ],
+    }));
+  };
+
+  const updateStreakTier = (index: number, patch: Partial<StreakTierFormEntry>) => {
+    setForm((prev) => ({
+      ...prev,
+      streakTiers: prev.streakTiers.map((tier, i) =>
+        i === index ? { ...tier, ...patch } : tier,
+      ),
+    }));
+  };
+
+  const removeStreakTier = (index: number) => {
+    setForm((prev) => ({
+      ...prev,
+      streakTiers: prev.streakTiers.filter((_, i) => i !== index),
+    }));
+  };
+
+  const setStreakTierAudio = (index: number, file: File) => {
+    if (!file.type.startsWith('audio/')) {
+      setError('Only audio files are allowed for streak clips.');
+      return;
+    }
+    if (file.size > MAX_FLASH_GAME_AUDIO_BYTES) {
+      setError(
+        `Audio too large. Max ${MAX_FLASH_GAME_AUDIO_BYTES / (1024 * 1024)} MB.`,
+      );
+      return;
+    }
+    setForm((prev) => ({
+      ...prev,
+      streakTiers: prev.streakTiers.map((tier, i) =>
+        i === index
+          ? { ...tier, pendingAudioFile: file, clearAudio: false }
+          : tier,
+      ),
+    }));
+    setError('');
+  };
+
+  const clearStreakTierAudio = (index: number) => {
+    setForm((prev) => ({
+      ...prev,
+      streakTiers: prev.streakTiers.map((tier, i) =>
+        i === index
+          ? { ...tier, pendingAudioFile: undefined, clearAudio: true, audioUrl: undefined }
+          : tier,
+      ),
+    }));
+  };
+
   const buildInput = (): FlashWordGameInput => ({
     title: form.title,
     description: form.description.trim() || null,
@@ -381,6 +467,13 @@ export function FlashWordGameAdmin() {
       distractionZones: form.distractionZonesEnabled ? card.distractionZones : [],
     })),
     triplets: form.triplets,
+    streakTiers: form.streakTiers.map((tier) => ({
+      id: tier.id,
+      streakThreshold: tier.streakThreshold,
+      xpReward: tier.xpReward,
+      message: tier.message.trim() || null,
+      clearAudio: tier.clearAudio,
+    })),
   });
 
   const buildCardFiles = (): CardFileEntry[] =>
@@ -389,6 +482,13 @@ export function FlashWordGameAdmin() {
         card.pendingFile ? { cardIndex: index, file: card.pendingFile } : null,
       )
       .filter((entry): entry is CardFileEntry => entry != null);
+
+  const buildStreakAudioFiles = (): StreakTierAudioFileEntry[] =>
+    form.streakTiers
+      .map((tier, index) =>
+        tier.pendingAudioFile ? { tierIndex: index, file: tier.pendingAudioFile } : null,
+      )
+      .filter((entry): entry is StreakTierAudioFileEntry => entry != null);
 
   const save = async () => {
     setError('');
@@ -410,10 +510,11 @@ export function FlashWordGameAdmin() {
     setSaving(true);
     const input = buildInput();
     const cardFiles = buildCardFiles();
+    const streakAudioFiles = buildStreakAudioFiles();
     const wasEditing = editingId != null;
     const result = editingId
-      ? await updateFlashWordGame(editingId, input, cardFiles)
-      : await createFlashWordGame(input, cardFiles);
+      ? await updateFlashWordGame(editingId, input, cardFiles, streakAudioFiles)
+      : await createFlashWordGame(input, cardFiles, streakAudioFiles);
     setSaving(false);
 
     if (!result.ok) {
@@ -840,6 +941,111 @@ export function FlashWordGameAdmin() {
               </div>
             </div>
           ))}
+        </div>
+
+        <div className="flash-game-streak-rewards">
+          <div className="flash-game-streak-rewards__header">
+            <h4 className="section-title">Streak rewards</h4>
+            <button
+              type="button"
+              className="btn btn--ghost btn--small"
+              onClick={addStreakTier}
+            >
+              Add tier
+            </button>
+          </div>
+          <p className="muted">
+            When a player reaches each streak count in one session, they earn XP and optional
+            message and audio shown beside the flash image (not on top of it). Each threshold
+            can only trigger once per session.
+          </p>
+
+          {form.streakTiers.length === 0 ? (
+            <p className="muted">No streak tiers — add one to reward consecutive correct answers.</p>
+          ) : (
+            <ul className="flash-game-streak-rewards__list">
+              {form.streakTiers.map((tier, index) => (
+                <li key={tier.id ?? `new-tier-${index}`} className="flash-game-streak-tier-row">
+                  <label className="form-field">
+                    Streak count
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={tier.streakThreshold}
+                      onChange={(e) =>
+                        updateStreakTier(index, {
+                          streakThreshold: Number(e.target.value),
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="form-field">
+                    XP reward
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={tier.xpReward}
+                      onChange={(e) =>
+                        updateStreakTier(index, { xpReward: Number(e.target.value) })
+                      }
+                    />
+                  </label>
+                  <label className="form-field flash-game-streak-tier-row__message">
+                    Message <span className="muted">(optional)</span>
+                    <input
+                      type="text"
+                      value={tier.message}
+                      placeholder="Shown beside the image at this streak"
+                      onChange={(e) => updateStreakTier(index, { message: e.target.value })}
+                    />
+                  </label>
+                  <div className="flash-game-streak-tier-row__audio">
+                    <span className="form-field__label">Audio clip</span>
+                    {(tier.pendingAudioFile || tier.audioUrl) && !tier.clearAudio ? (
+                      <p className="muted flash-game-streak-tier-row__audio-name">
+                        {tier.pendingAudioFile?.name ?? 'Saved clip'}
+                      </p>
+                    ) : (
+                      <p className="muted">No audio</p>
+                    )}
+                    <div className="btn-row">
+                      <label className="btn btn--ghost btn--small">
+                        Upload
+                        <input
+                          type="file"
+                          accept={FLASH_GAME_AUDIO_ACCEPT}
+                          className="visually-hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) setStreakTierAudio(index, file);
+                            e.target.value = '';
+                          }}
+                        />
+                      </label>
+                      {(tier.pendingAudioFile || tier.audioUrl) && !tier.clearAudio && (
+                        <button
+                          type="button"
+                          className="btn btn--ghost btn--small"
+                          onClick={() => clearStreakTierAudio(index)}
+                        >
+                          Remove audio
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn--danger btn--small flash-game-streak-tier-row__remove"
+                    onClick={() => removeStreakTier(index)}
+                  >
+                    Remove tier
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <button

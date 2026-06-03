@@ -1502,7 +1502,7 @@ function emptyBadgeDraft(): Badge {
   };
 }
 
-type BadgeRequirementKind = 'none' | 'task' | 'category';
+type BadgeRequirementKind = 'none' | 'task' | 'category' | 'bubble_pops';
 type BadgeDurationMode = 'once' | 'accumulate';
 
 function badgeRequirementKind(badge: Badge): BadgeRequirementKind {
@@ -1527,8 +1527,15 @@ function buildBadgeRequirement(
   categoryId: string,
   durationMode: BadgeDurationMode,
   durationDays: number,
+  minBubblePops: number,
 ): BadgeRequirement | null {
   if (kind === 'none') return null;
+
+  if (kind === 'bubble_pops') {
+    const pops = Math.floor(minBubblePops);
+    if (pops <= 0) return null;
+    return { type: 'bubble_pops', minBubblePops: pops };
+  }
 
   const requirement: BadgeRequirement =
     kind === 'task'
@@ -1549,6 +1556,7 @@ function BadgeAdmin() {
   const [requirementKind, setRequirementKind] = useState<BadgeRequirementKind>('none');
   const [requirementTaskId, setRequirementTaskId] = useState('');
   const [requirementCategoryId, setRequirementCategoryId] = useState('');
+  const [requirementMinBubblePops, setRequirementMinBubblePops] = useState(0);
   const [durationMode, setDurationMode] = useState<BadgeDurationMode>('once');
   const [durationDays, setDurationDays] = useState(0);
   const [search, setSearch] = useState('');
@@ -1573,6 +1581,7 @@ function BadgeAdmin() {
     setRequirementKind(badgeRequirementKind(badge));
     setRequirementTaskId(badge.requirement?.taskId ?? '');
     setRequirementCategoryId(badge.requirement?.categoryId ?? '');
+    setRequirementMinBubblePops(badge.requirement?.minBubblePops ?? 0);
     setDurationMode(badgeDurationMode(badge));
     setDurationDays(badgeDurationDays(badge));
     setErrors({});
@@ -1583,6 +1592,7 @@ function BadgeAdmin() {
     setRequirementKind('none');
     setRequirementTaskId('');
     setRequirementCategoryId('');
+    setRequirementMinBubblePops(0);
     setDurationMode('once');
     setDurationDays(0);
   };
@@ -1596,6 +1606,9 @@ function BadgeAdmin() {
     }
     if (requirementKind === 'category' && !requirementCategoryId) {
       next.requirementCategory = 'Select a category.';
+    }
+    if (requirementKind === 'bubble_pops' && requirementMinBubblePops <= 0) {
+      next.requirementBubblePops = 'Enter a minimum greater than zero.';
     }
     if (durationMode === 'accumulate') {
       if (durationDays <= 0) {
@@ -1637,6 +1650,7 @@ function BadgeAdmin() {
         requirementCategoryId,
         durationMode,
         durationDays,
+        requirementMinBubblePops,
       ),
     };
 
@@ -1776,6 +1790,11 @@ function BadgeAdmin() {
               { value: 'none' as const, label: 'None', hint: 'Manual / hint only' },
               { value: 'task' as const, label: 'Single task' },
               { value: 'category' as const, label: 'Task category' },
+              {
+                value: 'bubble_pops' as const,
+                label: 'Soap bubble pops',
+                hint: 'Hidden pop counter (floating soap bubbles)',
+              },
             ]}
             value={requirementKind}
             onChange={(kind) => {
@@ -1846,7 +1865,31 @@ function BadgeAdmin() {
             </select>
           </Field>
         )}
-        {requirementKind !== 'none' && (
+        {requirementKind === 'bubble_pops' && (
+          <Field
+            label="Minimum bubble pops"
+            htmlFor="badge-req-bubble-pops"
+            hint="Player must pop this many floating soap bubbles (counter is hidden)."
+            required
+            error={errors.requirementBubblePops}
+          >
+            <input
+              id="badge-req-bubble-pops"
+              type="number"
+              min={1}
+              step={1}
+              value={requirementMinBubblePops || ''}
+              placeholder="e.g. 10"
+              onChange={(e) => {
+                setRequirementMinBubblePops(parseInt(e.target.value, 10) || 0);
+                if (errors.requirementBubblePops) {
+                  setErrors((p) => ({ ...p, requirementBubblePops: '' }));
+                }
+              }}
+            />
+          </Field>
+        )}
+        {requirementKind !== 'none' && requirementKind !== 'bubble_pops' && (
           <>
             <Field label="Completion mode">
               <ChoiceRow
@@ -2670,6 +2713,7 @@ function VideoUploadAdmin() {
   const [requiredTier, setRequiredTier] = useState<ContentTier>('sweetie');
   const [autoLoop, setAutoLoop] = useState(false);
   const [xpReward, setXpReward] = useState(0);
+  const [shopPointsCost, setShopPointsCost] = useState<number | ''>('');
   const [file, setFile] = useState<File | null>(null);
   const [search, setSearch] = useState('');
   const [message, setMessage] = useState('');
@@ -2698,6 +2742,7 @@ function VideoUploadAdmin() {
     setRequiredTier('sweetie');
     setAutoLoop(false);
     setXpReward(0);
+    setShopPointsCost('');
     setFile(null);
     setError('');
     setMessage('');
@@ -2711,6 +2756,11 @@ function VideoUploadAdmin() {
     setRequiredTier(video.requiredTier ?? 'sweetie');
     setAutoLoop(video.autoLoop ?? false);
     setXpReward(video.xpReward ?? 0);
+    setShopPointsCost(
+      video.shopPointsCost != null && video.shopPointsCost > 0
+        ? video.shopPointsCost
+        : '',
+    );
     setFile(null);
     setError('');
     setMessage('');
@@ -2735,6 +2785,10 @@ function VideoUploadAdmin() {
         return;
       }
       setUploading(true);
+      const shopCost =
+        shopPointsCost === '' || shopPointsCost === 0
+          ? null
+          : Math.max(1, Math.floor(Number(shopPointsCost)));
       const result = await updateVideo({
         ...existing,
         categoryId,
@@ -2743,6 +2797,7 @@ function VideoUploadAdmin() {
         requiredTier,
         autoLoop,
         xpReward: Math.max(0, Math.floor(xpReward)),
+        shopPointsCost: shopCost,
       });
       setUploading(false);
       if (!result.ok) {
@@ -2775,6 +2830,10 @@ function VideoUploadAdmin() {
       requiredTier,
       autoLoop,
       xpReward: Math.max(0, Math.floor(xpReward)),
+      shopPointsCost:
+        shopPointsCost === '' || shopPointsCost === 0
+          ? null
+          : Math.max(1, Math.floor(Number(shopPointsCost))),
     };
 
     setUploading(true);
@@ -2835,8 +2894,11 @@ function VideoUploadAdmin() {
                   {categoryName(v.categoryId)} ·{' '}
                   <TierBadge tier={v.requiredTier ?? 'sweetie'} accessStyle />
                   {v.autoLoop ? ' · Auto loop' : ''}
-                  {(v.xpReward ?? 0) > 0 ? ` · ${v.xpReward} XP` : ''} ·{' '}
-                  {formatMb(v.sizeBytes)}
+                  {(v.xpReward ?? 0) > 0 ? ` · ${v.xpReward} XP` : ''}
+                  {(v.shopPointsCost ?? 0) > 0
+                    ? ` · Shop ${v.shopPointsCost} pts`
+                    : ''}{' '}
+                  · {formatMb(v.sizeBytes)}
                 </>
               }
               onEdit={() => loadForEdit(v)}
@@ -2912,6 +2974,24 @@ function VideoUploadAdmin() {
             step={1}
             value={xpReward}
             onChange={(e) => setXpReward(Number(e.target.value))}
+          />
+        </Field>
+        <Field
+          label="Shop price (points)"
+          htmlFor="vid-shop-cost"
+          hint="Reward points to unlock this video individually in the Rewards shop. Leave empty or 0 to disable shop purchase."
+        >
+          <input
+            id="vid-shop-cost"
+            type="number"
+            min={0}
+            step={1}
+            value={shopPointsCost}
+            onChange={(e) => {
+              const raw = e.target.value;
+              setShopPointsCost(raw === '' ? '' : Number(raw));
+            }}
+            placeholder="Not for sale"
           />
         </Field>
         <Field label="Playback">

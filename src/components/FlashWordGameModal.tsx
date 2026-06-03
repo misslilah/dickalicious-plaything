@@ -1,5 +1,8 @@
-import { useEffect, useState } from 'react';
-import { FlashWordGamePlayer } from './FlashWordGamePlayer';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  FlashWordGamePlayer,
+  type FlashWordGameQuitHandler,
+} from './FlashWordGamePlayer';
 import {
   fetchFlashWordGame,
   type FlashWordGame,
@@ -14,6 +17,14 @@ export function FlashWordGameModal({ gameId, onClose }: FlashWordGameModalProps)
   const [game, setGame] = useState<FlashWordGame | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [quitHandler, setQuitHandler] = useState<FlashWordGameQuitHandler | null>(
+    null,
+  );
+
+  const handleClose = useCallback(() => {
+    quitHandler?.();
+    onClose();
+  }, [onClose, quitHandler]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -25,11 +36,11 @@ export function FlashWordGameModal({ gameId, onClose }: FlashWordGameModalProps)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') handleClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  }, [handleClose]);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,7 +91,7 @@ export function FlashWordGameModal({ gameId, onClose }: FlashWordGameModalProps)
           <button
             type="button"
             className="btn btn--ghost btn--small flash-word-game-modal__close"
-            onClick={onClose}
+            onClick={handleClose}
             aria-label="Close game"
           >
             ✕
@@ -94,12 +105,17 @@ export function FlashWordGameModal({ gameId, onClose }: FlashWordGameModalProps)
               <p className="login-error" role="alert">
                 {error}
               </p>
-              <button type="button" className="btn btn--ghost" onClick={onClose}>
+              <button type="button" className="btn btn--ghost" onClick={handleClose}>
                 Back to Mini Games
               </button>
             </>
           )}
-          {game && <FlashWordGamePlayer game={game} />}
+          {game && (
+            <FlashWordGamePlayer
+              game={game}
+              onRegisterQuitHandler={setQuitHandler}
+            />
+          )}
         </div>
       </div>
     </div>

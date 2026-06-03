@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { FlashWordGameModal } from '../components/FlashWordGameModal';
 import { FollowInstinctGameModal } from '../components/FollowInstinctGameModal';
+import { MiniGameLeaderboard } from '../components/MiniGameLeaderboard';
+import { useAppStore } from '../hooks/useAppStore';
 import {
   fetchFlashWordGameSummaries,
   type FlashWordGameSummary,
@@ -16,11 +18,18 @@ type ActiveGame =
   | null;
 
 export function MiniGames() {
+  const { session } = useAppStore();
   const [flashGames, setFlashGames] = useState<FlashWordGameSummary[]>([]);
   const [instinctGames, setInstinctGames] = useState<FollowInstinctGameSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeGame, setActiveGame] = useState<ActiveGame>(null);
+  const [leaderboardRefresh, setLeaderboardRefresh] = useState(0);
+
+  const closeActiveGame = () => {
+    setActiveGame(null);
+    setLeaderboardRefresh((tick) => tick + 1);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -112,17 +121,42 @@ export function MiniGames() {
         </div>
       )}
 
+      {!loading && hasGames && (
+        <section className="mini-games-leaderboards">
+          <h3 className="mini-games-leaderboards__heading">Leaderboards</h3>
+          <p className="muted mini-games-leaderboards__intro">
+            Top players by best streak in a single session.
+          </p>
+          <div className="mini-games-leaderboards__list">
+            {flashGames.map((game) => (
+              <MiniGameLeaderboard
+                key={`leaderboard-flash-${game.id}`}
+                gameType="flash_cards"
+                gameId={game.id}
+                title={game.title || 'Focus Training'}
+                userId={session?.userId ?? null}
+                refreshKey={leaderboardRefresh}
+              />
+            ))}
+            {instinctGames.map((game) => (
+              <MiniGameLeaderboard
+                key={`leaderboard-instinct-${game.id}`}
+                gameType="follow_instinct"
+                gameId={game.id}
+                title={game.title || 'Follow your instinct'}
+                userId={session?.userId ?? null}
+                refreshKey={leaderboardRefresh}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
       {activeGame?.type === 'flash' && (
-        <FlashWordGameModal
-          gameId={activeGame.id}
-          onClose={() => setActiveGame(null)}
-        />
+        <FlashWordGameModal gameId={activeGame.id} onClose={closeActiveGame} />
       )}
       {activeGame?.type === 'instinct' && (
-        <FollowInstinctGameModal
-          gameId={activeGame.id}
-          onClose={() => setActiveGame(null)}
-        />
+        <FollowInstinctGameModal gameId={activeGame.id} onClose={closeActiveGame} />
       )}
     </div>
   );

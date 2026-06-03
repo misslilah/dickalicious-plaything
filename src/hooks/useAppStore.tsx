@@ -23,9 +23,11 @@ import type {
 } from '../types';
 import { deleteBadgeDb, fetchUserBadgeIds, upsertBadge } from '../lib/badgeDb';
 import {
+  processBadgeUnlockOnBubblePop,
   processBadgeUnlockOnTaskComplete,
   processBadgeUnlockOnTimeAccumulated,
 } from '../lib/badgeUnlockService';
+import { incrementUserBubblePopCount } from '../lib/bubblePopDb';
 import {
   deleteCategoryDb,
   deletePunishmentCategoryDb,
@@ -83,6 +85,10 @@ import { getSupabase, isSupabaseConfigured, SUPABASE_SETUP_HINT } from '../lib/s
 import { fetchUserProgress, saveUserProgress } from '../lib/userProgressDb';
 import { tryRecordVideoCompletion } from '../lib/videoCompletionDb';
 import {
+  fetchPurchasedVideoIds,
+  purchaseVideoDb,
+} from '../lib/videoPurchaseDb';
+import {
   deleteVideoFile,
   formatVideoSizeError,
   MAX_VIDEO_BYTES,
@@ -127,15 +133,22 @@ interface AppStoreValue {
   ) => Promise<MutateResult>;
   completeTask: (taskId: string) => void;
   recordBadgeTaskTime: (taskId: string, seconds: number) => void;
+  /** Hidden counter: soap bubble popped (logged-in users only). */
+  recordSoapBubblePop: () => void;
   uncompleteTask: (taskId: string) => void;
   markTaskStarted: (taskId: string) => void;
   closeDay: () => void;
   purchaseReward: (rewardId: string) => void;
+  purchaseVideo: (
+    videoId: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   acceptPunishment: (templateId: string) => void;
   applyTaskMalus: (taskId: string) => void;
   dismissPunishment: (id: string) => void;
   /** Awards XP once per user per video after a full watch. Returns XP granted, or 0. */
   awardVideoCompletion: (videoId: string) => Promise<number>;
+  /** Adds XP immediately (e.g. mini-game streak rewards). */
+  awardBonusXp: (amount: number) => void;
   joinCategory: (categoryId: string) => Promise<MutateResult>;
   leaveCategory: (categoryId: string) => Promise<MutateResult>;
   updateSettings: (partial: Partial<AppState['settings']>) => void;
@@ -245,17 +258,27 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     [applyUnlockedBadges],
   );
 
+  const runBadgeUnlockOnBubblePop = useCallback(
+    async (userId: string, snapshot: AppState, popCount: number) => {
+      const result = await processBadgeUnlockOnBubblePop(userId, snapshot, popCount);
+      if (result.ok) applyUnlockedBadges(result.newlyUnlocked);
+      else setLastSaveError(result.error);
+    },
+    [applyUnlockedBadges],
+  );
+
   const loadAllData = useCallback(async (userId: string) => {
     setDataLoading(true);
     setDataError(null);
 
     try {
-      const [catalogResult, progressResult, membersResult, badgesResult] =
+      const [catalogResult, progressResult, membersResult, badgesResult, purchasedResult] =
         await Promise.all([
           fetchSharedCatalog(),
           fetchUserProgress(userId),
           fetchCategoryMembers(userId),
           fetchUserBadgeIds(userId),
+          fetchPurchasedVideoIds(userId),
         ]);
 
       if (!catalogResult.ok) {
@@ -274,6 +297,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         setDataError(badgesResult.error);
         return;
       }
+      if (!purchasedResult.ok) {
+        setDataError(purchasedResult.error);
+        return;
+      }
 
       let merged = mergeCatalogIntoState(progressResult.state, catalogResult.catalog);
       merged = {
@@ -281,6 +308,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         joinedCategoryIds: membersResult.categoryIds,
         categoryMemberProgress: membersResult.progress,
         unlockedBadgeIds: badgesResult.badgeIds,
+        purchasedVideoIds: purchasedResult.videoIds,
       };
       merged = processDayRollover(merged, userId);
       merged = ensureDailyPlan(merged, undefined, userId);
@@ -467,11 +495,37 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         if (!userId || seconds <= 0) return;
         void runBadgeUnlockOnTime(userId, state, taskId, seconds);
       },
+      recordSoapBubblePop: () => {
+        const userId = userIdRef.current;
+        if (!userId || !isSupabaseConfigured()) return;
+        void incrementUserBubblePopCount().then((result) => {
+          if (!result.ok) return;
+          void runBadgeUnlockOnBubblePop(userId, state, result.popCount);
+        });
+      },
       uncompleteTask: (taskId) => applyUserState(uncompleteTask(state, taskId)),
       markTaskStarted: (taskId) =>
         applyUserState(markTaskStarted(state, taskId)),
       closeDay: () => applyUserState(closeDay(state, session?.userId ?? null)),
       purchaseReward: (rewardId) => applyUserState(purchaseReward(state, rewardId)),
+      purchaseVideo: async (videoId) => {
+        const userId = userIdRef.current;
+        if (!userId) return { ok: false, error: 'Not signed in.' };
+        const result = await purchaseVideoDb(videoId);
+        if (!result.ok) return result;
+        const next: AppState = {
+          ...state,
+          progress: {
+            ...state.progress,
+            points: result.pointsRemaining,
+          },
+          purchasedVideoIds: state.purchasedVideoIds.includes(videoId)
+            ? state.purchasedVideoIds
+            : [...state.purchasedVideoIds, videoId],
+        };
+        applyUserState(next);
+        return { ok: true };
+      },
       acceptPunishment: (templateId) =>
         applyUserState(acceptPunishment(state, templateId)),
       applyTaskMalus: (taskId) => applyUserState(applyTaskMalus(state, taskId)),
@@ -490,6 +544,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         if (!result.awarded) return 0;
         applyUserState(addVideoXp(state, result.xp));
         return result.xp;
+      },
+      awardBonusXp: (amount) => {
+        if (amount <= 0) return;
+        applyUserState(addVideoXp(state, amount));
       },
       joinCategory: async (categoryId) => {
         const userId = userIdRef.current;
@@ -927,6 +985,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       applyUserState,
       runBadgeUnlockOnComplete,
       runBadgeUnlockOnTime,
+      runBadgeUnlockOnBubblePop,
       requireAdmin,
     ],
   );

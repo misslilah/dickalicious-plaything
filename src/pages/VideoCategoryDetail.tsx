@@ -5,11 +5,12 @@ import { useOptionalVideoPlayer } from '../contexts/VideoPlayerProvider';
 import { getPatreonPageUrl } from '../lib/patreon';
 import { TierBadge } from '../components/TierBadge';
 import { NormalVideoPlayerSurface } from '../components/NormalVideoPlayerSurface';
+import { effectiveVideoTier, requiresTierMessage } from '../lib/tiers';
 import {
-  canAccessTier,
-  effectiveVideoTier,
-  requiresTierMessage,
-} from '../lib/tiers';
+  canAccessVideoCategory,
+  canWatchVideo,
+  type VideoAccessContext,
+} from '../lib/videoAccess';
 import { ForcedModeVideoPlayer } from '../components/ForcedModeVideoPlayer';
 import type { ContentTier, Video, VideoCategory } from '../types';
 
@@ -139,6 +140,21 @@ export function VideoCategoryDetail() {
   const category = state.videoCategories.find((c) => c.id === categoryId);
   const isAdmin = session?.role === 'admin';
 
+  const videoAccessCtx: VideoAccessContext = useMemo(
+    () => ({
+      patreonTier: session?.patreonTier,
+      patreonStatus: session?.patreonStatus,
+      isAdmin,
+      purchasedVideoIds: state.purchasedVideoIds,
+    }),
+    [
+      session?.patreonTier,
+      session?.patreonStatus,
+      isAdmin,
+      state.purchasedVideoIds,
+    ],
+  );
+
   const videos = useMemo(
     () =>
       state.videos
@@ -151,14 +167,8 @@ export function VideoCategoryDetail() {
   );
 
   const canWatch = useCallback(
-    (video: Video) =>
-      canAccessTier(
-        effectiveVideoTier(video.requiredTier, category?.requiredTier),
-        session?.patreonTier,
-        session?.patreonStatus,
-        isAdmin,
-      ),
-    [category?.requiredTier, session?.patreonTier, session?.patreonStatus, isAdmin],
+    (video: Video) => canWatchVideo(video, category, videoAccessCtx),
+    [category, videoAccessCtx],
   );
 
   const playing =
@@ -226,12 +236,9 @@ export function VideoCategoryDetail() {
     );
   }
 
-  const categoryLocked = !canAccessTier(
-    category.requiredTier ?? 'public',
-    session?.patreonTier,
-    session?.patreonStatus,
-    isAdmin,
-  );
+  const categoryLocked =
+    category != null &&
+    !canAccessVideoCategory(category, videos, videoAccessCtx);
 
   const globalMatchesPlaying =
     globalVideo?.session?.videoId === playing?.id &&

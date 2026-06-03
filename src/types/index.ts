@@ -123,7 +123,7 @@ export interface Reward {
   purchased?: boolean;
 }
 
-export type BadgeRequirementType = 'task' | 'category';
+export type BadgeRequirementType = 'task' | 'category' | 'bubble_pops';
 
 /** Auto-unlock rule configured on a profile badge. */
 export interface BadgeRequirement {
@@ -132,6 +132,8 @@ export interface BadgeRequirement {
   categoryId?: string;
   /** When set, accumulate this many seconds; when omitted, one-time completion. */
   durationSeconds?: number;
+  /** Minimum soap bubbles popped (hidden counter). Used when type is bubble_pops. */
+  minBubblePops?: number;
 }
 
 /** Profile badge with image (admin catalog). */
@@ -246,6 +248,8 @@ export interface Video {
   autoLoop?: boolean;
   /** XP earned once when the user watches the full video (0 = none). */
   xpReward?: number;
+  /** Reward points to unlock individually in the shop; null/0 = not for sale. */
+  shopPointsCost?: number | null;
 }
 
 export interface AppState {
@@ -264,6 +268,8 @@ export interface AppState {
   punishments: Punishment[];
   settings: AppSettings;
   unlockedRewardIds: string[];
+  /** Video IDs unlocked via the Rewards shop (individual purchase). */
+  purchasedVideoIds: string[];
   unlockedBadgeIds: string[];
   /** Category IDs the signed-in user has joined. */
   joinedCategoryIds: string[];

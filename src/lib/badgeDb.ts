@@ -8,10 +8,11 @@ type DbBadge = {
   image_url: string | null;
   is_secret: boolean;
   sort_order: number;
-  requirement_type: 'task' | 'category' | null;
+  requirement_type: 'task' | 'category' | 'bubble_pops' | null;
   task_id: string | null;
   category_id: string | null;
   duration_seconds: number | null;
+  min_bubble_pops: number | null;
 };
 
 type DbUserBadge = {
@@ -34,6 +35,12 @@ function mapRequirement(row: DbBadge): BadgeRequirement | null {
       durationSeconds: row.duration_seconds ?? undefined,
     };
   }
+  if (row.requirement_type === 'bubble_pops' && row.min_bubble_pops) {
+    return {
+      type: 'bubble_pops',
+      minBubblePops: row.min_bubble_pops,
+    };
+  }
   return null;
 }
 
@@ -50,7 +57,7 @@ function mapBadge(row: DbBadge): Badge {
 }
 
 const BADGES_MIGRATION_HINT =
-  'Profile badges are not set up yet. In Supabase SQL Editor, run supabase/migrations/016_badges.sql (or 017_badges_fix.sql), then 042_badge_unlock_requirements.sql for auto-unlock rules.';
+  'Profile badges are not set up yet. In Supabase SQL Editor, run supabase/migrations/016_badges.sql (or 017_badges_fix.sql), then 042_badge_unlock_requirements.sql and 047_bubble_pop_badge_unlocks.sql for auto-unlock rules.';
 
 function formatBadgeDbError(error: { message?: string; code?: string }): string {
   const message = error.message ?? 'Unknown error';
@@ -66,10 +73,11 @@ function formatBadgeDbError(error: { message?: string; code?: string }): string 
 }
 
 function requirementToDb(requirement: BadgeRequirement | null | undefined): {
-  requirement_type: 'task' | 'category' | null;
+  requirement_type: 'task' | 'category' | 'bubble_pops' | null;
   task_id: string | null;
   category_id: string | null;
   duration_seconds: number | null;
+  min_bubble_pops: number | null;
 } {
   if (!requirement) {
     return {
@@ -77,6 +85,7 @@ function requirementToDb(requirement: BadgeRequirement | null | undefined): {
       task_id: null,
       category_id: null,
       duration_seconds: null,
+      min_bubble_pops: null,
     };
   }
 
@@ -91,6 +100,21 @@ function requirementToDb(requirement: BadgeRequirement | null | undefined): {
       task_id: requirement.taskId ?? null,
       category_id: null,
       duration_seconds: durationSeconds,
+      min_bubble_pops: null,
+    };
+  }
+
+  if (requirement.type === 'bubble_pops') {
+    const minPops =
+      requirement.minBubblePops != null && requirement.minBubblePops > 0
+        ? Math.floor(requirement.minBubblePops)
+        : null;
+    return {
+      requirement_type: 'bubble_pops',
+      task_id: null,
+      category_id: null,
+      duration_seconds: null,
+      min_bubble_pops: minPops,
     };
   }
 
@@ -99,6 +123,7 @@ function requirementToDb(requirement: BadgeRequirement | null | undefined): {
     task_id: null,
     category_id: requirement.categoryId ?? null,
     duration_seconds: durationSeconds,
+    min_bubble_pops: null,
   };
 }
 

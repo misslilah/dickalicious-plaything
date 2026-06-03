@@ -18,6 +18,11 @@ export function formatBadgeRequirementSummary(
   const req = badge.requirement;
   if (!req) return null;
 
+  if (req.type === 'bubble_pops') {
+    const min = req.minBubblePops ?? 0;
+    return `Bubble pops: ${min}`;
+  }
+
   const timePart =
     req.durationSeconds != null && req.durationSeconds > 0
       ? ` · ${formatBadgeDurationDays(req.durationSeconds)} total`

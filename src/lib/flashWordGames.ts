@@ -1,6 +1,12 @@
 import { getSupabase } from './supabase';
 
 export const FLASH_GAME_BUCKET = 'flash-game-images';
+export const FLASH_GAME_AUDIO_BUCKET = 'flash-game-audio';
+
+export const FLASH_GAME_AUDIO_ACCEPT =
+  'audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/ogg,audio/webm,.mp3,.m4a,.wav,.ogg';
+
+export const MAX_FLASH_GAME_AUDIO_BYTES = 10 * 1024 * 1024;
 
 export const DEFAULT_FLASH_DURATION_MS = 200;
 export const MIN_FLASH_DURATION_MS = 50;
@@ -26,10 +32,13 @@ export const FLASH_GAME_IMAGE_ACCEPT =
   'image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif';
 
 const MIGRATION_HINT =
-  'Flash Cards games are not set up yet. In Supabase SQL Editor, run supabase/migrations/028_flash_word_games.sql through 032_flash_card_distraction_zones.sql, then retry.';
+  'Flash Cards games are not set up yet. In Supabase SQL Editor, run supabase/migrations/028_flash_word_games.sql through 032_flash_card_distraction_zones.sql and 045_flash_word_streak_rewards.sql, then retry.';
 
 const BUCKET_HINT =
   'The flash-game-images storage bucket is not set up yet. In Supabase SQL Editor, run supabase/migrations/028_flash_word_games.sql, then retry the upload.';
+
+const AUDIO_BUCKET_HINT =
+  'The flash-game-audio storage bucket is not set up yet. In Supabase SQL Editor, run supabase/migrations/045_flash_word_streak_rewards.sql, then retry the upload.';
 
 export interface FlashWordZone {
   xPct: number;
@@ -65,6 +74,17 @@ export interface FlashWordGameTriplet {
   sortOrder: number;
 }
 
+export interface FlashWordStreakTier {
+  id: string;
+  gameId: string;
+  streakThreshold: number;
+  xpReward: number;
+  message: string | null;
+  audioStoragePath: string | null;
+  audioUrl: string | null;
+  sortOrder: number;
+}
+
 export interface FlashWordGame {
   id: string;
   title: string;
@@ -74,6 +94,7 @@ export interface FlashWordGame {
   createdAt: string;
   cards: FlashWordCard[];
   triplets: FlashWordGameTriplet[];
+  streakTiers: FlashWordStreakTier[];
 }
 
 export interface FlashWordGameSummary {
@@ -106,6 +127,14 @@ export interface FlashWordTripletInput {
   word3: string;
 }
 
+export interface FlashWordStreakTierInput {
+  id?: string;
+  streakThreshold: number;
+  xpReward: number;
+  message: string | null;
+  clearAudio?: boolean;
+}
+
 export interface FlashWordGameInput {
   title: string;
   description: string | null;
@@ -113,7 +142,13 @@ export interface FlashWordGameInput {
   distractionZonesEnabled: boolean;
   cards: FlashWordCardInput[];
   triplets: FlashWordTripletInput[];
+  streakTiers: FlashWordStreakTierInput[];
 }
+
+export type StreakTierAudioFileEntry = {
+  tierIndex: number;
+  file: File;
+};
 
 export interface FlashWordSavedCombination {
   id: string;
@@ -164,6 +199,16 @@ type DbFlashWordGameTriplet = {
   sort_order: number;
 };
 
+type DbFlashWordStreakTier = {
+  id: string;
+  game_id: string;
+  streak_threshold: number;
+  xp_reward: number;
+  message: string | null;
+  audio_storage_path: string | null;
+  sort_order: number;
+};
+
 type DbFlashWordSavedCombination = {
   id: string;
   word_1: string;
@@ -181,9 +226,16 @@ function formatDbError(error: { message?: string; code?: string }): string {
     message.includes("Could not find the table 'public.flash_word_game_rounds'") ||
     message.includes("Could not find the table 'public.flash_word_cards'") ||
     message.includes("Could not find the table 'public.flash_word_saved_combinations'") ||
-    message.includes("Could not find the table 'public.flash_word_card_distraction_zones'")
+    message.includes("Could not find the table 'public.flash_word_card_distraction_zones'") ||
+    message.includes("Could not find the table 'public.flash_word_game_streak_tiers'")
   ) {
     return MIGRATION_HINT;
+  }
+  if (
+    message.includes('flash_word_game_streak_tiers') ||
+    (message.includes('column') && message.includes('streak_threshold'))
+  ) {
+    return `${message} Run supabase/migrations/045_flash_word_streak_rewards.sql in Supabase SQL Editor, then retry.`;
   }
   if (
     message.includes('distraction_zones_enabled') ||
@@ -201,9 +253,11 @@ function formatDbError(error: { message?: string; code?: string }): string {
   return message;
 }
 
-function formatUploadError(error: { message?: string }): string {
+function formatUploadError(error: { message?: string }, bucket: 'images' | 'audio' = 'images'): string {
   const message = error.message ?? 'Upload failed.';
-  if (/bucket not found/i.test(message)) return BUCKET_HINT;
+  if (/bucket not found/i.test(message)) {
+    return bucket === 'audio' ? AUDIO_BUCKET_HINT : BUCKET_HINT;
+  }
   return message;
 }
 
@@ -245,6 +299,16 @@ export function validateTripletInput(triplet: FlashWordTripletInput): string | n
   return null;
 }
 
+export function validateStreakTierInput(tier: FlashWordStreakTierInput): string | null {
+  if (!Number.isFinite(tier.streakThreshold) || tier.streakThreshold < 1) {
+    return 'Streak threshold must be at least 1.';
+  }
+  if (!Number.isFinite(tier.xpReward) || tier.xpReward < 0) {
+    return 'XP reward must be 0 or greater.';
+  }
+  return null;
+}
+
 export function validateGameInput(input: FlashWordGameInput): string | null {
   const title = input.title.trim();
   if (!title) return 'Title is required.';
@@ -255,6 +319,16 @@ export function validateGameInput(input: FlashWordGameInput): string | null {
   for (const triplet of input.triplets) {
     const tripletError = validateTripletInput(triplet);
     if (tripletError) return tripletError;
+  }
+  const thresholds = new Set<number>();
+  for (const tier of input.streakTiers) {
+    const tierError = validateStreakTierInput(tier);
+    if (tierError) return tierError;
+    const threshold = Math.floor(tier.streakThreshold);
+    if (thresholds.has(threshold)) {
+      return `Duplicate streak threshold ${threshold}. Each tier needs a unique streak count.`;
+    }
+    thresholds.add(threshold);
   }
   return null;
 }
@@ -273,10 +347,28 @@ export function flashCardStoragePath(
   return `${gameId}/cards/${cardId}/${safe}`;
 }
 
+export function flashStreakAudioStoragePath(
+  gameId: string,
+  tierId: string,
+  fileName: string,
+): string {
+  const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  return `${gameId}/streak/${tierId}/${safe}`;
+}
+
 export function getFlashGameImageUrl(storagePath: string): string | null {
   const supabase = getSupabase();
   if (!supabase) return null;
-  const { data } = supabase.storage.from(FLASH_GAME_BUCKET).getPublicUrl(storagePath);
+  const normalized = storagePath.trim().replace(/^\/+/, '');
+  if (!normalized) return null;
+  const { data } = supabase.storage.from(FLASH_GAME_BUCKET).getPublicUrl(normalized);
+  return data.publicUrl?.trim() || null;
+}
+
+export function getFlashGameAudioUrl(storagePath: string): string | null {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data } = supabase.storage.from(FLASH_GAME_AUDIO_BUCKET).getPublicUrl(storagePath);
   return data.publicUrl ?? null;
 }
 
@@ -332,10 +424,25 @@ function mapTriplet(row: DbFlashWordGameTriplet): FlashWordGameTriplet {
   };
 }
 
+function mapStreakTier(row: DbFlashWordStreakTier): FlashWordStreakTier {
+  const audioStoragePath = row.audio_storage_path;
+  return {
+    id: row.id,
+    gameId: row.game_id,
+    streakThreshold: row.streak_threshold,
+    xpReward: row.xp_reward,
+    message: row.message,
+    audioStoragePath,
+    audioUrl: audioStoragePath ? getFlashGameAudioUrl(audioStoragePath) : null,
+    sortOrder: row.sort_order,
+  };
+}
+
 function mapGame(
   row: DbFlashWordGame,
   cards: FlashWordCard[],
   triplets: FlashWordGameTriplet[],
+  streakTiers: FlashWordStreakTier[] = [],
 ): FlashWordGame | null {
   if (cards.length === 0) return null;
   return {
@@ -347,7 +454,61 @@ function mapGame(
     createdAt: row.created_at,
     cards,
     triplets,
+    streakTiers,
   };
+}
+
+async function fetchStreakTiersForGame(gameId: string): Promise<
+  { ok: true; tiers: FlashWordStreakTier[] } | { ok: false; error: string }
+> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const { data, error } = await supabase
+    .from('flash_word_game_streak_tiers')
+    .select('*')
+    .eq('game_id', gameId)
+    .order('sort_order', { ascending: true })
+    .order('streak_threshold', { ascending: true });
+
+  if (error) return { ok: false, error: formatDbError(error) };
+
+  return {
+    ok: true,
+    tiers: (data as DbFlashWordStreakTier[]).map(mapStreakTier),
+  };
+}
+
+async function fetchStreakTiersForGames(
+  gameIds: string[],
+): Promise<
+  { ok: true; tiersByGameId: Map<string, FlashWordStreakTier[]> } | { ok: false; error: string }
+> {
+  if (gameIds.length === 0) {
+    return { ok: true, tiersByGameId: new Map() };
+  }
+
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const { data, error } = await supabase
+    .from('flash_word_game_streak_tiers')
+    .select('*')
+    .in('game_id', gameIds)
+    .order('sort_order', { ascending: true })
+    .order('streak_threshold', { ascending: true });
+
+  if (error) return { ok: false, error: formatDbError(error) };
+
+  const tiersByGameId = new Map<string, FlashWordStreakTier[]>();
+  for (const row of data as DbFlashWordStreakTier[]) {
+    const mapped = mapStreakTier(row);
+    const list = tiersByGameId.get(mapped.gameId) ?? [];
+    list.push(mapped);
+    tiersByGameId.set(mapped.gameId, list);
+  }
+
+  return { ok: true, tiersByGameId };
 }
 
 async function fetchDistractionZonesByCardIds(
@@ -531,7 +692,7 @@ export async function fetchFlashWordGame(
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
 
-  const [gameRes, tripletsRes, cardsRes] = await Promise.all([
+  const [gameRes, tripletsRes, cardsRes, streakTiersRes] = await Promise.all([
     supabase.from('flash_word_games').select('*').eq('id', gameId).maybeSingle(),
     supabase
       .from('flash_word_game_rounds')
@@ -540,15 +701,22 @@ export async function fetchFlashWordGame(
       .order('sort_order', { ascending: true })
       .order('created_at', { ascending: true }),
     fetchCardsForGame(gameId),
+    fetchStreakTiersForGame(gameId),
   ]);
 
   if (gameRes.error) return { ok: false, error: formatDbError(gameRes.error) };
   if (tripletsRes.error) return { ok: false, error: formatDbError(tripletsRes.error) };
   if (!cardsRes.ok) return cardsRes;
+  if (!streakTiersRes.ok) return streakTiersRes;
   if (!gameRes.data) return { ok: false, error: 'Game not found.' };
 
   const triplets = (tripletsRes.data as DbFlashWordGameTriplet[]).map(mapTriplet);
-  const game = mapGame(gameRes.data as DbFlashWordGame, cardsRes.cards, triplets);
+  const game = mapGame(
+    gameRes.data as DbFlashWordGame,
+    cardsRes.cards,
+    triplets,
+    streakTiersRes.tiers,
+  );
   if (!game) return { ok: false, error: 'Game has no flash cards configured yet.' };
   return { ok: true, game };
 }
@@ -598,9 +766,18 @@ export async function fetchAllFlashWordGames(): Promise<
     cardsByGame.set(mapped.gameId, list);
   }
 
+  const gameIds = (gamesRes.data as DbFlashWordGame[]).map((row) => row.id);
+  const streakTiersRes = await fetchStreakTiersForGames(gameIds);
+  if (!streakTiersRes.ok) return streakTiersRes;
+
   const games = (gamesRes.data as DbFlashWordGame[])
     .map((row) =>
-      mapGame(row, cardsByGame.get(row.id) ?? [], tripletsByGame.get(row.id) ?? []),
+      mapGame(
+        row,
+        cardsByGame.get(row.id) ?? [],
+        tripletsByGame.get(row.id) ?? [],
+        streakTiersRes.tiersByGameId.get(row.id) ?? [],
+      ),
     )
     .filter((game): game is FlashWordGame => game != null);
 
@@ -620,7 +797,24 @@ async function uploadFlashGameImage(
     upsert: true,
   });
 
-  if (error) return { ok: false, error: formatUploadError(error) };
+  if (error) return { ok: false, error: formatUploadError(error, 'images') };
+  return { ok: true };
+}
+
+async function uploadFlashGameAudio(
+  storagePath: string,
+  file: Blob,
+  mimeType: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const { error } = await supabase.storage.from(FLASH_GAME_AUDIO_BUCKET).upload(storagePath, file, {
+    contentType: mimeType,
+    upsert: true,
+  });
+
+  if (error) return { ok: false, error: formatUploadError(error, 'audio') };
   return { ok: true };
 }
 
@@ -632,6 +826,18 @@ async function deleteFlashGameImages(
   if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
 
   const { error } = await supabase.storage.from(FLASH_GAME_BUCKET).remove(storagePaths);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+async function deleteFlashGameAudio(
+  storagePaths: string[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (storagePaths.length === 0) return { ok: true };
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const { error } = await supabase.storage.from(FLASH_GAME_AUDIO_BUCKET).remove(storagePaths);
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }
@@ -663,6 +869,138 @@ async function replaceGameTriplets(
   );
 
   if (insertError) return { ok: false, error: formatDbError(insertError) };
+  return { ok: true };
+}
+
+async function replaceGameStreakTiers(
+  gameId: string,
+  tiers: FlashWordStreakTierInput[],
+  audioFiles: StreakTierAudioFileEntry[] = [],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const existingRes = await fetchStreakTiersForGame(gameId);
+  if (!existingRes.ok) return existingRes;
+
+  const existingById = new Map(existingRes.tiers.map((tier) => [tier.id, tier]));
+  const keptIds = new Set<string>();
+  const audioPathsToDelete: string[] = [];
+
+  for (let index = 0; index < tiers.length; index += 1) {
+    const tierInput = tiers[index]!;
+    const tierError = validateStreakTierInput(tierInput);
+    if (tierError) return { ok: false, error: tierError };
+
+    const fileEntry = audioFiles.find((entry) => entry.tierIndex === index);
+    const tierId = tierInput.id ?? crypto.randomUUID();
+    let audioPath: string | null = null;
+
+    if (tierInput.id && existingById.has(tierInput.id)) {
+      keptIds.add(tierInput.id);
+      const existing = existingById.get(tierInput.id)!;
+      audioPath = existing.audioStoragePath;
+
+      if (tierInput.clearAudio) {
+        if (audioPath) audioPathsToDelete.push(audioPath);
+        audioPath = null;
+      }
+
+      if (fileEntry) {
+        if (!fileEntry.file.type.startsWith('audio/')) {
+          return { ok: false, error: 'Only audio files are allowed for streak clips.' };
+        }
+        if (fileEntry.file.size > MAX_FLASH_GAME_AUDIO_BYTES) {
+          return {
+            ok: false,
+            error: `Audio too large. Max ${MAX_FLASH_GAME_AUDIO_BYTES / (1024 * 1024)} MB.`,
+          };
+        }
+        const nextPath = flashStreakAudioStoragePath(
+          gameId,
+          tierId,
+          fileEntry.file.name || 'clip.mp3',
+        );
+        const uploaded = await uploadFlashGameAudio(
+          nextPath,
+          fileEntry.file,
+          fileEntry.file.type || 'audio/mpeg',
+        );
+        if (!uploaded.ok) return uploaded;
+        if (audioPath && audioPath !== nextPath) {
+          audioPathsToDelete.push(audioPath);
+        }
+        audioPath = nextPath;
+      }
+
+      const { error } = await supabase
+        .from('flash_word_game_streak_tiers')
+        .update({
+          streak_threshold: Math.floor(tierInput.streakThreshold),
+          xp_reward: Math.floor(tierInput.xpReward),
+          message: tierInput.message?.trim() || null,
+          audio_storage_path: audioPath,
+          sort_order: index,
+        })
+        .eq('id', tierInput.id);
+
+      if (error) return { ok: false, error: formatDbError(error) };
+      continue;
+    }
+
+    if (fileEntry) {
+      if (!fileEntry.file.type.startsWith('audio/')) {
+        return { ok: false, error: 'Only audio files are allowed for streak clips.' };
+      }
+      if (fileEntry.file.size > MAX_FLASH_GAME_AUDIO_BYTES) {
+        return {
+          ok: false,
+          error: `Audio too large. Max ${MAX_FLASH_GAME_AUDIO_BYTES / (1024 * 1024)} MB.`,
+        };
+      }
+      audioPath = flashStreakAudioStoragePath(
+        gameId,
+        tierId,
+        fileEntry.file.name || 'clip.mp3',
+      );
+      const uploaded = await uploadFlashGameAudio(
+        audioPath,
+        fileEntry.file,
+        fileEntry.file.type || 'audio/mpeg',
+      );
+      if (!uploaded.ok) return uploaded;
+    }
+
+    const { error } = await supabase.from('flash_word_game_streak_tiers').insert({
+      id: tierId,
+      game_id: gameId,
+      streak_threshold: Math.floor(tierInput.streakThreshold),
+      xp_reward: Math.floor(tierInput.xpReward),
+      message: tierInput.message?.trim() || null,
+      audio_storage_path: audioPath,
+      sort_order: index,
+    });
+
+    if (error) return { ok: false, error: formatDbError(error) };
+    keptIds.add(tierId);
+  }
+
+  for (const existing of existingRes.tiers) {
+    if (!keptIds.has(existing.id)) {
+      if (existing.audioStoragePath) {
+        audioPathsToDelete.push(existing.audioStoragePath);
+      }
+      const { error } = await supabase
+        .from('flash_word_game_streak_tiers')
+        .delete()
+        .eq('id', existing.id);
+      if (error) return { ok: false, error: formatDbError(error) };
+    }
+  }
+
+  const deleteAudioResult = await deleteFlashGameAudio(audioPathsToDelete);
+  if (!deleteAudioResult.ok) return deleteAudioResult;
+
   return { ok: true };
 }
 
@@ -814,6 +1152,7 @@ async function replaceGameCards(
 export async function createFlashWordGame(
   input: FlashWordGameInput,
   cardFiles: CardFileEntry[],
+  streakAudioFiles: StreakTierAudioFileEntry[] = [],
 ): Promise<{ ok: true; game: FlashWordGame } | { ok: false; error: string }> {
   const validationError = validateGameInput(input);
   if (validationError) return { ok: false, error: validationError };
@@ -858,6 +1197,16 @@ export async function createFlashWordGame(
     return tripletsResult;
   }
 
+  const streakTiersResult = await replaceGameStreakTiers(
+    id,
+    input.streakTiers ?? [],
+    streakAudioFiles,
+  );
+  if (!streakTiersResult.ok) {
+    await supabase.from('flash_word_games').delete().eq('id', id);
+    return streakTiersResult;
+  }
+
   const loaded = await fetchFlashWordGame(id);
   if (!loaded.ok) return loaded;
   return { ok: true, game: loaded.game };
@@ -867,6 +1216,7 @@ export async function updateFlashWordGame(
   gameId: string,
   input: FlashWordGameInput,
   cardFiles: CardFileEntry[] = [],
+  streakAudioFiles: StreakTierAudioFileEntry[] = [],
 ): Promise<{ ok: true; game: FlashWordGame } | { ok: false; error: string }> {
   const validationError = validateGameInput(input);
   if (validationError) return { ok: false, error: validationError };
@@ -902,6 +1252,13 @@ export async function updateFlashWordGame(
   const tripletsResult = await replaceGameTriplets(gameId, input.triplets);
   if (!tripletsResult.ok) return tripletsResult;
 
+  const streakTiersResult = await replaceGameStreakTiers(
+    gameId,
+    input.streakTiers ?? [],
+    streakAudioFiles,
+  );
+  if (!streakTiersResult.ok) return streakTiersResult;
+
   const loaded = await fetchFlashWordGame(gameId);
   if (!loaded.ok) return loaded;
   return { ok: true, game: loaded.game };
@@ -917,11 +1274,15 @@ export async function deleteFlashWordGame(
   if (!existing.ok) return existing;
 
   const imagePaths = existing.game.cards.map((card) => card.imagePath);
+  const audioPaths = existing.game.streakTiers
+    .map((tier) => tier.audioStoragePath)
+    .filter((path): path is string => path != null);
 
   const { error } = await supabase.from('flash_word_games').delete().eq('id', gameId);
   if (error) return { ok: false, error: formatDbError(error) };
 
   await deleteFlashGameImages(imagePaths);
+  await deleteFlashGameAudio(audioPaths);
   return { ok: true };
 }
 
