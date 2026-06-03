@@ -3833,6 +3833,59 @@ a.task-list-row {
   outline-offset: 2px;
 }
 
+/* —— XP gain toast (above loop notice & Patreon bubble) —— */
+
+.xp-gain-toast {
+  position: fixed;
+  right: max(var(--pad-inline), env(safe-area-inset-right, 0px));
+  bottom: calc(var(--safe-bottom) + 7.5rem);
+  z-index: 151;
+  max-width: min(14rem, calc(100vw - 2 * var(--pad-inline)));
+  padding: 0.6rem 1rem;
+  border-radius: 12px;
+  background: rgba(26, 16, 36, 0.94);
+  border: 1px solid rgba(192, 132, 252, 0.45);
+  color: var(--text);
+  box-shadow:
+    0 4px 20px rgba(192, 132, 252, 0.2),
+    0 4px 16px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(10px);
+  animation: xp-gain-toast-in 0.28s ease-out;
+}
+
+.xp-gain-toast--with-nav {
+  bottom: calc(var(--nav-h) + var(--safe-bottom) + 7.4rem);
+}
+
+.xp-gain-toast--with-player {
+  bottom: calc(var(--nav-h) + 3.75rem + var(--safe-bottom) + 7.4rem);
+}
+
+.xp-gain-toast__text {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--accent-2);
+  text-align: center;
+}
+
+@keyframes xp-gain-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xp-gain-toast {
+    animation: none;
+  }
+}
+
 /* —— Patreon support bubble —— */
 
 .patreon-bubble {

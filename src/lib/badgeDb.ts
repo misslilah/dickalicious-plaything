@@ -1,4 +1,4 @@
-import type { Badge } from '../types';
+import type { Badge, BadgeRequirement } from '../types';
 import { getSupabase } from './supabase';
 
 type DbBadge = {
@@ -8,11 +8,34 @@ type DbBadge = {
   image_url: string | null;
   is_secret: boolean;
   sort_order: number;
+  requirement_type: 'task' | 'category' | null;
+  task_id: string | null;
+  category_id: string | null;
+  duration_seconds: number | null;
 };
 
 type DbUserBadge = {
   badge_id: string;
 };
+
+function mapRequirement(row: DbBadge): BadgeRequirement | null {
+  if (!row.requirement_type) return null;
+  if (row.requirement_type === 'task' && row.task_id) {
+    return {
+      type: 'task',
+      taskId: row.task_id,
+      durationSeconds: row.duration_seconds ?? undefined,
+    };
+  }
+  if (row.requirement_type === 'category' && row.category_id) {
+    return {
+      type: 'category',
+      categoryId: row.category_id,
+      durationSeconds: row.duration_seconds ?? undefined,
+    };
+  }
+  return null;
+}
 
 function mapBadge(row: DbBadge): Badge {
   return {
@@ -22,25 +45,65 @@ function mapBadge(row: DbBadge): Badge {
     imageUrl: row.image_url ?? undefined,
     isSecret: row.is_secret,
     sortOrder: row.sort_order,
+    requirement: mapRequirement(row),
   };
 }
 
 const BADGES_MIGRATION_HINT =
-  'Profile badges are not set up yet. In Supabase SQL Editor, run supabase/migrations/016_badges.sql (or 017_badges_fix.sql), then wait a minute or reload the project under Settings → API.';
+  'Profile badges are not set up yet. In Supabase SQL Editor, run supabase/migrations/016_badges.sql (or 017_badges_fix.sql), then 042_badge_unlock_requirements.sql for auto-unlock rules.';
 
 function formatBadgeDbError(error: { message?: string; code?: string }): string {
   const message = error.message ?? 'Unknown error';
   if (
     error.code === 'PGRST205' ||
     message.includes("Could not find the table 'public.badges'") ||
-    message.includes("Could not find the table 'public.user_badges'")
+    message.includes("Could not find the table 'public.user_badges'") ||
+    message.includes("Could not find the table 'public.user_badge_progress'")
   ) {
     return BADGES_MIGRATION_HINT;
   }
   return message;
 }
 
+function requirementToDb(requirement: BadgeRequirement | null | undefined): {
+  requirement_type: 'task' | 'category' | null;
+  task_id: string | null;
+  category_id: string | null;
+  duration_seconds: number | null;
+} {
+  if (!requirement) {
+    return {
+      requirement_type: null,
+      task_id: null,
+      category_id: null,
+      duration_seconds: null,
+    };
+  }
+
+  const durationSeconds =
+    requirement.durationSeconds != null && requirement.durationSeconds > 0
+      ? requirement.durationSeconds
+      : null;
+
+  if (requirement.type === 'task') {
+    return {
+      requirement_type: 'task',
+      task_id: requirement.taskId ?? null,
+      category_id: null,
+      duration_seconds: durationSeconds,
+    };
+  }
+
+  return {
+    requirement_type: 'category',
+    task_id: null,
+    category_id: requirement.categoryId ?? null,
+    duration_seconds: durationSeconds,
+  };
+}
+
 function badgeToDb(badge: Badge): Omit<DbBadge, 'id'> & { id?: string } {
+  const req = requirementToDb(badge.requirement);
   return {
     id: badge.id || undefined,
     title: badge.title,
@@ -48,6 +111,7 @@ function badgeToDb(badge: Badge): Omit<DbBadge, 'id'> & { id?: string } {
     image_url: badge.imageUrl ?? null,
     is_secret: badge.isSecret,
     sort_order: badge.sortOrder,
+    ...req,
   };
 }
 

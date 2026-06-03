@@ -123,6 +123,17 @@ export interface Reward {
   purchased?: boolean;
 }
 
+export type BadgeRequirementType = 'task' | 'category';
+
+/** Auto-unlock rule configured on a profile badge. */
+export interface BadgeRequirement {
+  type: BadgeRequirementType;
+  taskId?: string;
+  categoryId?: string;
+  /** When set, accumulate this many seconds; when omitted, one-time completion. */
+  durationSeconds?: number;
+}
+
 /** Profile badge with image (admin catalog). */
 export interface Badge {
   id: string;
@@ -131,6 +142,7 @@ export interface Badge {
   imageUrl?: string;
   isSecret: boolean;
   sortOrder: number;
+  requirement?: BadgeRequirement | null;
 }
 
 export type PunishmentTrigger =
@@ -232,6 +244,8 @@ export interface Video {
   requiredTier?: ContentTier | null;
   /** When true, normal play starts with loop on and a one-time notice. */
   autoLoop?: boolean;
+  /** XP earned once when the user watches the full video (0 = none). */
+  xpReward?: number;
 }
 
 export interface AppState {

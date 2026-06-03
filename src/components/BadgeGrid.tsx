@@ -1,16 +1,24 @@
 import type { ReactNode } from 'react';
 import { useBadgeTooltipPosition } from '../hooks/useBadgeTooltipPosition';
-import type { Badge } from '../types';
+import type { Badge, Category, Task } from '../types';
+import { formatBadgeUnlockHint } from '../lib/badgeRequirementFormat';
 
 type BadgeGridProps = {
   badges: Badge[];
   unlockedBadgeIds: string[];
+  tasks?: Task[];
+  categories?: Category[];
 };
 
-function badgeHoverText(badge: Badge, unlocked: boolean): string {
+function badgeHoverText(
+  badge: Badge,
+  unlocked: boolean,
+  tasks: Task[],
+  categories: Category[],
+): string {
   if (unlocked) return badge.title;
   if (badge.isSecret) return '???';
-  return badge.description;
+  return formatBadgeUnlockHint(badge, tasks, categories);
 }
 
 type LockedBadgeIconWrapProps = {
@@ -51,7 +59,12 @@ function LockedBadgeIconWrap({ hover, children }: LockedBadgeIconWrapProps) {
   );
 }
 
-export function BadgeGrid({ badges, unlockedBadgeIds }: BadgeGridProps) {
+export function BadgeGrid({
+  badges,
+  unlockedBadgeIds,
+  tasks = [],
+  categories = [],
+}: BadgeGridProps) {
   if (badges.length === 0) {
     return <p className="muted">No badges in the catalog yet.</p>;
   }
@@ -67,7 +80,7 @@ export function BadgeGrid({ badges, unlockedBadgeIds }: BadgeGridProps) {
         {sorted.map((badge) => {
           const unlocked = unlockedBadgeIds.includes(badge.id);
           const showTitle = unlocked || !badge.isSecret;
-          const hover = badgeHoverText(badge, unlocked);
+          const hover = badgeHoverText(badge, unlocked, tasks, categories);
 
           const icon = badge.imageUrl ? (
             <img

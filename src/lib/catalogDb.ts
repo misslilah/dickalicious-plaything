@@ -115,6 +115,7 @@ type DbVideo = {
   created_at: string;
   required_tier: ContentTier | null;
   auto_loop?: boolean | null;
+  xp_reward?: number | null;
 };
 
 function mapCategory(row: DbCategory): Category {
@@ -247,6 +248,7 @@ function mapVideo(row: DbVideo): Video {
     createdAt: row.created_at,
     requiredTier: row.required_tier ?? undefined,
     autoLoop: row.auto_loop ?? false,
+    xpReward: row.xp_reward ?? 0,
   };
 }
 
@@ -676,6 +678,7 @@ export async function insertVideoRow(
     size_bytes: video.sizeBytes,
     required_tier: video.requiredTier ?? 'sweetie',
     auto_loop: video.autoLoop ?? false,
+    xp_reward: video.xpReward ?? 0,
   };
 
   const { data, error } = await supabase
@@ -703,6 +706,7 @@ export async function updateVideoRow(
       description: video.description ?? null,
       required_tier: video.requiredTier ?? 'sweetie',
       auto_loop: video.autoLoop ?? false,
+      xp_reward: video.xpReward ?? 0,
     })
     .eq('id', video.id)
     .select()

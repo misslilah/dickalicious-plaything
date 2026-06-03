@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Task } from '../types';
 import { useTaskCompletion } from '../hooks/useTaskCompletion';
 import { useAppStore } from '../hooks/useAppStore';
@@ -28,10 +28,12 @@ export function TaskCompletionGate({
   onUncomplete,
   children,
 }: TaskCompletionGateProps) {
-  const { applyTaskMalus } = useAppStore();
+  const { applyTaskMalus, recordBadgeTaskTime } = useAppStore();
   const [showPhraseModal, setShowPhraseModal] = useState(false);
   const [phraseFailNotice, setPhraseFailNotice] = useState<string | null>(null);
   const focusMode = variant === 'focus';
+  const timerCreditedRef = useRef(false);
+  const durationCreditedRef = useRef(false);
 
   const {
     hasTimer,
@@ -61,6 +63,51 @@ export function TaskCompletionGate({
   const needsManualStart = hasTimer || hasDuration;
   const repeatCount = getPhraseRepeatCount(task);
   const malusOnFail = task.malusPointsOnFail ?? 0;
+
+  useEffect(() => {
+    timerCreditedRef.current = false;
+    durationCreditedRef.current = false;
+  }, [task.id]);
+
+  useEffect(() => {
+    if (
+      !completed &&
+      timerDone &&
+      hasTimer &&
+      task.timerSeconds &&
+      !timerCreditedRef.current
+    ) {
+      timerCreditedRef.current = true;
+      recordBadgeTaskTime(task.id, task.timerSeconds);
+    }
+  }, [
+    completed,
+    timerDone,
+    hasTimer,
+    task.id,
+    task.timerSeconds,
+    recordBadgeTaskTime,
+  ]);
+
+  useEffect(() => {
+    if (
+      !completed &&
+      durationDone &&
+      hasDuration &&
+      task.durationSeconds &&
+      !durationCreditedRef.current
+    ) {
+      durationCreditedRef.current = true;
+      recordBadgeTaskTime(task.id, task.durationSeconds);
+    }
+  }, [
+    completed,
+    durationDone,
+    hasDuration,
+    task.id,
+    task.durationSeconds,
+    recordBadgeTaskTime,
+  ]);
 
   useEffect(() => {
     if (!completed && !disabled && onStart && !needsManualStart) {

@@ -11,6 +11,7 @@ import {
 } from '../lib/adminNavPersistence';
 import type {
   Badge,
+  BadgeRequirement,
   Category,
   CategoryGroup,
   ContentTier,
@@ -30,6 +31,7 @@ import {
   readBadgeImageFile,
   resolveBadgeImageUrl,
 } from '../lib/badgeImage';
+import { formatBadgeRequirementSummary } from '../lib/badgeRequirementFormat';
 import {
   fetchAdminProfiles,
   updateProfilePatreon,
@@ -1496,12 +1498,59 @@ function emptyBadgeDraft(): Badge {
     description: '',
     isSecret: false,
     sortOrder: 0,
+    requirement: null,
   };
+}
+
+type BadgeRequirementKind = 'none' | 'task' | 'category';
+type BadgeDurationMode = 'once' | 'accumulate';
+
+function badgeRequirementKind(badge: Badge): BadgeRequirementKind {
+  return badge.requirement?.type ?? 'none';
+}
+
+function badgeDurationMode(badge: Badge): BadgeDurationMode {
+  const seconds = badge.requirement?.durationSeconds;
+  return seconds != null && seconds > 0 ? 'accumulate' : 'once';
+}
+
+const BADGE_SECONDS_PER_DAY = 86400;
+
+function badgeDurationDays(badge: Badge): number {
+  const seconds = badge.requirement?.durationSeconds ?? 0;
+  return seconds > 0 ? seconds / BADGE_SECONDS_PER_DAY : 0;
+}
+
+function buildBadgeRequirement(
+  kind: BadgeRequirementKind,
+  taskId: string,
+  categoryId: string,
+  durationMode: BadgeDurationMode,
+  durationDays: number,
+): BadgeRequirement | null {
+  if (kind === 'none') return null;
+
+  const requirement: BadgeRequirement =
+    kind === 'task'
+      ? { type: 'task', taskId }
+      : { type: 'category', categoryId };
+
+  if (durationMode === 'accumulate') {
+    const total = Math.round(durationDays * BADGE_SECONDS_PER_DAY);
+    if (total > 0) requirement.durationSeconds = total;
+  }
+
+  return requirement;
 }
 
 function BadgeAdmin() {
   const { state, addBadge, updateBadge, deleteBadge } = useAppStore();
   const [draft, setDraft] = useState<Badge>(emptyBadgeDraft());
+  const [requirementKind, setRequirementKind] = useState<BadgeRequirementKind>('none');
+  const [requirementTaskId, setRequirementTaskId] = useState('');
+  const [requirementCategoryId, setRequirementCategoryId] = useState('');
+  const [durationMode, setDurationMode] = useState<BadgeDurationMode>('once');
+  const [durationDays, setDurationDays] = useState(0);
   const [search, setSearch] = useState('');
   const [message, setMessage] = useState('');
   const [imageMessage, setImageMessage] = useState('');
@@ -1521,20 +1570,45 @@ function BadgeAdmin() {
 
   const loadDraft = (badge: Badge) => {
     setDraft(badge);
+    setRequirementKind(badgeRequirementKind(badge));
+    setRequirementTaskId(badge.requirement?.taskId ?? '');
+    setRequirementCategoryId(badge.requirement?.categoryId ?? '');
+    setDurationMode(badgeDurationMode(badge));
+    setDurationDays(badgeDurationDays(badge));
     setErrors({});
     setImageMessage('');
+  };
+
+  const resetRequirementFields = () => {
+    setRequirementKind('none');
+    setRequirementTaskId('');
+    setRequirementCategoryId('');
+    setDurationMode('once');
+    setDurationDays(0);
   };
 
   const validate = () => {
     const next: Record<string, string> = {};
     if (!draft.title.trim()) next.title = 'Title is required.';
     if (!draft.description.trim()) next.description = 'Description is required.';
+    if (requirementKind === 'task' && !requirementTaskId) {
+      next.requirementTask = 'Select a task.';
+    }
+    if (requirementKind === 'category' && !requirementCategoryId) {
+      next.requirementCategory = 'Select a category.';
+    }
+    if (durationMode === 'accumulate') {
+      if (durationDays <= 0) {
+        next.requirementDuration = 'Enter a duration greater than zero.';
+      }
+    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
 
   const clearForm = () => {
     setDraft(emptyBadgeDraft());
+    resetRequirementFields();
     setErrors({});
     setImageMessage('');
   };
@@ -1557,6 +1631,13 @@ function BadgeAdmin() {
       title: draft.title.trim(),
       description: draft.description.trim(),
       imageUrl: resolved.url,
+      requirement: buildBadgeRequirement(
+        requirementKind,
+        requirementTaskId,
+        requirementCategoryId,
+        durationMode,
+        durationDays,
+      ),
     };
 
     const result = draft.id ? await updateBadge(badge) : await addBadge(badge);
@@ -1598,20 +1679,30 @@ function BadgeAdmin() {
         />
       ) : (
         <ul className="admin-library">
-          {filtered.map((b) => (
+          {filtered.map((b) => {
+            const requirementSummary = formatBadgeRequirementSummary(
+              b,
+              state.tasks,
+              state.categories,
+            );
+            return (
             <AdminLibraryItem
               key={b.id}
               selected={draft.id === b.id}
               title={b.title}
               meta={
-                b.isSecret
-                  ? 'Secret · Profile badge'
-                  : 'Profile badge'
+                [
+                  b.isSecret ? 'Secret · Profile badge' : 'Profile badge',
+                  requirementSummary,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')
               }
               onEdit={() => loadDraft(b)}
               onDelete={() => remove(b.id)}
             />
-          ))}
+            );
+          })}
         </ul>
       )}
     </AdminListCard>
@@ -1670,6 +1761,142 @@ function BadgeAdmin() {
             <span>Hide unlock hint (hover shows ???)</span>
           </label>
         </Field>
+      </FormBlock>
+
+      <FormBlock title="Unlock requirement">
+        <p className="muted" style={{ marginTop: 0 }}>
+          Optional. When set, the badge unlocks automatically when the player meets
+          the rule. Leave on None for manual or description-only badges.
+        </p>
+        <Field label="Requirement type">
+          <ChoiceRow
+            label="Badge requirement type"
+            name="badge-requirement-kind"
+            options={[
+              { value: 'none' as const, label: 'None', hint: 'Manual / hint only' },
+              { value: 'task' as const, label: 'Single task' },
+              { value: 'category' as const, label: 'Task category' },
+            ]}
+            value={requirementKind}
+            onChange={(kind) => {
+              setRequirementKind(kind);
+              if (errors.requirementTask || errors.requirementCategory) {
+                setErrors((p) => ({
+                  ...p,
+                  requirementTask: '',
+                  requirementCategory: '',
+                }));
+              }
+            }}
+          />
+        </Field>
+        {requirementKind === 'task' && (
+          <Field
+            label="Task"
+            htmlFor="badge-req-task"
+            required
+            error={errors.requirementTask}
+          >
+            <select
+              id="badge-req-task"
+              value={requirementTaskId}
+              onChange={(e) => {
+                setRequirementTaskId(e.target.value);
+                if (errors.requirementTask) {
+                  setErrors((p) => ({ ...p, requirementTask: '' }));
+                }
+              }}
+            >
+              <option value="">Select a task…</option>
+              {[...state.tasks]
+                .sort((a, b) => a.title.localeCompare(b.title))
+                .map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.title}
+                  </option>
+                ))}
+            </select>
+          </Field>
+        )}
+        {requirementKind === 'category' && (
+          <Field
+            label="Category"
+            htmlFor="badge-req-category"
+            required
+            error={errors.requirementCategory}
+          >
+            <select
+              id="badge-req-category"
+              value={requirementCategoryId}
+              onChange={(e) => {
+                setRequirementCategoryId(e.target.value);
+                if (errors.requirementCategory) {
+                  setErrors((p) => ({ ...p, requirementCategory: '' }));
+                }
+              }}
+            >
+              <option value="">Select a category…</option>
+              {[...state.categories]
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+            </select>
+          </Field>
+        )}
+        {requirementKind !== 'none' && (
+          <>
+            <Field label="Completion mode">
+              <ChoiceRow
+                label="Badge duration mode"
+                name="badge-duration-mode"
+                options={[
+                  {
+                    value: 'once' as const,
+                    label: 'Complete once',
+                    hint:
+                      requirementKind === 'category'
+                        ? 'Every task in the category once'
+                        : 'Finish the task once',
+                  },
+                  {
+                    value: 'accumulate' as const,
+                    label: 'Accumulate time',
+                    hint: 'Active timer/duration time counts toward the total (in days)',
+                  },
+                ]}
+                value={durationMode}
+                onChange={setDurationMode}
+              />
+            </Field>
+            {durationMode === 'accumulate' && (
+              <Field
+                label="Days"
+                htmlFor="badge-req-days"
+                hint="Total active time needed to unlock. Decimals allowed (e.g. 0.5 for half a day)."
+                error={errors.requirementDuration}
+              >
+                <input
+                  id="badge-req-days"
+                  type="number"
+                  min={0}
+                  step="any"
+                  aria-label="Days"
+                  value={durationDays || ''}
+                  placeholder="Days"
+                  onChange={(e) => {
+                    setDurationDays(parseFloat(e.target.value) || 0);
+                    if (errors.requirementDuration) {
+                      setErrors((p) => ({ ...p, requirementDuration: '' }));
+                    }
+                  }}
+                />
+              </Field>
+            )}
+          </>
+        )}
       </FormBlock>
 
       <FormBlock title="Image">
@@ -2442,6 +2669,7 @@ function VideoUploadAdmin() {
   const [categoryId, setCategoryId] = useState('');
   const [requiredTier, setRequiredTier] = useState<ContentTier>('sweetie');
   const [autoLoop, setAutoLoop] = useState(false);
+  const [xpReward, setXpReward] = useState(0);
   const [file, setFile] = useState<File | null>(null);
   const [search, setSearch] = useState('');
   const [message, setMessage] = useState('');
@@ -2469,6 +2697,7 @@ function VideoUploadAdmin() {
     setCategoryId('');
     setRequiredTier('sweetie');
     setAutoLoop(false);
+    setXpReward(0);
     setFile(null);
     setError('');
     setMessage('');
@@ -2481,6 +2710,7 @@ function VideoUploadAdmin() {
     setCategoryId(video.categoryId);
     setRequiredTier(video.requiredTier ?? 'sweetie');
     setAutoLoop(video.autoLoop ?? false);
+    setXpReward(video.xpReward ?? 0);
     setFile(null);
     setError('');
     setMessage('');
@@ -2512,6 +2742,7 @@ function VideoUploadAdmin() {
         description: description.trim() || undefined,
         requiredTier,
         autoLoop,
+        xpReward: Math.max(0, Math.floor(xpReward)),
       });
       setUploading(false);
       if (!result.ok) {
@@ -2543,6 +2774,7 @@ function VideoUploadAdmin() {
       createdAt: new Date().toISOString(),
       requiredTier,
       autoLoop,
+      xpReward: Math.max(0, Math.floor(xpReward)),
     };
 
     setUploading(true);
@@ -2602,7 +2834,9 @@ function VideoUploadAdmin() {
                 <>
                   {categoryName(v.categoryId)} ·{' '}
                   <TierBadge tier={v.requiredTier ?? 'sweetie'} accessStyle />
-                  {v.autoLoop ? ' · Auto loop' : ''} · {formatMb(v.sizeBytes)}
+                  {v.autoLoop ? ' · Auto loop' : ''}
+                  {(v.xpReward ?? 0) > 0 ? ` · ${v.xpReward} XP` : ''} ·{' '}
+                  {formatMb(v.sizeBytes)}
                 </>
               }
               onEdit={() => loadForEdit(v)}
@@ -2665,6 +2899,20 @@ function VideoUploadAdmin() {
           <p className="muted tier-access-hint" aria-live="polite">
             {tierAccessHint(requiredTier)}
           </p>
+        </Field>
+        <Field
+          label="XP reward"
+          htmlFor="vid-xp"
+          hint="XP granted once when a user watches the full video (0 = none). Normal play requires watching through; Forced Mode awards on completion."
+        >
+          <input
+            id="vid-xp"
+            type="number"
+            min={0}
+            step={1}
+            value={xpReward}
+            onChange={(e) => setXpReward(Number(e.target.value))}
+          />
         </Field>
         <Field label="Playback">
           <label className="checkbox-row">

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useBlocker } from 'react-router-dom';
 import { useOptionalAudioPlayer } from '../contexts/AudioPlayerProvider';
+import { useOptionalXpToast } from '../contexts/XpToastContext';
 import { useVideoPlaybackActive } from '../contexts/VideoPlaybackContext';
+import { useAppStore } from '../hooks/useAppStore';
 import { useVideoPlaybackUrl } from '../hooks/useVideoBlobUrl';
 import { ForcedModeWarningModal } from './ForcedModeWarningModal';
 import type { Video } from '../types';
@@ -41,6 +43,8 @@ export function ForcedModeVideoPlayer({
   onSessionEnd,
 }: ForcedModeVideoPlayerProps) {
   const audio = useOptionalAudioPlayer();
+  const { awardVideoCompletion } = useAppStore();
+  const xpToast = useOptionalXpToast();
   const { url, loading, error } = useVideoPlaybackUrl(video.storagePath);
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -188,9 +192,12 @@ export function ForcedModeVideoPlayer({
   }, []);
 
   const handleVideoEnded = useCallback(() => {
+    void awardVideoCompletion(video.id).then((xp) => {
+      if (xp > 0) xpToast?.showXpGain(xp);
+    });
     allowNavigationRef.current = true;
     endSession();
-  }, [endSession]);
+  }, [awardVideoCompletion, video.id, xpToast, endSession]);
 
   const handleVideoError = useCallback(() => {
     setPlayError('Video failed to load or play. Forced Mode ended.');

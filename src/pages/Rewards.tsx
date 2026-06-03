@@ -4,7 +4,7 @@ import { StatCard } from '../components/StatCard';
 import { useAppStore } from '../hooks/useAppStore';
 import type { Reward } from '../types';
 
-type RewardsTab = 'badges' | 'auto' | 'shop';
+type RewardsTab = 'badges' | 'shop';
 
 function isShopReward(reward: Reward): boolean {
   return !reward.autoTrigger && (reward.cost ?? 0) > 0;
@@ -15,7 +15,6 @@ export function Rewards() {
   const { progress, unlockedRewardIds, unlockedBadgeIds } = state;
   const [tab, setTab] = useState<RewardsTab>('badges');
 
-  const autoRewards = state.rewards.filter((r) => r.autoTrigger);
   const shop = state.rewards.filter(isShopReward);
 
   return (
@@ -45,15 +44,6 @@ export function Rewards() {
         <button
           type="button"
           role="tab"
-          aria-selected={tab === 'auto'}
-          className={tab === 'auto' ? 'tab tab--active' : 'tab'}
-          onClick={() => setTab('auto')}
-        >
-          Auto rewards
-        </button>
-        <button
-          type="button"
-          role="tab"
           aria-selected={tab === 'shop'}
           className={tab === 'shop' ? 'tab tab--active' : 'tab'}
           onClick={() => setTab('shop')}
@@ -66,41 +56,12 @@ export function Rewards() {
         <section className="card">
           <h3 className="section-title">Badges</h3>
           <p className="muted">Collect badges by meeting milestones.</p>
-          <BadgeGrid badges={state.badges} unlockedBadgeIds={unlockedBadgeIds} />
-        </section>
-      )}
-
-      {tab === 'auto' && (
-        <section className="card">
-          <h3 className="section-title">Auto rewards</h3>
-          <p className="muted">Earned automatically when you hit streak or level targets.</p>
-          {autoRewards.length === 0 ? (
-            <p className="muted">No auto rewards configured yet.</p>
-          ) : (
-            <ul className="reward-list">
-              {autoRewards.map((reward) => {
-                const earned = unlockedRewardIds.includes(reward.id);
-                return (
-                  <li
-                    key={reward.id}
-                    className={`reward-item${earned ? ' reward-item--earned' : ''}`}
-                  >
-                    <span className="reward-icon">{earned ? '🏅' : '🔒'}</span>
-                    <div>
-                      <strong>{reward.title}</strong>
-                      <p className="muted">{reward.description}</p>
-                      {reward.autoTrigger?.type === 'streak' && (
-                        <small>Streak: {reward.autoTrigger.days} days</small>
-                      )}
-                      {reward.autoTrigger?.type === 'level' && (
-                        <small>Level {reward.autoTrigger.level}</small>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+          <BadgeGrid
+            badges={state.badges}
+            unlockedBadgeIds={unlockedBadgeIds}
+            tasks={state.tasks}
+            categories={state.categories}
+          />
         </section>
       )}
 

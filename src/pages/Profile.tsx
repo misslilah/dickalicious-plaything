@@ -144,7 +144,12 @@ export function Profile() {
 
       <section className="card">
         <h3 className="section-title">Badges</h3>
-        <BadgeGrid badges={state.badges} unlockedBadgeIds={unlockedBadgeIds} />
+        <BadgeGrid
+          badges={state.badges}
+          unlockedBadgeIds={unlockedBadgeIds}
+          tasks={state.tasks}
+          categories={state.categories}
+        />
       </section>
     </div>
   );

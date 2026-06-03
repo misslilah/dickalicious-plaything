@@ -23,6 +23,10 @@ import type {
 } from '../types';
 import { deleteBadgeDb, fetchUserBadgeIds, upsertBadge } from '../lib/badgeDb';
 import {
+  processBadgeUnlockOnTaskComplete,
+  processBadgeUnlockOnTimeAccumulated,
+} from '../lib/badgeUnlockService';
+import {
   deleteCategoryDb,
   deletePunishmentCategoryDb,
   deletePunishmentTemplateDb,
@@ -63,6 +67,7 @@ import {
 import { canJoinCategory } from '../lib/categoryProgression';
 import {
   acceptPunishment,
+  addVideoXp,
   applyTaskMalus,
   closeDay,
   completeTask,
@@ -76,6 +81,7 @@ import {
 import { createInitialState } from '../lib/seed';
 import { getSupabase, isSupabaseConfigured, SUPABASE_SETUP_HINT } from '../lib/supabase';
 import { fetchUserProgress, saveUserProgress } from '../lib/userProgressDb';
+import { tryRecordVideoCompletion } from '../lib/videoCompletionDb';
 import {
   deleteVideoFile,
   formatVideoSizeError,
@@ -120,6 +126,7 @@ interface AppStoreValue {
     role: UserRole,
   ) => Promise<MutateResult>;
   completeTask: (taskId: string) => void;
+  recordBadgeTaskTime: (taskId: string, seconds: number) => void;
   uncompleteTask: (taskId: string) => void;
   markTaskStarted: (taskId: string) => void;
   closeDay: () => void;
@@ -127,6 +134,8 @@ interface AppStoreValue {
   acceptPunishment: (templateId: string) => void;
   applyTaskMalus: (taskId: string) => void;
   dismissPunishment: (id: string) => void;
+  /** Awards XP once per user per video after a full watch. Returns XP granted, or 0. */
+  awardVideoCompletion: (videoId: string) => Promise<number>;
   joinCategory: (categoryId: string) => Promise<MutateResult>;
   leaveCategory: (categoryId: string) => Promise<MutateResult>;
   updateSettings: (partial: Partial<AppState['settings']>) => void;
@@ -203,6 +212,37 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       void persistUserProgress(next);
     },
     [persistUserProgress],
+  );
+
+  const applyUnlockedBadges = useCallback((badgeIds: string[]) => {
+    if (badgeIds.length === 0) return;
+    setState((s) => {
+      const merged = new Set([...s.unlockedBadgeIds, ...badgeIds]);
+      return { ...s, unlockedBadgeIds: [...merged] };
+    });
+  }, []);
+
+  const runBadgeUnlockOnComplete = useCallback(
+    async (userId: string, next: AppState, taskId: string) => {
+      const result = await processBadgeUnlockOnTaskComplete(userId, next, taskId);
+      if (result.ok) applyUnlockedBadges(result.newlyUnlocked);
+      else setLastSaveError(result.error);
+    },
+    [applyUnlockedBadges],
+  );
+
+  const runBadgeUnlockOnTime = useCallback(
+    async (userId: string, snapshot: AppState, taskId: string, seconds: number) => {
+      const result = await processBadgeUnlockOnTimeAccumulated(
+        userId,
+        snapshot,
+        taskId,
+        seconds,
+      );
+      if (result.ok) applyUnlockedBadges(result.newlyUnlocked);
+      else setLastSaveError(result.error);
+    },
+    [applyUnlockedBadges],
   );
 
   const loadAllData = useCallback(async (userId: string) => {
@@ -418,6 +458,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
             }));
           });
         }
+        if (userId) {
+          void runBadgeUnlockOnComplete(userId, next, taskId);
+        }
+      },
+      recordBadgeTaskTime: (taskId, seconds) => {
+        const userId = userIdRef.current;
+        if (!userId || seconds <= 0) return;
+        void runBadgeUnlockOnTime(userId, state, taskId, seconds);
       },
       uncompleteTask: (taskId) => applyUserState(uncompleteTask(state, taskId)),
       markTaskStarted: (taskId) =>
@@ -428,6 +476,21 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         applyUserState(acceptPunishment(state, templateId)),
       applyTaskMalus: (taskId) => applyUserState(applyTaskMalus(state, taskId)),
       dismissPunishment: (id) => applyUserState(dismissPunishment(state, id)),
+      awardVideoCompletion: async (videoId) => {
+        const userId = userIdRef.current;
+        if (!userId) return 0;
+        const video = state.videos.find((v) => v.id === videoId);
+        const xpReward = video?.xpReward ?? 0;
+        if (!video || xpReward <= 0) return 0;
+        const result = await tryRecordVideoCompletion(userId, videoId, xpReward);
+        if (!result.ok) {
+          setLastSaveError(result.error);
+          return 0;
+        }
+        if (!result.awarded) return 0;
+        applyUserState(addVideoXp(state, result.xp));
+        return result.xp;
+      },
       joinCategory: async (categoryId) => {
         const userId = userIdRef.current;
         if (!userId) return { ok: false, error: 'Not signed in.' };
@@ -862,6 +925,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       refreshProfile,
       loadAllData,
       applyUserState,
+      runBadgeUnlockOnComplete,
+      runBadgeUnlockOnTime,
       requireAdmin,
     ],
   );

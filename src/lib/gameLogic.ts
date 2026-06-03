@@ -275,6 +275,21 @@ export function completeTask(
   return next;
 }
 
+/** Add XP after a catalog video is fully watched (once per user per video). */
+export function addVideoXp(state: AppState, amount: number): AppState {
+  if (amount <= 0) return state;
+  const date = todayKey(getResetHour(state));
+  let progress = {
+    ...state.progress,
+    totalXp: state.progress.totalXp + amount,
+    lastActiveDate: date,
+  };
+  progress.currentLevel = getLevelFromXp(progress.totalXp);
+  let next: AppState = { ...state, progress };
+  next = checkAutoRewards(next);
+  return next;
+}
+
 export function uncompleteTask(state: AppState, taskId: string): AppState {
   const date = todayKey(getResetHour(state));
   const plan = state.dailyPlans[date];

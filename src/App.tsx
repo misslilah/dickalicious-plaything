@@ -13,6 +13,7 @@ import { AppStoreProvider } from './hooks/useAppStore';
 import { AudioPlayerProvider } from './contexts/AudioPlayerProvider';
 import { VideoPlaybackProvider } from './contexts/VideoPlaybackContext';
 import { VideoPlayerProvider } from './contexts/VideoPlayerProvider';
+import { XpToastProvider } from './contexts/XpToastContext';
 import { Admin } from './pages/Admin';
 import { CategoryDetail } from './pages/CategoryDetail';
 import { TaskFocusPage } from './pages/TaskFocusPage';
@@ -33,11 +34,13 @@ import { InteractiveVideoPlay } from './pages/InteractiveVideoPlay';
 function AppChrome() {
   return (
     <VideoPlaybackProvider>
-      <VideoPlayerProvider>
-        <BackgroundGifOverlay />
-        <SoapBubbleField />
-        <Outlet />
-      </VideoPlayerProvider>
+      <XpToastProvider>
+        <VideoPlayerProvider>
+          <BackgroundGifOverlay />
+          <SoapBubbleField />
+          <Outlet />
+        </VideoPlayerProvider>
+      </XpToastProvider>
     </VideoPlaybackProvider>
   );
 }

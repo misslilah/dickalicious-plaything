@@ -9,8 +9,11 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { useAppStore } from '../hooks/useAppStore';
 import { useOptionalAudioPlayer } from './AudioPlayerProvider';
+import { useOptionalXpToast } from './XpToastContext';
 import { useVideoPlaybackActive } from './VideoPlaybackContext';
+import { createVideoWatchTracker } from '../lib/videoWatchTracker';
 import { getVideoPlaybackUrl } from '../lib/videoStorage';
 import {
   readVideoLoopPreference,
@@ -45,6 +48,8 @@ const VideoPlayerContext = createContext<VideoPlayerContextValue | null>(null);
 
 export function VideoPlayerProvider({ children }: { children: ReactNode }) {
   const audio = useOptionalAudioPlayer();
+  const { awardVideoCompletion } = useAppStore();
+  const xpToast = useOptionalXpToast();
   const [session, setSession] = useState<NormalVideoSession | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -57,6 +62,7 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
   const fallbackHostRef = useRef<HTMLDivElement | null>(null);
   const loopNoticeShownRef = useRef(false);
   const shouldAutoplayRef = useRef(false);
+  const watchTrackerRef = useRef(createVideoWatchTracker());
 
   useVideoPlaybackActive(session != null);
 
@@ -163,6 +169,35 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
     if (!el) return;
     el.loop = loop;
   }, [loop]);
+
+  useEffect(() => {
+    watchTrackerRef.current.reset();
+  }, [session?.videoId]);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    const videoId = session?.videoId;
+    if (!el || !videoId || !url) return;
+
+    const tracker = watchTrackerRef.current;
+    const onTimeUpdate = () => tracker.onTimeUpdate(el.currentTime);
+    const onSeeking = () => tracker.onSeeking(el.currentTime);
+    const onEnded = () => {
+      if (!tracker.qualifiesForReward(el.duration, 'normal')) return;
+      void awardVideoCompletion(videoId).then((xp) => {
+        if (xp > 0) xpToast?.showXpGain(xp);
+      });
+    };
+
+    el.addEventListener('timeupdate', onTimeUpdate);
+    el.addEventListener('seeking', onSeeking);
+    el.addEventListener('ended', onEnded);
+    return () => {
+      el.removeEventListener('timeupdate', onTimeUpdate);
+      el.removeEventListener('seeking', onSeeking);
+      el.removeEventListener('ended', onEnded);
+    };
+  }, [session?.videoId, url, awardVideoCompletion, xpToast]);
 
   const onVideoPlay = useCallback(() => {
     audio?.pausePlayback();
