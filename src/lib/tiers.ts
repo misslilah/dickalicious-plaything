@@ -50,6 +50,19 @@ export function requiresTierMessage(tier: ContentTier): string {
   return `Requires ${tierLabel(tier)}`;
 }
 
+/** Blocking message when a video category tier is not met (null = accessible). */
+export function getVideoCategoryLockMessage(
+  requiredTier: ContentTier | null | undefined,
+  userTier: PatreonMemberTier | null | undefined,
+  userStatus: PatreonStatus | null | undefined,
+  isAdmin?: boolean,
+): string | null {
+  const required = requiredTier ?? 'public';
+  if (canAccessTier(required, userTier, userStatus, isAdmin)) return null;
+  if (required === 'public') return null;
+  return `${requiresTierMessage(required)} Patreon tier or higher. Connect Patreon in Settings to upgrade.`;
+}
+
 export const TIER_CHIP_OPTIONS: { value: ContentTier; label: string }[] = [
   { value: 'public', label: 'Public' },
   { value: 'sweetie', label: 'Sweetie' },

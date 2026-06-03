@@ -1297,6 +1297,20 @@ select {
   pointer-events: auto;
 }
 
+button.category-card.category-card--locked,
+button.video-category-card--locked {
+  pointer-events: auto;
+  cursor: pointer;
+  width: 100%;
+  padding: 0;
+  text-align: inherit;
+  font: inherit;
+}
+
+button.video-category-card--locked:hover {
+  border-color: rgba(192, 132, 252, 0.25);
+}
+
 .category-card__lock-overlay {
   position: absolute;
   inset: 0;
@@ -2190,6 +2204,10 @@ a.task-list-row {
 
 .video-tier-lock {
   color: var(--warn);
+}
+
+.video-categories__intro {
+  margin: -0.35rem 0 0.85rem;
 }
 
 .tier-badge {

@@ -4,7 +4,12 @@ import { Link } from 'react-router-dom';
 import { AudioPlaylistSection } from '../components/AudioPlaylistSection';
 import { VideoCategoryCard } from '../components/VideoCategoryCard';
 import { useAppStore } from '../hooks/useAppStore';
-import { canAccessTier, effectiveVideoTier, requiresTierMessage } from '../lib/tiers';
+import {
+  canAccessTier,
+  effectiveVideoTier,
+  getVideoCategoryLockMessage,
+  requiresTierMessage,
+} from '../lib/tiers';
 import type { Video, VideoCategory } from '../types';
 import { InteractiveVideos } from './InteractiveVideos';
 
@@ -18,6 +23,7 @@ export function Videos() {
     saveMediaPageTab(next);
   };
   const [search, setSearch] = useState('');
+  const [lockMessage, setLockMessage] = useState<string | null>(null);
   const isAdmin = session?.role === 'admin';
 
   const sortedCategories = useMemo(
@@ -46,16 +52,33 @@ export function Videos() {
       isAdmin,
     );
 
-  const videoCountByCategory = (categoryId: string) => {
-    const cat = state.videoCategories.find((c) => c.id === categoryId);
-    const inCategory = state.videos.filter((v) => v.categoryId === categoryId);
-    return inCategory.filter((v) => canWatchVideo(v, cat)).length;
-  };
+  const canAccessCategory = (category: VideoCategory) =>
+    canAccessTier(
+      category.requiredTier ?? 'public',
+      session?.patreonTier,
+      session?.patreonStatus,
+      isAdmin,
+    );
 
-  const lockedCountByCategory = (categoryId: string) => {
+  const totalVideoCountByCategory = (categoryId: string) =>
+    state.videos.filter((v) => v.categoryId === categoryId).length;
+
+  const lockedVideoCountByCategory = (categoryId: string) => {
     const cat = state.videoCategories.find((c) => c.id === categoryId);
     const inCategory = state.videos.filter((v) => v.categoryId === categoryId);
     return inCategory.filter((v) => !canWatchVideo(v, cat)).length;
+  };
+
+  const showCategoryLockMessage = (category: VideoCategory) => {
+    const message = getVideoCategoryLockMessage(
+      category.requiredTier,
+      session?.patreonTier,
+      session?.patreonStatus,
+      isAdmin,
+    );
+    if (message) {
+      setLockMessage(message);
+    }
   };
 
   return (
@@ -134,33 +157,65 @@ export function Videos() {
           ) : (
             <section>
               <h2 className="section-title">Categories</h2>
+              <p className="muted video-categories__intro">
+                All categories are listed here. Some require a Patreon tier to open.
+              </p>
               <div className="category-grid">
                 {filtered.map((cat) => {
-                  const locked = lockedCountByCategory(cat.id);
-                  const categoryLocked =
-                    !isAdmin &&
-                    !canAccessTier(
-                      cat.requiredTier ?? 'public',
-                      session?.patreonTier,
-                      session?.patreonStatus,
-                    );
+                  const categoryLocked = !canAccessCategory(cat);
+                  const lockedVideos = categoryLocked
+                    ? 0
+                    : lockedVideoCountByCategory(cat.id);
                   return (
                     <VideoCategoryCard
                       key={cat.id}
                       category={cat}
-                      videoCount={videoCountByCategory(cat.id)}
-                      lockedHint={
+                      videoCount={totalVideoCountByCategory(cat.id)}
+                      locked={categoryLocked}
+                      lockReason={
                         categoryLocked
                           ? requiresTierMessage(cat.requiredTier ?? 'sweetie')
-                          : locked > 0
-                            ? `${locked} locked`
-                            : undefined
+                          : undefined
+                      }
+                      lockedVideoCount={lockedVideos}
+                      onLockedClick={
+                        categoryLocked
+                          ? () => showCategoryLockMessage(cat)
+                          : undefined
                       }
                     />
                   );
                 })}
               </div>
             </section>
+          )}
+
+          {lockMessage && (
+            <div
+              className="audio-playlist__lock-overlay"
+              role="alertdialog"
+              aria-labelledby="video-category-lock-title"
+              aria-describedby="video-category-lock-desc"
+            >
+              <div
+                className="audio-playlist__lock-backdrop"
+                aria-hidden="true"
+                onClick={() => setLockMessage(null)}
+              />
+              <div className="audio-playlist__lock-panel card">
+                <h3 id="video-category-lock-title" className="section-title">
+                  Category locked
+                </h3>
+                <p id="video-category-lock-desc">{lockMessage}</p>
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  onClick={() => setLockMessage(null)}
+                >
+                  OK
+                </button>
+              </div>
+            </div>
           )}
         </>
       )}

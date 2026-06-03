@@ -15,12 +15,19 @@ import type { ContentTier, Video, VideoCategory } from '../types';
 
 type PlaybackMode = 'normal' | 'forced';
 
-function TierUpgradeBanner({ requiredTier }: { requiredTier: ContentTier }) {
+function TierUpgradeBanner({
+  requiredTier,
+  subject = 'video',
+}: {
+  requiredTier: ContentTier;
+  subject?: 'video' | 'category';
+}) {
   const patreonUrl = getPatreonPageUrl();
   return (
     <div className="tier-upgrade-banner" role="alert">
       <p>
-        <strong>{requiresTierMessage(requiredTier)}</strong> to watch this video.
+        <strong>{requiresTierMessage(requiredTier)}</strong>{' '}
+        {subject === 'category' ? 'to open this category.' : 'to watch this video.'}
       </p>
       <p className="muted">
         Link your Patreon account in Settings or upgrade your membership.
@@ -242,13 +249,14 @@ export function VideoCategoryDetail() {
         </p>
       </header>
 
-      {categoryLocked && (
+      {categoryLocked ? (
         <section className="card">
-          <TierUpgradeBanner requiredTier={category.requiredTier ?? 'sweetie'} />
+          <TierUpgradeBanner
+            requiredTier={category.requiredTier ?? 'sweetie'}
+            subject="category"
+          />
         </section>
-      )}
-
-      {videos.length === 0 ? (
+      ) : videos.length === 0 ? (
         <section className="card">
           <p className="muted">No videos in this category yet.</p>
         </section>
