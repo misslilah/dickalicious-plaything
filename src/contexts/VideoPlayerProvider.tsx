@@ -49,7 +49,6 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [loop, setLoop] = useState(false);
   const [showLoopNotice, setShowLoopNotice] = useState(false);
   const [inlineHost, setInlineHost] = useState<HTMLElement | null>(null);
@@ -72,7 +71,6 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
     setUrl(null);
     setLoading(false);
     setError(null);
-    setIsPlaying(false);
     setShowLoopNotice(false);
     loopNoticeShownRef.current = false;
   }, []);
@@ -103,7 +101,6 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
       setUrl(null);
       setError(null);
       setLoading(true);
-      setIsPlaying(false);
     },
     [session, url],
   );
@@ -157,7 +154,7 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
     }
     if (shouldAutoplayRef.current) {
       shouldAutoplayRef.current = false;
-      void el.play().catch(() => setIsPlaying(false));
+      void el.play().catch(() => {});
     }
   }, [url, session?.videoId, inlineHost]);
 
@@ -169,12 +166,7 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
 
   const onVideoPlay = useCallback(() => {
     audio?.pausePlayback();
-    setIsPlaying(true);
   }, [audio]);
-
-  const onVideoPause = useCallback(() => {
-    setIsPlaying(false);
-  }, []);
 
   const toggleLoop = useCallback(() => {
     setLoop((prev) => {
@@ -212,7 +204,6 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
       preload="metadata"
       aria-label={session.title}
       onPlay={onVideoPlay}
-      onPause={onVideoPause}
     />
   ) : null;
 
