@@ -1,13 +1,22 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { useOptionalAudioPlayer } from '../contexts/AudioPlayerProvider';
+import { useOptionalVideoPlayer } from '../contexts/VideoPlayerProvider';
 import { InteractiveVideoPlayer } from '../components/InteractiveVideoPlayer';
 import { fetchInteractiveVideo, type InteractiveVideo } from '../lib/interactiveVideos';
 
 export function InteractiveVideoPlay() {
+  const audio = useOptionalAudioPlayer();
+  const globalVideo = useOptionalVideoPlayer();
   const { videoId } = useParams<{ videoId: string }>();
   const [video, setVideo] = useState<InteractiveVideo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    audio?.pausePlayback();
+    globalVideo?.clearNormalPlayback();
+  }, [videoId, audio, globalVideo]);
 
   useEffect(() => {
     let cancelled = false;

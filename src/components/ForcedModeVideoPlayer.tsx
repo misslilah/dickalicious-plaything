@@ -50,6 +50,7 @@ export function ForcedModeVideoPlayer({
   const videoRef = useRef<HTMLVideoElement>(null);
   const allowNavigationRef = useRef(false);
   const sessionActiveRef = useRef(false);
+  const playbackInitRef = useRef(false);
 
   const [warningOpen, setWarningOpen] = useState(true);
   const [sessionActive, setSessionActive] = useState(false);
@@ -97,33 +98,58 @@ export function ForcedModeVideoPlayer({
     }
   }, []);
 
-  const startForcedPlayback = useCallback(async () => {
+  const startForcedPlayback = useCallback(() => {
     setWarningOpen(false);
     setPlayError(null);
     sessionActiveRef.current = true;
     setSessionActive(true);
+  }, []);
 
-    const container = containerRef.current;
-    const el = videoRef.current;
-    if (!el || !url) {
-      endSession();
+  useEffect(() => {
+    if (!sessionActive || !url) {
+      playbackInitRef.current = false;
       return;
     }
 
-    if (container) {
-      await tryEnterFullscreen(container);
-      await tryPointerLock(container);
-    }
+    const el = videoRef.current;
+    if (!el || playbackInitRef.current) return;
+    playbackInitRef.current = true;
 
-    el.currentTime = 0;
-    try {
-      await el.play();
-      audio?.pausePlayback();
-    } catch {
-      setPlayError('Playback could not start. Forced Mode ended.');
-      endSession();
-    }
-  }, [url, tryEnterFullscreen, tryPointerLock, endSession, audio]);
+    let cancelled = false;
+
+    const run = async () => {
+      const container = containerRef.current;
+      if (container) {
+        await tryEnterFullscreen(container);
+        await tryPointerLock(container);
+      }
+      if (cancelled) return;
+
+      el.currentTime = 0;
+      try {
+        await el.play();
+        audio?.pausePlayback();
+      } catch {
+        if (!cancelled) {
+          setPlayError('Playback could not start. Forced Mode ended.');
+          endSession();
+        }
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    sessionActive,
+    url,
+    tryEnterFullscreen,
+    tryPointerLock,
+    endSession,
+    audio,
+  ]);
 
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
@@ -135,6 +161,7 @@ export function ForcedModeVideoPlayer({
   useEffect(() => {
     allowNavigationRef.current = false;
     sessionActiveRef.current = false;
+    playbackInitRef.current = false;
     setWarningOpen(true);
     setSessionActive(false);
     setPlayError(null);

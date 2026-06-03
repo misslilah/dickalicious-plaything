@@ -5193,6 +5193,24 @@ body.interactive-video-player--pseudo-fs {
   pointer-events: none;
 }
 
+.interactive-video-player__tap-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.55);
+  font-size: clamp(1.1rem, 3.5vw, 1.5rem);
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .interactive-video-player__command {
   margin: 0;
   padding: 1rem 1.5rem;

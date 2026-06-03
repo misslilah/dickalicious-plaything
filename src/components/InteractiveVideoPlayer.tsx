@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
+import { useOptionalAudioPlayer } from '../contexts/AudioPlayerProvider';
+import { useOptionalVideoPlayer } from '../contexts/VideoPlayerProvider';
 import { useAppStore } from '../hooks/useAppStore';
 import { useVideoPlaybackActive } from '../contexts/VideoPlaybackContext';
 import { FaceLandmarker, FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
@@ -28,6 +30,36 @@ const HAND_MODEL =
 
 const TONGUE_HOLD_FRAMES = 6;
 const CUE_TOLERANCE_MS = 120;
+/** Consecutive missed detections before persistent "keep" pause (reduces prod flapping). */
+const PERSISTENT_MISS_FRAMES = 12;
+/** Refresh signed URLs before the 1h Supabase TTL expires. */
+const SIGNED_URL_REFRESH_MS = 55 * 60 * 1000;
+
+function isPlayNotAllowedError(error: unknown): boolean {
+  return (
+    error instanceof DOMException &&
+    (error.name === 'NotAllowedError' || error.code === 20)
+  );
+}
+
+/** iOS Safari and most mobile browsers block play() outside a user gesture. */
+function isMobilePlaybackPolicy(): boolean {
+  if (typeof window === 'undefined') return false;
+  const ua = navigator.userAgent;
+  const isIOS =
+    /iPad|iPhone|iPod/.test(ua) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (isIOS) return true;
+  return window.matchMedia?.('(pointer: coarse)')?.matches === true;
+}
+
+function resolveVideoSrc(url: string): string {
+  try {
+    return new URL(url, window.location.href).href;
+  } catch {
+    return url;
+  }
+}
 
 type PlayerPhase =
   | 'loading'
@@ -107,6 +139,8 @@ function detectCommandSuccess(
 
 export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
   const { session } = useAppStore();
+  const audio = useOptionalAudioPlayer();
+  const globalVideo = useOptionalVideoPlayer();
   const isAdmin = session?.role === 'admin';
 
   const playbackRef = useRef<HTMLVideoElement>(null);
@@ -142,11 +176,35 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
   const playbackPrimedRef = useRef(false);
   const mediaReadyRef = useRef(false);
   const playbackSourceKeyRef = useRef('');
+  const allowAutoResumeRef = useRef(false);
+  const persistentMissFramesRef = useRef(0);
+  const pendingRestoreRef = useRef<{ currentTime: number; play: boolean } | null>(
+    null,
+  );
 
   const [mediaReady, setMediaReady] = useState(false);
   const [urlLoading, setUrlLoading] = useState(true);
+  const [buffering, setBuffering] = useState(false);
+  const [urlRetryCount, setUrlRetryCount] = useState(0);
+  const [needsTapToPlay, setNeedsTapToPlay] = useState(false);
 
   pseudoFullscreenRef.current = pseudoFullscreen;
+
+  const markMediaReady = useCallback(() => {
+    if (!mediaReadyRef.current) {
+      mediaReadyRef.current = true;
+      setMediaReady(true);
+      if (phaseRef.current === 'loading') {
+        phaseRef.current = 'ready';
+        setPhase('ready');
+      }
+    }
+  }, []);
+
+  const retryPlaybackUrl = useCallback(() => {
+    setLoadError('');
+    setUrlRetryCount((n) => n + 1);
+  }, []);
 
   useVideoPlaybackActive(
     started &&
@@ -338,12 +396,21 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
 
   const sortedCues = video.cues;
 
+  const suspendGlobalMedia = useCallback(() => {
+    audio?.pausePlayback();
+    globalVideo?.clearNormalPlayback();
+  }, [audio, globalVideo]);
+
   const resetSession = useCallback(() => {
+    allowAutoResumeRef.current = false;
+    setNeedsTapToPlay(false);
+    persistentMissFramesRef.current = 0;
     firedCueIdsRef.current = new Set();
     monitoringCueRef.current = null;
     tongueFramesRef.current = 0;
     setActiveCue(null);
     setOverlayMessage('');
+    setBuffering(false);
     const el = playbackRef.current;
     if (el) {
       el.currentTime = 0;
@@ -388,32 +455,23 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
     return () => {
       cancelled = true;
     };
-  }, [video.id, video.storagePath]);
+  }, [video.id, video.storagePath, urlRetryCount]);
 
   useEffect(() => {
     const el = playbackRef.current;
     if (!el || !playbackUrl) return;
     const sourceKey = playbackSourceKeyRef.current;
-    try {
-      const resolved = new URL(playbackUrl, window.location.href).href;
-      if (el.src !== resolved) {
-        playbackPrimedRef.current = false;
-        mediaReadyRef.current = false;
-        setMediaReady(false);
-        el.src = playbackUrl;
-        el.load();
-      }
-    } catch {
-      if (el.getAttribute('src') !== playbackUrl) {
-        playbackPrimedRef.current = false;
-        mediaReadyRef.current = false;
-        setMediaReady(false);
-        el.src = playbackUrl;
-        el.load();
-      }
+    const resolved = resolveVideoSrc(playbackUrl);
+    if (el.src !== resolved) {
+      playbackPrimedRef.current = false;
+      mediaReadyRef.current = false;
+      setMediaReady(false);
+      el.src = playbackUrl;
+      el.load();
     }
     return () => {
       if (playbackSourceKeyRef.current !== sourceKey) return;
+      allowAutoResumeRef.current = false;
       el.pause();
       el.removeAttribute('src');
       el.load();
@@ -421,24 +479,65 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
   }, [playbackUrl]);
 
   useEffect(() => {
+    if (!started || !video.storagePath) return;
+
+    const refreshUrl = () => {
+      const sourceKey = playbackSourceKeyRef.current;
+      void getInteractiveVideoPlaybackUrl(video.storagePath).then((result) => {
+        if (!result.ok || playbackSourceKeyRef.current !== sourceKey) return;
+        const el = playbackRef.current;
+        if (!el) return;
+        const nextSrc = resolveVideoSrc(result.url);
+        if (el.src === nextSrc) return;
+
+        const restore = {
+          currentTime: el.currentTime,
+          play:
+            allowAutoResumeRef.current &&
+            phaseRef.current === 'playing' &&
+            !el.paused,
+        };
+        pendingRestoreRef.current = restore;
+        allowAutoResumeRef.current = false;
+        setPlaybackUrl(result.url);
+      });
+    };
+
+    const intervalId = window.setInterval(refreshUrl, SIGNED_URL_REFRESH_MS);
+    return () => window.clearInterval(intervalId);
+  }, [started, video.storagePath]);
+
+  useEffect(() => {
     let cancelled = false;
+    const createLandmarkers = async (
+      vision: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>,
+      delegate: 'GPU' | 'CPU',
+    ) =>
+      Promise.all([
+        FaceLandmarker.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: FACE_MODEL, delegate },
+          runningMode: 'VIDEO',
+          numFaces: 1,
+          outputFaceBlendshapes: false,
+        }),
+        HandLandmarker.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: HAND_MODEL, delegate },
+          runningMode: 'VIDEO',
+          numHands: 2,
+        }),
+      ]);
+
     void (async () => {
       try {
         const vision = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM);
         if (cancelled) return;
-        const [faceLandmarker, handLandmarker] = await Promise.all([
-          FaceLandmarker.createFromOptions(vision, {
-            baseOptions: { modelAssetPath: FACE_MODEL, delegate: 'GPU' },
-            runningMode: 'VIDEO',
-            numFaces: 1,
-            outputFaceBlendshapes: false,
-          }),
-          HandLandmarker.createFromOptions(vision, {
-            baseOptions: { modelAssetPath: HAND_MODEL, delegate: 'GPU' },
-            runningMode: 'VIDEO',
-            numHands: 2,
-          }),
-        ]);
+        let faceLandmarker: FaceLandmarker;
+        let handLandmarker: HandLandmarker;
+        try {
+          [faceLandmarker, handLandmarker] = await createLandmarkers(vision, 'GPU');
+        } catch {
+          [faceLandmarker, handLandmarker] = await createLandmarkers(vision, 'CPU');
+        }
         if (cancelled) {
           faceLandmarker.close();
           handLandmarker.close();
@@ -498,6 +597,9 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
   const triggerCue = useCallback((cue: InteractiveVideoCue) => {
     const el = playbackRef.current;
     if (!el || firedCueIdsRef.current.has(cue.id)) return;
+    setNeedsTapToPlay(false);
+    allowAutoResumeRef.current = false;
+    persistentMissFramesRef.current = 0;
     el.pause();
     firedCueIdsRef.current.add(cue.id);
     setFiredCount(firedCueIdsRef.current.size);
@@ -537,21 +639,54 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
     phaseRef.current = 'playing';
     setPhase('playing');
     monitoringCueRef.current = cue.persistent ? cue : null;
+    persistentMissFramesRef.current = 0;
+    allowAutoResumeRef.current = true;
+    setBuffering(false);
 
-    void el.play().catch(() => {
+    if (isMobilePlaybackPolicy()) {
+      setNeedsTapToPlay(true);
+      allowAutoResumeRef.current = false;
+      return;
+    }
+
+    void el.play().catch((err) => {
+      if (isPlayNotAllowedError(err)) {
+        setNeedsTapToPlay(true);
+        allowAutoResumeRef.current = false;
+        return;
+      }
       setLoadError('Could not resume playback.');
+    });
+  }, []);
+
+  const handleTapToContinue = useCallback((e: MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const el = playbackRef.current;
+    if (!el) return;
+    allowAutoResumeRef.current = true;
+    setBuffering(false);
+    void el.play().then(() => {
+      setNeedsTapToPlay(false);
+    }).catch((err) => {
+      if (!isPlayNotAllowedError(err)) {
+        setLoadError('Could not resume playback.');
+      }
     });
   }, []);
 
   const startPlayback = useCallback(() => {
     const el = playbackRef.current;
     if (!el || !playbackUrl) return;
+    suspendGlobalMedia();
     firedCueIdsRef.current = new Set();
     monitoringCueRef.current = null;
     tongueFramesRef.current = 0;
+    persistentMissFramesRef.current = 0;
     setActiveCue(null);
     setOverlayMessage('');
     setFiredCount(0);
+    setBuffering(false);
     el.currentTime = 0;
     el.pause();
     setStarted(true);
@@ -564,10 +699,24 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
 
     phaseRef.current = 'playing';
     setPhase('playing');
-    void el.play().catch(() => {
+    allowAutoResumeRef.current = true;
+    void el.play().catch((err) => {
+      if (isPlayNotAllowedError(err)) {
+        setNeedsTapToPlay(true);
+        allowAutoResumeRef.current = false;
+        return;
+      }
       setLoadError('Could not start playback.');
     });
-  }, [playbackUrl, sortedCues, triggerCue]);
+  }, [playbackUrl, sortedCues, triggerCue, suspendGlobalMedia]);
+
+  const handleStartClick = useCallback(() => {
+    const el = playbackRef.current;
+    if (el) {
+      void el.play().catch(() => undefined);
+    }
+    startPlayback();
+  }, [startPlayback]);
 
   useEffect(() => {
     if (!started || !cameraReady || !modelsReady) return;
@@ -590,6 +739,16 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
         !playback.paused
       ) {
         playback.pause();
+      }
+
+      if (
+        currentPhase === 'playing' &&
+        playback.paused &&
+        allowAutoResumeRef.current &&
+        !document.hidden &&
+        !isMobilePlaybackPolicy()
+      ) {
+        void playback.play().catch(() => undefined);
       }
 
       if (currentPhase === 'playing' && !playback.paused) {
@@ -618,7 +777,12 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
             if (phaseRef.current === 'keep_action') {
               phaseRef.current = 'playing';
               setPhase('playing');
-              void playback.play();
+              if (isMobilePlaybackPolicy()) {
+                setNeedsTapToPlay(true);
+                allowAutoResumeRef.current = false;
+              } else {
+                void playback.play().catch(() => undefined);
+              }
             }
           } else if (phaseRef.current === 'playing' && !playback.paused) {
             const ok = detectCommandSuccess(
@@ -627,12 +791,19 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
               handLandmarks,
               tongueFramesRef.current,
             );
-            if (!ok) {
-              playback.pause();
-              setActiveCue(monitor);
-              setOverlayMessage(CUE_KEEP_LABELS[monitor.commandType]);
-              phaseRef.current = 'keep_action';
-              setPhase('keep_action');
+            if (ok) {
+              persistentMissFramesRef.current = 0;
+            } else {
+              persistentMissFramesRef.current += 1;
+              if (persistentMissFramesRef.current >= PERSISTENT_MISS_FRAMES) {
+                allowAutoResumeRef.current = false;
+                persistentMissFramesRef.current = 0;
+                playback.pause();
+                setActiveCue(monitor);
+                setOverlayMessage(CUE_KEEP_LABELS[monitor.commandType]);
+                phaseRef.current = 'keep_action';
+                setPhase('keep_action');
+              }
             }
           }
         }
@@ -677,7 +848,7 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
 
   useEffect(() => {
     const el = playbackRef.current;
-    if (!el) return;
+    if (!el || !playbackUrl) return;
 
     const onLoadedMetadata = () => {
       if (playbackPrimedRef.current || started) return;
@@ -687,12 +858,48 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
     };
 
     const onCanPlay = () => {
-      if (mediaReadyRef.current) return;
-      mediaReadyRef.current = true;
-      setMediaReady(true);
-      if (phaseRef.current === 'loading') {
-        phaseRef.current = 'ready';
-        setPhase('ready');
+      const restore = pendingRestoreRef.current;
+      if (restore) {
+        pendingRestoreRef.current = null;
+        el.currentTime = restore.currentTime;
+        if (restore.play && !isMobilePlaybackPolicy()) {
+          allowAutoResumeRef.current = true;
+          void el.play().catch(() => undefined);
+        } else if (restore.play) {
+          setNeedsTapToPlay(true);
+        }
+      }
+      markMediaReady();
+    };
+
+    const onLoadedData = () => {
+      markMediaReady();
+    };
+
+    const onError = () => {
+      const code = el.error?.code;
+      const detail =
+        code === MediaError.MEDIA_ERR_NETWORK
+          ? 'Network error while loading the video.'
+          : code === MediaError.MEDIA_ERR_DECODE
+            ? 'Could not decode this video.'
+            : 'Video failed to load.';
+      setLoadError(detail);
+    };
+
+    const onWaiting = () => {
+      if (allowAutoResumeRef.current && phaseRef.current === 'playing') {
+        setBuffering(true);
+      }
+    };
+
+    const onPlaying = () => {
+      setBuffering(false);
+    };
+
+    const onStalled = () => {
+      if (allowAutoResumeRef.current && phaseRef.current === 'playing') {
+        setBuffering(true);
       }
     };
 
@@ -705,13 +912,47 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
 
     el.addEventListener('loadedmetadata', onLoadedMetadata);
     el.addEventListener('canplay', onCanPlay);
+    el.addEventListener('loadeddata', onLoadedData);
+    el.addEventListener('error', onError);
+    el.addEventListener('waiting', onWaiting);
+    el.addEventListener('playing', onPlaying);
+    el.addEventListener('stalled', onStalled);
     el.addEventListener('ended', onEnded);
+
+    if (el.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+      markMediaReady();
+    }
+
     return () => {
       el.removeEventListener('loadedmetadata', onLoadedMetadata);
       el.removeEventListener('canplay', onCanPlay);
+      el.removeEventListener('loadeddata', onLoadedData);
+      el.removeEventListener('error', onError);
+      el.removeEventListener('waiting', onWaiting);
+      el.removeEventListener('playing', onPlaying);
+      el.removeEventListener('stalled', onStalled);
       el.removeEventListener('ended', onEnded);
     };
-  }, [started]);
+  }, [playbackUrl, started, markMediaReady]);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden) return;
+      const el = playbackRef.current;
+      if (
+        !el ||
+        !allowAutoResumeRef.current ||
+        phaseRef.current !== 'playing' ||
+        !el.paused ||
+        isMobilePlaybackPolicy()
+      ) {
+        return;
+      }
+      void el.play().catch(() => undefined);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
 
   if (loadError || cameraError) {
     return (
@@ -719,6 +960,11 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
         <p className="login-error" role="alert">
           {loadError || cameraError}
         </p>
+        {loadError && (
+          <button type="button" className="btn btn--primary" onClick={retryPlaybackUrl}>
+            Retry loading video
+          </button>
+        )}
         <Link to="/videos/interactive" className="btn btn--ghost">
           Back to interactive videos
         </Link>
@@ -756,18 +1002,34 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
           ref={playbackRef}
           className="interactive-video-player__playback"
           playsInline
-          preload="metadata"
+          preload="auto"
           controlsList="nodownload"
           disablePictureInPicture
         />
         {(urlLoading || !mediaReady) && !loadError && (
           <p className="muted interactive-video-player__loading">Loading video…</p>
         )}
+        {started && buffering && phase === 'playing' && (
+          <p className="muted interactive-video-player__loading" aria-live="polite">
+            Buffering…
+          </p>
+        )}
 
         {showOverlay && overlayMessage && (
           <div className="interactive-video-player__overlay" role="status" aria-live="polite">
             <p className="interactive-video-player__command">{overlayMessage}</p>
           </div>
+        )}
+
+        {needsTapToPlay && started && (
+          <button
+            type="button"
+            className="interactive-video-player__tap-overlay btn btn--primary"
+            onClick={handleTapToContinue}
+            aria-label="Tap to continue playback"
+          >
+            Tap to continue
+          </button>
         )}
 
         {mediaReady && (
@@ -798,7 +1060,7 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
             type="button"
             className="btn btn--primary"
             disabled={!mediaReady || !cameraReady || !modelsReady}
-            onClick={() => void startPlayback()}
+            onClick={handleStartClick}
           >
             {urlLoading || !mediaReady
               ? 'Loading…'

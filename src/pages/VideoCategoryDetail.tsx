@@ -184,6 +184,7 @@ export function VideoCategoryDetail() {
   }, [categoryId, globalVideo?.session?.videoId, globalVideo?.session?.categoryId]);
 
   useEffect(() => {
+    if (forcedSessionActive) return;
     const gv = globalVideo?.session;
     if (
       gv &&
@@ -193,7 +194,13 @@ export function VideoCategoryDetail() {
       return;
     }
     setPlaybackMode(null);
-  }, [playingId, categoryId, globalVideo?.session?.videoId, globalVideo?.session?.categoryId]);
+  }, [
+    playingId,
+    categoryId,
+    forcedSessionActive,
+    globalVideo?.session?.videoId,
+    globalVideo?.session?.categoryId,
+  ]);
 
   const endForcedSession = useCallback(() => {
     setForcedSessionActive(false);
