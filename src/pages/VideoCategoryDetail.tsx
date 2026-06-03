@@ -47,10 +47,14 @@ function TierUpgradeBanner({
 function VideoPlayModePicker({
   onNormal,
   onForced,
+  xpReward = 0,
 }: {
   onNormal: () => void;
   onForced: () => void;
+  xpReward?: number;
 }) {
+  const showXpHint = (xpReward ?? 0) > 0;
+
   return (
     <div className="video-play-mode">
       <p className="muted">How do you want to watch?</p>
@@ -62,6 +66,11 @@ function VideoPlayModePicker({
           Forced Mode
         </button>
       </div>
+      {showXpHint && (
+        <p className="muted video-play-mode__hint">
+          Watch the full video to earn XP.
+        </p>
+      )}
       <p className="muted video-play-mode__hint">
         Forced Mode locks the view until the video ends. Loop is not available.
       </p>
@@ -285,6 +294,7 @@ export function VideoCategoryDetail() {
                 <VideoPlayModePicker
                   onNormal={startNormal}
                   onForced={startForced}
+                  xpReward={playing.xpReward ?? 0}
                 />
               ) : playbackMode === 'forced' ? (
                 <>
