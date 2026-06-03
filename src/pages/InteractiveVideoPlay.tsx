@@ -10,12 +10,19 @@ export function InteractiveVideoPlay() {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    setVideo(null);
+
     if (!videoId) {
       setLoading(false);
       setError('Video not found.');
       return;
     }
+
     void fetchInteractiveVideo(videoId).then((result) => {
+      if (cancelled) return;
       setLoading(false);
       if (!result.ok) {
         setError(result.error);
@@ -23,6 +30,10 @@ export function InteractiveVideoPlay() {
       }
       setVideo(result.video);
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, [videoId]);
 
   if (loading) {
@@ -48,7 +59,7 @@ export function InteractiveVideoPlay() {
 
   return (
     <div className="page">
-      <InteractiveVideoPlayer video={video} />
+      <InteractiveVideoPlayer key={video.id} video={video} />
     </div>
   );
 }

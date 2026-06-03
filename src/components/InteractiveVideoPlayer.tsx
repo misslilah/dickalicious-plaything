@@ -140,10 +140,20 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
   const hadNativeFullscreenRef = useRef(false);
   const syncGenerationRef = useRef(0);
   const playbackPrimedRef = useRef(false);
+  const mediaReadyRef = useRef(false);
+  const playbackSourceKeyRef = useRef('');
+
+  const [mediaReady, setMediaReady] = useState(false);
+  const [urlLoading, setUrlLoading] = useState(true);
 
   pseudoFullscreenRef.current = pseudoFullscreen;
 
-  useVideoPlaybackActive(started && phase !== 'done');
+  useVideoPlaybackActive(
+    started &&
+      (phase === 'playing' ||
+        phase === 'awaiting_action' ||
+        phase === 'keep_action'),
+  );
 
   const applyPseudoFullscreen = useCallback((active: boolean) => {
     pseudoFullscreenRef.current = active;
@@ -346,10 +356,29 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    resetSession();
     playbackPrimedRef.current = false;
+    mediaReadyRef.current = false;
+    setMediaReady(false);
+    setLoadError('');
+    phaseRef.current = 'loading';
+    setPhase('loading');
+  }, [video.id, resetSession]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const sourceKey = `${video.id}:${video.storagePath}`;
+    playbackSourceKeyRef.current = sourceKey;
+    playbackPrimedRef.current = false;
+    mediaReadyRef.current = false;
+    setMediaReady(false);
+    setPlaybackUrl(null);
+    setUrlLoading(true);
+    setLoadError('');
+
     void getInteractiveVideoPlaybackUrl(video.storagePath).then((result) => {
-      if (cancelled) return;
+      if (cancelled || playbackSourceKeyRef.current !== sourceKey) return;
+      setUrlLoading(false);
       if (!result.ok) {
         setLoadError(result.error);
         return;
@@ -359,7 +388,37 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
     return () => {
       cancelled = true;
     };
-  }, [video.storagePath]);
+  }, [video.id, video.storagePath]);
+
+  useEffect(() => {
+    const el = playbackRef.current;
+    if (!el || !playbackUrl) return;
+    const sourceKey = playbackSourceKeyRef.current;
+    try {
+      const resolved = new URL(playbackUrl, window.location.href).href;
+      if (el.src !== resolved) {
+        playbackPrimedRef.current = false;
+        mediaReadyRef.current = false;
+        setMediaReady(false);
+        el.src = playbackUrl;
+        el.load();
+      }
+    } catch {
+      if (el.getAttribute('src') !== playbackUrl) {
+        playbackPrimedRef.current = false;
+        mediaReadyRef.current = false;
+        setMediaReady(false);
+        el.src = playbackUrl;
+        el.load();
+      }
+    }
+    return () => {
+      if (playbackSourceKeyRef.current !== sourceKey) return;
+      el.pause();
+      el.removeAttribute('src');
+      el.load();
+    };
+  }, [playbackUrl]);
 
   useEffect(() => {
     let cancelled = false;
@@ -460,12 +519,6 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
     },
     [sortedCues, triggerCue],
   );
-
-  const handleTimeUpdate = useCallback(() => {
-    const el = playbackRef.current;
-    if (!el || phaseRef.current === 'done') return;
-    checkForCueAtTime(el.currentTime * 1000);
-  }, [checkForCueAtTime]);
 
   const releasePersistentMonitor = useCallback(() => {
     monitoringCueRef.current = null;
@@ -625,19 +678,40 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
   useEffect(() => {
     const el = playbackRef.current;
     if (!el) return;
+
+    const onLoadedMetadata = () => {
+      if (playbackPrimedRef.current || started) return;
+      playbackPrimedRef.current = true;
+      if (el.currentTime !== 0) el.currentTime = 0;
+      el.pause();
+    };
+
+    const onCanPlay = () => {
+      if (mediaReadyRef.current) return;
+      mediaReadyRef.current = true;
+      setMediaReady(true);
+      if (phaseRef.current === 'loading') {
+        phaseRef.current = 'ready';
+        setPhase('ready');
+      }
+    };
+
     const onEnded = () => {
       monitoringCueRef.current = null;
       setActiveCue(null);
       phaseRef.current = 'done';
       setPhase('done');
     };
-    el.addEventListener('timeupdate', handleTimeUpdate);
+
+    el.addEventListener('loadedmetadata', onLoadedMetadata);
+    el.addEventListener('canplay', onCanPlay);
     el.addEventListener('ended', onEnded);
     return () => {
-      el.removeEventListener('timeupdate', handleTimeUpdate);
+      el.removeEventListener('loadedmetadata', onLoadedMetadata);
+      el.removeEventListener('canplay', onCanPlay);
       el.removeEventListener('ended', onEnded);
     };
-  }, [handleTimeUpdate]);
+  }, [started]);
 
   if (loadError || cameraError) {
     return (
@@ -678,24 +752,15 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
         ref={stageRef}
         className={`interactive-video-player__stage${pseudoFullscreen ? ' interactive-video-player__stage--pseudo-fullscreen' : ''}`}
       >
-        {playbackUrl ? (
-          <video
-            ref={playbackRef}
-            className="interactive-video-player__playback"
-            src={playbackUrl}
-            playsInline
-            preload="metadata"
-            controlsList="nodownload"
-            disablePictureInPicture
-            onLoadedMetadata={(e) => {
-              if (playbackPrimedRef.current) return;
-              playbackPrimedRef.current = true;
-              const v = e.currentTarget;
-              v.currentTime = 0;
-              v.pause();
-            }}
-          />
-        ) : (
+        <video
+          ref={playbackRef}
+          className="interactive-video-player__playback"
+          playsInline
+          preload="metadata"
+          controlsList="nodownload"
+          disablePictureInPicture
+        />
+        {(urlLoading || !mediaReady) && !loadError && (
           <p className="muted interactive-video-player__loading">Loading video…</p>
         )}
 
@@ -705,7 +770,7 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
           </div>
         )}
 
-        {playbackUrl && (
+        {mediaReady && (
           <button
             type="button"
             className="interactive-video-player__fullscreen-btn btn btn--ghost btn--sm"
@@ -732,10 +797,10 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
           <button
             type="button"
             className="btn btn--primary"
-            disabled={!playbackUrl || !cameraReady || !modelsReady}
+            disabled={!mediaReady || !cameraReady || !modelsReady}
             onClick={() => void startPlayback()}
           >
-            {!playbackUrl
+            {urlLoading || !mediaReady
               ? 'Loading…'
               : !cameraReady || !modelsReady
                 ? 'Preparing camera…'
