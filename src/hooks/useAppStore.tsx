@@ -352,9 +352,13 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         setState(createInitialState());
         return;
       }
+      const priorUserId = userIdRef.current;
       userIdRef.current = authSession.userId;
       setSession(sessionToApp(authSession));
-      void loadAllData(authSession.userId);
+      // Token refresh / duplicate auth events must not remount the app (e.g. fullscreen).
+      if (priorUserId !== authSession.userId) {
+        void loadAllData(authSession.userId);
+      }
     });
 
     return () => unsub?.();

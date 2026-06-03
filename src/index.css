@@ -5088,6 +5088,23 @@ a.task-list-row {
   font-size: 0.85rem;
 }
 
+.interactive-video-player {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: min(960px, 100%);
+  margin-inline: auto;
+}
+
+.interactive-video-player__header,
+.interactive-video-player__warning,
+.interactive-video-player__controls,
+.interactive-video-player__cue-list {
+  width: 100%;
+  align-self: stretch;
+}
+
 .interactive-video-player__header {
   display: flex;
   align-items: center;
@@ -5112,7 +5129,31 @@ a.task-list-row {
   border-radius: var(--radius);
   overflow: hidden;
   aspect-ratio: 16 / 9;
+  width: 100%;
   max-width: 960px;
+  margin-inline: auto;
+}
+
+.interactive-video-player__stage:fullscreen,
+.interactive-video-player__stage:-webkit-full-screen,
+.interactive-video-player__stage--pseudo-fullscreen {
+  width: 100vw;
+  max-width: none;
+  height: 100vh;
+  height: 100dvh;
+  margin: 0;
+  border-radius: 0;
+  aspect-ratio: unset;
+}
+
+.interactive-video-player__stage--pseudo-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+}
+
+body.interactive-video-player--pseudo-fs {
+  overflow: hidden;
 }
 
 .interactive-video-player__playback {
@@ -5120,6 +5161,26 @@ a.task-list-row {
   height: 100%;
   object-fit: contain;
   display: block;
+}
+
+.interactive-video-player__loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+}
+
+.interactive-video-player__fullscreen-btn {
+  position: absolute;
+  z-index: 2;
+  right: max(0.5rem, env(safe-area-inset-right, 0px));
+  bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
+  margin: 0;
+  background: rgba(15, 15, 20, 0.75);
+  border-color: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(6px);
 }
 
 .interactive-video-player__overlay {
@@ -5152,6 +5213,10 @@ a.task-list-row {
 
 .interactive-video-player__controls {
   margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
 }
 
 .interactive-video-player__cue-list {

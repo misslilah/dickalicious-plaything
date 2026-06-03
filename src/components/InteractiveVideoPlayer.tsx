@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
+import { useAppStore } from '../hooks/useAppStore';
 import { useVideoPlaybackActive } from '../contexts/VideoPlaybackContext';
 import { FaceLandmarker, FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 import {
@@ -71,6 +72,19 @@ function isStartCue(cue: InteractiveVideoCue): boolean {
   return cue.timeMs <= CUE_TOLERANCE_MS;
 }
 
+function getDocumentFullscreenElement(): Element | null {
+  const doc = document as Document & {
+    webkitFullscreenElement?: Element | null;
+    mozFullScreenElement?: Element | null;
+  };
+  return (
+    doc.fullscreenElement ??
+    doc.webkitFullscreenElement ??
+    doc.mozFullScreenElement ??
+    null
+  );
+}
+
 function detectCommandSuccess(
   command: InteractiveCueCommand,
   faceLandmarks: NormalizedLandmark[] | undefined,
@@ -92,7 +106,11 @@ function detectCommandSuccess(
 }
 
 export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
+  const { session } = useAppStore();
+  const isAdmin = session?.role === 'admin';
+
   const playbackRef = useRef<HTMLVideoElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const cameraRef = useRef<HTMLVideoElement>(null);
   const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
   const handLandmarkerRef = useRef<HandLandmarker | null>(null);
@@ -114,8 +132,199 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
   const [overlayMessage, setOverlayMessage] = useState('');
   const [started, setStarted] = useState(false);
   const [firedCount, setFiredCount] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [pseudoFullscreen, setPseudoFullscreen] = useState(false);
+  const wantsFullscreenRef = useRef(false);
+  const pseudoFullscreenRef = useRef(false);
+  const enteringNativeRef = useRef(false);
+  const hadNativeFullscreenRef = useRef(false);
+  const syncGenerationRef = useRef(0);
+  const playbackPrimedRef = useRef(false);
+
+  pseudoFullscreenRef.current = pseudoFullscreen;
 
   useVideoPlaybackActive(started && phase !== 'done');
+
+  const applyPseudoFullscreen = useCallback((active: boolean) => {
+    pseudoFullscreenRef.current = active;
+    setPseudoFullscreen(active);
+  }, []);
+
+  const clearFullscreenState = useCallback(() => {
+    wantsFullscreenRef.current = false;
+    enteringNativeRef.current = false;
+    hadNativeFullscreenRef.current = false;
+    applyPseudoFullscreen(false);
+    setIsFullscreen(false);
+  }, [applyPseudoFullscreen]);
+
+  const enablePseudoFullscreen = useCallback(async () => {
+    if (getDocumentFullscreenElement()) {
+      try {
+        await document.exitFullscreen();
+      } catch {
+        // Native fullscreen must end before pseudo-fullscreen CSS applies.
+      }
+    }
+    wantsFullscreenRef.current = true;
+    enteringNativeRef.current = false;
+    applyPseudoFullscreen(true);
+    setIsFullscreen(true);
+  }, [applyPseudoFullscreen]);
+
+  useEffect(() => {
+    document.body.classList.toggle(
+      'interactive-video-player--pseudo-fs',
+      pseudoFullscreen,
+    );
+    return () => {
+      document.body.classList.remove('interactive-video-player--pseudo-fs');
+    };
+  }, [pseudoFullscreen]);
+
+  const syncFullscreenFromDocument = useCallback(() => {
+    const stage = stageRef.current;
+    const fsElement = getDocumentFullscreenElement();
+    const native = stage != null && fsElement === stage;
+
+    if (native) {
+      enteringNativeRef.current = false;
+      hadNativeFullscreenRef.current = true;
+      if (pseudoFullscreenRef.current) {
+        applyPseudoFullscreen(false);
+      }
+      wantsFullscreenRef.current = true;
+      setIsFullscreen(true);
+      return;
+    }
+
+    if (wantsFullscreenRef.current && pseudoFullscreenRef.current) {
+      setIsFullscreen(true);
+      return;
+    }
+
+    if (!wantsFullscreenRef.current) {
+      clearFullscreenState();
+      return;
+    }
+
+    // User wants fullscreen but the document is not on our stage yet.
+    if (enteringNativeRef.current) {
+      const generation = ++syncGenerationRef.current;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (generation !== syncGenerationRef.current) return;
+          const stageAfter = stageRef.current;
+          const nativeAfter =
+            stageAfter != null &&
+            getDocumentFullscreenElement() === stageAfter;
+          if (nativeAfter) {
+            syncFullscreenFromDocument();
+            return;
+          }
+          if (!wantsFullscreenRef.current) return;
+          enteringNativeRef.current = false;
+          void enablePseudoFullscreen();
+        });
+      });
+      return;
+    }
+
+    if (hadNativeFullscreenRef.current) {
+      const generation = ++syncGenerationRef.current;
+      requestAnimationFrame(() => {
+        if (generation !== syncGenerationRef.current) return;
+        const stageAfter = stageRef.current;
+        const stillNative =
+          stageAfter != null &&
+          getDocumentFullscreenElement() === stageAfter;
+        if (stillNative) {
+          syncFullscreenFromDocument();
+          return;
+        }
+        hadNativeFullscreenRef.current = false;
+        clearFullscreenState();
+      });
+      return;
+    }
+  }, [
+    applyPseudoFullscreen,
+    clearFullscreenState,
+    enablePseudoFullscreen,
+  ]);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      syncFullscreenFromDocument();
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', onFullscreenChange);
+    };
+  }, [syncFullscreenFromDocument]);
+
+  const toggleFullscreen = useCallback(async () => {
+    const stage = stageRef.current;
+    if (!stage) return;
+
+    const fsElement = getDocumentFullscreenElement();
+    const nativeActive = fsElement === stage;
+    if (nativeActive || pseudoFullscreenRef.current) {
+      syncGenerationRef.current += 1;
+      if (nativeActive) {
+        try {
+          await document.exitFullscreen();
+        } catch {
+          // Fullscreen may already be exiting.
+        }
+      }
+      clearFullscreenState();
+      return;
+    }
+
+    wantsFullscreenRef.current = true;
+    enteringNativeRef.current = true;
+    setIsFullscreen(true);
+
+    const stageAny = stage as HTMLDivElement & {
+      webkitRequestFullscreen?: () => Promise<void>;
+    };
+    const requestFs =
+      typeof stage.requestFullscreen === 'function'
+        ? () => stage.requestFullscreen()
+        : typeof stageAny.webkitRequestFullscreen === 'function'
+          ? () => stageAny.webkitRequestFullscreen!()
+          : null;
+
+    if (requestFs && document.fullscreenEnabled !== false) {
+      try {
+        await requestFs();
+        if (getDocumentFullscreenElement() === stage) {
+          enteringNativeRef.current = false;
+          hadNativeFullscreenRef.current = true;
+          applyPseudoFullscreen(false);
+          setIsFullscreen(true);
+          return;
+        }
+      } catch {
+        // Fall through to pseudo-fullscreen when the API is unavailable or denied.
+      }
+    }
+
+    enteringNativeRef.current = false;
+    await enablePseudoFullscreen();
+  }, [applyPseudoFullscreen, clearFullscreenState, enablePseudoFullscreen]);
+
+  const handleFullscreenClick = useCallback(
+    (e: MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      void toggleFullscreen();
+    },
+    [toggleFullscreen],
+  );
 
   const sortedCues = video.cues;
 
@@ -138,6 +347,7 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
 
   useEffect(() => {
     let cancelled = false;
+    playbackPrimedRef.current = false;
     void getInteractiveVideoPlaybackUrl(video.storagePath).then((result) => {
       if (cancelled) return;
       if (!result.ok) {
@@ -464,7 +674,10 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
         </div>
       )}
 
-      <div className="interactive-video-player__stage">
+      <div
+        ref={stageRef}
+        className={`interactive-video-player__stage${pseudoFullscreen ? ' interactive-video-player__stage--pseudo-fullscreen' : ''}`}
+      >
         {playbackUrl ? (
           <video
             ref={playbackRef}
@@ -475,19 +688,33 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
             controlsList="nodownload"
             disablePictureInPicture
             onLoadedMetadata={(e) => {
+              if (playbackPrimedRef.current) return;
+              playbackPrimedRef.current = true;
               const v = e.currentTarget;
               v.currentTime = 0;
               v.pause();
             }}
           />
         ) : (
-          <p className="muted">Loading video…</p>
+          <p className="muted interactive-video-player__loading">Loading video…</p>
         )}
 
         {showOverlay && overlayMessage && (
           <div className="interactive-video-player__overlay" role="status" aria-live="polite">
             <p className="interactive-video-player__command">{overlayMessage}</p>
           </div>
+        )}
+
+        {playbackUrl && (
+          <button
+            type="button"
+            className="interactive-video-player__fullscreen-btn btn btn--ghost btn--sm"
+            onClick={handleFullscreenClick}
+            aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+          >
+            {isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+          </button>
         )}
 
         <video
@@ -525,7 +752,7 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
         )}
       </div>
 
-      {sortedCues.length > 0 && (
+      {isAdmin && sortedCues.length > 0 && (
         <details className="interactive-video-player__cue-list">
           <summary>Cue timeline</summary>
           <ul>
