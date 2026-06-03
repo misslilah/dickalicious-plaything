@@ -176,6 +176,7 @@ function mergeCatalogIntoState(base: AppState, catalog: SharedCatalog): AppState
     punishmentCategories: catalog.punishmentCategories,
     punishmentTemplates: catalog.punishmentTemplates,
     videoCategories: catalog.videoCategories,
+    videoCategoryCounts: catalog.videoCategoryCounts,
     videos: catalog.videos,
   };
 }
@@ -724,6 +725,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         setState((s) => ({
           ...s,
           videoCategories: s.videoCategories.filter((c) => c.id !== id),
+          videoCategoryCounts: Object.fromEntries(
+            Object.entries(s.videoCategoryCounts).filter(([key]) => key !== id),
+          ),
           videos: s.videos.filter((v) => v.categoryId !== id),
         }));
         return { ok: true };
@@ -754,18 +758,44 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
           await deleteVideoFile(path);
           return insert;
         }
-        setState((s) => ({ ...s, videos: [insert.video, ...s.videos] }));
+        setState((s) => ({
+          ...s,
+          videos: [insert.video, ...s.videos],
+          videoCategoryCounts: {
+            ...s.videoCategoryCounts,
+            [insert.video.categoryId]:
+              (s.videoCategoryCounts[insert.video.categoryId] ?? 0) + 1,
+          },
+        }));
         return { ok: true };
       },
       updateVideo: async (video) => {
         const denied = requireAdmin();
         if (denied) return denied;
+        const previous = state.videos.find((v) => v.id === video.id);
         const result = await updateVideoRow(video);
         if (!result.ok) return result;
-        setState((s) => ({
-          ...s,
-          videos: s.videos.map((v) => (v.id === result.video.id ? result.video : v)),
-        }));
+        setState((s) => {
+          const nextCounts = { ...s.videoCategoryCounts };
+          if (
+            previous &&
+            previous.categoryId !== result.video.categoryId
+          ) {
+            nextCounts[previous.categoryId] = Math.max(
+              0,
+              (nextCounts[previous.categoryId] ?? 0) - 1,
+            );
+            nextCounts[result.video.categoryId] =
+              (nextCounts[result.video.categoryId] ?? 0) + 1;
+          }
+          return {
+            ...s,
+            videoCategoryCounts: nextCounts,
+            videos: s.videos.map((v) =>
+              v.id === result.video.id ? result.video : v,
+            ),
+          };
+        });
         return { ok: true };
       },
       deleteVideo: async (id) => {
@@ -775,10 +805,20 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         const result = await deleteVideoDb(id);
         if (!result.ok) return result;
         if (video) await deleteVideoFile(video.storagePath);
-        setState((s) => ({
-          ...s,
-          videos: s.videos.filter((v) => v.id !== id),
-        }));
+        setState((s) => {
+          const nextCounts = { ...s.videoCategoryCounts };
+          if (video) {
+            nextCounts[video.categoryId] = Math.max(
+              0,
+              (nextCounts[video.categoryId] ?? 0) - 1,
+            );
+          }
+          return {
+            ...s,
+            videoCategoryCounts: nextCounts,
+            videos: s.videos.filter((v) => v.id !== id),
+          };
+        });
         return { ok: true };
       },
       resetAll: async () => {

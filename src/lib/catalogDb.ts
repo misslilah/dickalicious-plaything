@@ -26,6 +26,7 @@ export interface SharedCatalog {
   punishmentCategories: PunishmentCategory[];
   punishmentTemplates: PunishmentTemplate[];
   videoCategories: VideoCategory[];
+  videoCategoryCounts: Record<string, number>;
   videos: Video[];
 }
 
@@ -249,6 +250,29 @@ function mapVideo(row: DbVideo): Video {
   };
 }
 
+type DbVideoCategoryCount = {
+  category_id: string;
+  video_count: number;
+};
+
+async function fetchVideoCategoryCounts(): Promise<
+  { ok: true; counts: Record<string, number> } | { ok: false; error: string }
+> {
+  const supabase = getSupabase();
+  if (!supabase) {
+    return { ok: false, error: 'Supabase is not configured.' };
+  }
+
+  const { data, error } = await supabase.rpc('get_video_category_counts');
+  if (error) return { ok: false, error: error.message };
+
+  const counts: Record<string, number> = {};
+  for (const row of (data ?? []) as DbVideoCategoryCount[]) {
+    counts[row.category_id] = Number(row.video_count);
+  }
+  return { ok: true, counts };
+}
+
 function rewardToDb(reward: Reward): Omit<DbReward, 'id'> & { id?: string } {
   const isBadge = reward.autoTrigger != null;
   return {
@@ -282,6 +306,7 @@ export async function fetchSharedCatalog(): Promise<
     punishmentsRes,
     videoCategoriesRes,
     videosRes,
+    videoCategoryCountsResult,
   ] = await Promise.all([
     supabase.from('categories').select('*').order('sort_order'),
     supabase.from('tasks').select('*').order('created_at'),
@@ -291,10 +316,15 @@ export async function fetchSharedCatalog(): Promise<
     supabase.from('punishment_templates').select('*').order('created_at'),
     supabase.from('video_categories').select('*').order('sort_order'),
     supabase.from('videos').select('*').order('created_at', { ascending: false }),
+    fetchVideoCategoryCounts(),
   ]);
 
   if (!badgesResult.ok) {
     return { ok: false, error: badgesResult.error };
+  }
+
+  if (!videoCategoryCountsResult.ok) {
+    return { ok: false, error: videoCategoryCountsResult.error };
   }
 
   const firstError =
@@ -326,6 +356,7 @@ export async function fetchSharedCatalog(): Promise<
       videoCategories: (videoCategoriesRes.data as DbVideoCategory[]).map(
         mapVideoCategory,
       ),
+      videoCategoryCounts: videoCategoryCountsResult.counts,
       videos: (videosRes.data as DbVideo[]).map(mapVideo),
     },
   };

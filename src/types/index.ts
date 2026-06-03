@@ -238,6 +238,8 @@ export interface AppState {
   categories: Category[];
   tasks: Task[];
   videoCategories: VideoCategory[];
+  /** Total videos per category (includes tier-locked; from get_video_category_counts RPC). */
+  videoCategoryCounts: Record<string, number>;
   videos: Video[];
   progress: UserProgress;
   dailyPlans: Record<string, DailyPlan>;

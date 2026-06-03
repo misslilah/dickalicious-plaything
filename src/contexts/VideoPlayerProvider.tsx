@@ -31,13 +31,10 @@ interface VideoPlayerContextValue {
   url: string | null;
   loading: boolean;
   error: string | null;
-  isPlaying: boolean;
   loop: boolean;
   showLoopNotice: boolean;
-  showGlobalBar: boolean;
   startNormalPlayback: (video: Video, categoryId: string) => void;
   clearNormalPlayback: () => void;
-  togglePlay: () => void;
   toggleLoop: () => void;
   dismissLoopNotice: () => void;
   turnOffLoop: () => void;
@@ -61,8 +58,6 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
   const fallbackHostRef = useRef<HTMLDivElement | null>(null);
   const loopNoticeShownRef = useRef(false);
   const shouldAutoplayRef = useRef(false);
-
-  const showGlobalBar = session != null && inlineHost == null;
 
   useVideoPlaybackActive(session != null);
 
@@ -181,16 +176,6 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
     setIsPlaying(false);
   }, []);
 
-  const togglePlay = useCallback(() => {
-    const el = videoRef.current;
-    if (!el) return;
-    if (el.paused) {
-      void el.play().catch(() => setIsPlaying(false));
-    } else {
-      el.pause();
-    }
-  }, []);
-
   const toggleLoop = useCallback(() => {
     setLoop((prev) => {
       const next = !prev;
@@ -237,13 +222,10 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
       url,
       loading,
       error,
-      isPlaying,
       loop,
       showLoopNotice,
-      showGlobalBar,
       startNormalPlayback,
       clearNormalPlayback,
-      togglePlay,
       toggleLoop,
       dismissLoopNotice,
       turnOffLoop,
@@ -254,13 +236,10 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
       url,
       loading,
       error,
-      isPlaying,
       loop,
       showLoopNotice,
-      showGlobalBar,
       startNormalPlayback,
       clearNormalPlayback,
-      togglePlay,
       toggleLoop,
       dismissLoopNotice,
       turnOffLoop,

@@ -60,6 +60,7 @@ export function createInitialState(): AppState {
     categories: [],
     tasks: [],
     videoCategories: [],
+    videoCategoryCounts: {},
     videos: [],
     progress: {
       totalXp: 0,

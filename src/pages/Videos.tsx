@@ -61,6 +61,7 @@ export function Videos() {
     );
 
   const totalVideoCountByCategory = (categoryId: string) =>
+    state.videoCategoryCounts[categoryId] ??
     state.videos.filter((v) => v.categoryId === categoryId).length;
 
   const lockedVideoCountByCategory = (categoryId: string) => {

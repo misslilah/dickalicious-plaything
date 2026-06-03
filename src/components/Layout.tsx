@@ -1,9 +1,7 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { AudioPlayerBar } from './AudioPlayerBar';
-import { GlobalVideoBar } from './GlobalVideoBar';
 import { AudioPlaylistPreviewModal } from './AudioPlaylistPreviewModal';
 import { useAudioPlayer } from '../contexts/AudioPlayerProvider';
-import { useOptionalVideoPlayer } from '../contexts/VideoPlayerProvider';
 import { useAppStore } from '../hooks/useAppStore';
 
 const baseNavItems = [
@@ -21,7 +19,6 @@ const adminNavItem = { to: '/admin', label: 'Admin', icon: '🛠️' };
 export function Layout() {
   const { session } = useAppStore();
   const { currentTrack } = useAudioPlayer();
-  const globalVideo = useOptionalVideoPlayer();
   const { pathname } = useLocation();
   const isAdminRoute = pathname.startsWith('/admin');
   const navItems =
@@ -29,13 +26,7 @@ export function Layout() {
       ? [...baseNavItems, adminNavItem]
       : baseNavItems;
   const audioBarActive = currentTrack != null;
-  const videoBarActive = globalVideo?.showGlobalBar ?? false;
-  const shellMediaClass = [
-    audioBarActive && 'app-shell--audio-playing',
-    videoBarActive && 'app-shell--video-bar',
-  ]
-    .filter(Boolean)
-    .join(' ');
+  const shellMediaClass = audioBarActive ? 'app-shell--audio-playing' : '';
 
   return (
     <div
@@ -58,7 +49,6 @@ export function Layout() {
           <Outlet />
         </div>
       </main>
-      <GlobalVideoBar />
       <AudioPlayerBar />
       <AudioPlaylistPreviewModal />
       <nav className="bottom-nav" aria-label="Main navigation">
