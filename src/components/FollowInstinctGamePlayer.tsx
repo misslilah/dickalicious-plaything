@@ -10,7 +10,10 @@ import {
 } from '../lib/facePoseDetection';
 import {
   FOLLOW_INSTINCT_ORDER_LABELS,
+  followInstinctPhraseMatches,
+  followInstinctRoundRequiresPhrase,
   type FollowInstinctGame,
+  type FollowInstinctOrderType,
   type FollowInstinctRound,
 } from '../lib/followInstinctGames';
 import {
@@ -27,6 +30,7 @@ const FACE_MODEL =
 const MAX_ROUNDS_PER_SESSION = 8;
 const ORDER_REVEAL_DELAY_MS = 3000;
 const COMMAND_WINDOW_MS = 4500;
+const PHRASE_COMMAND_WINDOW_MS = 45000;
 const TONGUE_HOLD_FRAMES = 6;
 const EYES_CLOSED_HOLD_FRAMES = 8;
 const SUCCESS_ADVANCE_MS = 900;
@@ -72,6 +76,37 @@ function validateRound(
   }
 }
 
+function isPoseActiveForTyping(
+  round: FollowInstinctRound,
+  landmarks: NormalizedLandmark[],
+): boolean {
+  const mar = mouthAspectRatio(landmarks);
+  const ear = eyeAspectRatio(landmarks);
+  switch (round.orderType) {
+    case 'close_eyes':
+      return areEyesClosed(ear);
+    case 'open_mouth':
+      return isMouthOpen(mar);
+    case 'tongue_out':
+      return isTongueHeuristic(mar);
+    default:
+      return false;
+  }
+}
+
+function phrasePoseFirstHint(orderType: FollowInstinctOrderType): string {
+  switch (orderType) {
+    case 'close_eyes':
+      return 'Close your eyes first, then type the phrase';
+    case 'open_mouth':
+      return 'Open your mouth first, then type the phrase';
+    case 'tongue_out':
+      return 'Stick your tongue out first, then type the phrase';
+    default:
+      return 'Hold the face action first, then type the phrase';
+  }
+}
+
 interface FollowInstinctGamePlayerProps {
   game: FollowInstinctGame;
 }
@@ -85,6 +120,9 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
   const eyesClosedFramesRef = useRef(0);
   const sessionQueueRef = useRef<FollowInstinctRound[]>([]);
   const advanceTimeoutRef = useRef<number | null>(null);
+  const typedPhraseRef = useRef('');
+  const phraseInputRef = useRef<HTMLInputElement>(null);
+  const poseActiveRef = useRef(false);
 
   const [cameraReady, setCameraReady] = useState(false);
   const [modelReady, setModelReady] = useState(false);
@@ -101,11 +139,18 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
   const [sessionDone, setSessionDone] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [orderRevealed, setOrderRevealed] = useState(false);
+  const [typedPhrase, setTypedPhrase] = useState('');
+  const [poseActive, setPoseActive] = useState(false);
   const roundStartRef = useRef(0);
   const judgedRef = useRef(false);
 
   const playableRounds = useMemo(() => game.rounds, [game.rounds]);
   const sessionActive = !sessionDone && activeRound !== null;
+  const phraseRequired = activeRound ? followInstinctRoundRequiresPhrase(activeRound) : false;
+  const phraseMatches =
+    activeRound && phraseRequired
+      ? followInstinctPhraseMatches(activeRound.phraseToType, typedPhrase)
+      : true;
 
   const clearAdvanceTimeout = useCallback(() => {
     if (advanceTimeoutRef.current !== null) {
@@ -164,6 +209,10 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
       judgedRef.current = false;
       tongueFramesRef.current = 0;
       eyesClosedFramesRef.current = 0;
+      typedPhraseRef.current = '';
+      setTypedPhrase('');
+      poseActiveRef.current = false;
+      setPoseActive(false);
       setDetecting(false);
     },
     [clearAdvanceTimeout, persistSessionBestStreak],
@@ -220,6 +269,10 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
     }
     setOrderRevealed(false);
     setDetecting(false);
+    typedPhraseRef.current = '';
+    setTypedPhrase('');
+    poseActiveRef.current = false;
+    setPoseActive(false);
     const timerId = window.setTimeout(() => {
       roundStartRef.current = performance.now();
       setOrderRevealed(true);
@@ -309,12 +362,33 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
     };
   }, []);
 
+  const markRoundSuccess = useCallback(() => {
+    judgedRef.current = true;
+    setDetecting(false);
+    setFeedback('success');
+    setStreak((value) => {
+      const next = value + 1;
+      recordStreak(next);
+      return next;
+    });
+    scheduleAdvance(roundIndex, SUCCESS_ADVANCE_MS);
+  }, [recordStreak, roundIndex, scheduleAdvance]);
+
+  const onPhraseChange = useCallback((value: string) => {
+    if (!poseActiveRef.current) return;
+    typedPhraseRef.current = value;
+    setTypedPhrase(value);
+  }, []);
+
   useEffect(() => {
     if (!cameraReady || !modelReady || !detecting || !activeRound || sessionDone) return;
 
     const video = videoRef.current;
     const landmarker = landmarkerRef.current;
     if (!video || !landmarker) return;
+
+    const needsPhrase = followInstinctRoundRequiresPhrase(activeRound);
+    const commandWindowMs = needsPhrase ? PHRASE_COMMAND_WINDOW_MS : COMMAND_WINDOW_MS;
 
     const tick = () => {
       if (!detecting || judgedRef.current || !activeRound) return;
@@ -326,6 +400,7 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
       const now = performance.now();
       const result = landmarker.detectForVideo(video, now);
       const landmarks = result.faceLandmarks[0] as NormalizedLandmark[] | undefined;
+      const phraseOk = followInstinctPhraseMatches(activeRound.phraseToType, typedPhraseRef.current);
 
       if (landmarks) {
         const mar = mouthAspectRatio(landmarks);
@@ -343,6 +418,7 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
         }
 
         if (
+          phraseOk &&
           validateRound(
             activeRound,
             landmarks,
@@ -350,19 +426,31 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
             eyesClosedFramesRef.current,
           )
         ) {
-          judgedRef.current = true;
-          setDetecting(false);
-          setFeedback('success');
-          setStreak((value) => {
-            const next = value + 1;
-            recordStreak(next);
-            return next;
-          });
-          scheduleAdvance(roundIndex, SUCCESS_ADVANCE_MS);
+          markRoundSuccess();
         }
       }
 
-      if (!judgedRef.current && now - roundStartRef.current >= COMMAND_WINDOW_MS) {
+      if (needsPhrase) {
+        const currentPoseActive = landmarks
+          ? isPoseActiveForTyping(activeRound, landmarks)
+          : false;
+
+        if (poseActiveRef.current && !currentPoseActive) {
+          typedPhraseRef.current = '';
+          setTypedPhrase('');
+          phraseInputRef.current?.blur();
+        }
+
+        if (currentPoseActive !== poseActiveRef.current) {
+          poseActiveRef.current = currentPoseActive;
+          setPoseActive(currentPoseActive);
+          if (currentPoseActive) {
+            window.requestAnimationFrame(() => phraseInputRef.current?.focus());
+          }
+        }
+      }
+
+      if (!judgedRef.current && now - roundStartRef.current >= commandWindowMs) {
         judgedRef.current = true;
         setDetecting(false);
         setFeedback('fail');
@@ -385,7 +473,7 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
     roundIndex,
     sessionDone,
     scheduleAdvance,
-    recordStreak,
+    markRoundSuccess,
   ]);
 
   const displayedBestStreak = Math.max(sessionBestStreak, allTimeBestStreak);
@@ -448,12 +536,57 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
                 />
               </div>
               {orderRevealed && (
-                <p
-                  className="follow-instinct-player__order follow-instinct-player__order--visible"
-                  aria-live="polite"
-                >
-                  {displayOrderText(activeRound)}
-                </p>
+                <>
+                  <p
+                    className="follow-instinct-player__order follow-instinct-player__order--visible"
+                    aria-live="polite"
+                  >
+                    {displayOrderText(activeRound)}
+                  </p>
+                  {phraseRequired && (
+                    <div className="follow-instinct-player__phrase">
+                      <p className="follow-instinct-player__phrase-target" aria-live="polite">
+                        <span className="follow-instinct-player__phrase-label">Type this phrase:</span>{' '}
+                        <strong className="follow-instinct-player__phrase-quote">
+                          &ldquo;{activeRound.phraseToType!.trim()}&rdquo;
+                        </strong>
+                      </p>
+                      <label className="sr-only" htmlFor="follow-instinct-phrase">
+                        Type the phrase shown above
+                      </label>
+                      <input
+                        ref={phraseInputRef}
+                        id="follow-instinct-phrase"
+                        type="text"
+                        className={`follow-instinct-player__phrase-input${
+                          phraseRequired && !poseActive ? ' follow-instinct-player__phrase-input--locked' : ''
+                        }`}
+                        value={typedPhrase}
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        enterKeyHint="done"
+                        disabled={feedback !== 'idle' || !poseActive}
+                        aria-disabled={feedback !== 'idle' || !poseActive}
+                        onChange={(event) => onPhraseChange(event.target.value)}
+                      />
+                      {phraseRequired && !poseActive && feedback === 'idle' && (
+                        <p
+                          className="follow-instinct-player__phrase-hint follow-instinct-player__phrase-hint--pose muted"
+                          role="status"
+                        >
+                          {phrasePoseFirstHint(activeRound.orderType)}
+                        </p>
+                      )}
+                      {poseActive && typedPhrase.trim().length > 0 && !phraseMatches && (
+                        <p className="follow-instinct-player__phrase-hint muted" role="status">
+                          Phrase must match exactly (case-insensitive).
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
@@ -495,8 +628,9 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
 
       {!sessionDone && orderRevealed && feedback === 'idle' && (
         <p className="muted follow-instinct-player__hint">
-          Perform the action shown above with your face. Tongue detection is approximate (wide open
-          mouth).
+          {phraseRequired
+            ? `${phrasePoseFirstHint(activeRound!.orderType)}. Keep the pose while typing — if you lose it, the phrase clears. Tongue detection is approximate (wide open mouth).`
+            : 'Perform the action shown above with your face. Tongue detection is approximate (wide open mouth).'}
         </p>
       )}
     </div>

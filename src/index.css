@@ -5665,6 +5665,64 @@ a.task-list-row {
   animation: follow-instinct-order-in 0.35s ease-out;
 }
 
+.follow-instinct-player__phrase {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: min(100%, 22rem);
+  margin: 0 auto;
+}
+
+.follow-instinct-player__phrase-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.follow-instinct-player__phrase-target {
+  margin: 0;
+  text-align: center;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.follow-instinct-player__phrase-quote {
+  display: inline-block;
+  margin-top: 0.15rem;
+  font-size: 1.2rem;
+  color: var(--accent, #c084fc);
+}
+
+.follow-instinct-player__phrase-input {
+  width: 100%;
+  font-size: 1rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(192, 132, 252, 0.35);
+  background: rgba(0, 0, 0, 0.35);
+  color: inherit;
+}
+
+.follow-instinct-player__phrase-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.follow-instinct-player__phrase-input:disabled,
+.follow-instinct-player__phrase-input--locked {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.follow-instinct-player__phrase-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.follow-instinct-player__phrase-hint--pose {
+  font-weight: 600;
+}
+
 @keyframes follow-instinct-order-in {
   from {
     opacity: 0;

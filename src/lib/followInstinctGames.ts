@@ -34,6 +34,7 @@ export interface FollowInstinctRound {
   imageUrl: string;
   orderText: string;
   orderType: FollowInstinctOrderType;
+  phraseToType?: string | null;
 }
 
 export interface FollowInstinctGame {
@@ -63,6 +64,7 @@ export interface FollowInstinctRoundDraft {
   id: string;
   orderType: FollowInstinctOrderType;
   orderText: string;
+  phraseToType?: string;
   imagePath?: string;
   imageUrl?: string;
   file?: File;
@@ -72,7 +74,23 @@ type DbFollowInstinctRound = {
   image_path: string;
   order_text: string;
   order_type: FollowInstinctOrderType;
+  phrase_to_type?: string | null;
 };
+
+export function followInstinctRoundRequiresPhrase(
+  round: Pick<FollowInstinctRound, 'phraseToType'>,
+): boolean {
+  return Boolean(round.phraseToType?.trim());
+}
+
+export function followInstinctPhraseMatches(
+  phraseToType: string | null | undefined,
+  typed: string,
+): boolean {
+  const expected = phraseToType?.trim();
+  if (!expected) return true;
+  return typed.trim().toLowerCase() === expected.toLowerCase();
+}
 
 type DbFollowInstinctGame = {
   id: string;
@@ -153,11 +171,13 @@ function mapRounds(dbRounds: DbFollowInstinctRound[]): FollowInstinctRound[] {
   for (const round of dbRounds) {
     const imageUrl = getFollowInstinctImageUrl(round.image_path);
     if (!imageUrl) continue;
+    const phraseToType = round.phrase_to_type?.trim() || null;
     mapped.push({
       imagePath: round.image_path,
       imageUrl,
       orderText: round.order_text.trim() || FOLLOW_INSTINCT_ORDER_LABELS[round.order_type],
       orderType: round.order_type,
+      phraseToType,
     });
   }
   return mapped;
@@ -224,11 +244,16 @@ export function validateRoundsForChallengeMode(
 }
 
 function serializeRounds(rounds: FollowInstinctRound[]): DbFollowInstinctRound[] {
-  return rounds.map((round) => ({
-    image_path: round.imagePath,
-    order_text: round.orderText,
-    order_type: round.orderType,
-  }));
+  return rounds.map((round) => {
+    const serialized: DbFollowInstinctRound = {
+      image_path: round.imagePath,
+      order_text: round.orderText,
+      order_type: round.orderType,
+    };
+    const phrase = round.phraseToType?.trim();
+    if (phrase) serialized.phrase_to_type = phrase;
+    return serialized;
+  });
 }
 
 async function uploadImage(
@@ -282,11 +307,13 @@ async function materializeRoundDrafts(
       await removeImages(uploadedPaths);
       return { ok: false, error: 'Round image could not be resolved.' };
     }
+    const phraseToType = draft.phraseToType?.trim() || null;
     rounds.push({
       imagePath,
       imageUrl,
       orderText: draft.orderText.trim() || FOLLOW_INSTINCT_ORDER_LABELS[draft.orderType],
       orderType: draft.orderType,
+      phraseToType,
     });
   }
 

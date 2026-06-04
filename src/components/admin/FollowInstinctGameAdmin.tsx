@@ -27,6 +27,7 @@ function gameToDrafts(game: FollowInstinctGame): FollowInstinctRoundDraft[] {
     id: crypto.randomUUID(),
     orderType: round.orderType,
     orderText: round.orderText,
+    phraseToType: round.phraseToType ?? '',
     imagePath: round.imagePath,
     imageUrl: round.imageUrl,
   }));
@@ -176,7 +177,8 @@ export function FollowInstinctGameAdmin() {
     <div className="follow-instinct-admin">
       <p className="muted">
         Configure photo + order rounds. Each round shows one image and one instruction during play.
-        Set the order type per round; players get a shuffled mix of all rounds in one session.
+        Optionally require players to type a phrase while holding the camera pose. Set the order type
+        per round; players get a shuffled mix of all rounds in one session.
       </p>
 
       {error && (
@@ -271,6 +273,16 @@ export function FollowInstinctGameAdmin() {
                   type="text"
                   value={round.orderText}
                   onChange={(event) => updateRound(round.id, { orderText: event.target.value })}
+                />
+              </label>
+
+              <label className="field">
+                <span>Phrase to type (optional)</span>
+                <input
+                  type="text"
+                  value={round.phraseToType ?? ''}
+                  placeholder='e.g. "I obey" — leave blank for pose only'
+                  onChange={(event) => updateRound(round.id, { phraseToType: event.target.value })}
                 />
               </label>
             </div>
