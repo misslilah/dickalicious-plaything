@@ -4,6 +4,7 @@ import { BadgeGrid } from '../components/BadgeGrid';
 import { StatCard } from '../components/StatCard';
 import { TierBadge } from '../components/TierBadge';
 import { useAppStore } from '../hooks/useAppStore';
+import { useSortableList } from '../hooks/useSortableList';
 import {
   hasVideoAccess,
   isVideoShopPurchasable,
@@ -46,13 +47,41 @@ function ShopPurchaseToast({
 }
 
 export function Rewards() {
-  const { state, session, purchaseReward, purchaseVideo } = useAppStore();
+  const { state, session, purchaseReward, purchaseVideo, reorderBadges } =
+    useAppStore();
   const { progress, unlockedRewardIds, unlockedBadgeIds } = state;
   const [tab, setTab] = useState<RewardsTab>('badges');
   const [toast, setToast] = useState<string | null>(null);
   const [buyingVideoId, setBuyingVideoId] = useState<string | null>(null);
+  const [badgeReorderBusy, setBadgeReorderBusy] = useState(false);
+  const [badgeReorderError, setBadgeReorderError] = useState('');
 
   const isAdmin = session?.role === 'admin';
+
+  const sortedBadgeIds = useMemo(
+    () =>
+      [...state.badges]
+        .sort(
+          (a, b) =>
+            a.sortOrder - b.sortOrder || a.title.localeCompare(b.title),
+        )
+        .map((b) => b.id),
+    [state.badges],
+  );
+
+  const persistBadgeOrder = async (orderedIds: string[]) => {
+    setBadgeReorderBusy(true);
+    setBadgeReorderError('');
+    const result = await reorderBadges(orderedIds);
+    setBadgeReorderBusy(false);
+    if (!result.ok) setBadgeReorderError(result.error);
+  };
+
+  const { getSortableItemProps, sortableEnabled } = useSortableList(
+    sortedBadgeIds,
+    persistBadgeOrder,
+    { disabled: !isAdmin, busy: badgeReorderBusy },
+  );
 
   const videoAccessCtx: VideoAccessContext = useMemo(
     () => ({
@@ -136,11 +165,23 @@ export function Rewards() {
         <section className="card">
           <h3 className="section-title">Badges</h3>
           <p className="muted">Collect badges by meeting milestones.</p>
+          {isAdmin && sortableEnabled && (
+            <p className="profile-badge-grid__reorder-hint muted">
+              Drag to reorder badges
+            </p>
+          )}
+          {badgeReorderError && (
+            <p className="profile-badge-grid__reorder-error" role="alert">
+              {badgeReorderError}
+            </p>
+          )}
           <BadgeGrid
             badges={state.badges}
             unlockedBadgeIds={unlockedBadgeIds}
             tasks={state.tasks}
             categories={state.categories}
+            sortable={isAdmin}
+            getSortableItemProps={isAdmin ? getSortableItemProps : undefined}
           />
         </section>
       )}

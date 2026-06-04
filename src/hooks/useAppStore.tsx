@@ -21,7 +21,12 @@ import type {
   Video,
   VideoCategory,
 } from '../types';
-import { deleteBadgeDb, fetchUserBadgeIds, upsertBadge } from '../lib/badgeDb';
+import {
+  deleteBadgeDb,
+  fetchUserBadgeIds,
+  updateBadgesOrder,
+  upsertBadge,
+} from '../lib/badgeDb';
 import {
   processBadgeUnlockOnBubblePop,
   processBadgeUnlockOnTaskComplete,
@@ -163,6 +168,7 @@ interface AppStoreValue {
   deleteReward: (id: string) => Promise<MutateResult>;
   addBadge: (badge: Badge) => Promise<MutateResult>;
   updateBadge: (badge: Badge) => Promise<MutateResult>;
+  reorderBadges: (orderedIds: string[]) => Promise<MutateResult>;
   deleteBadge: (id: string) => Promise<MutateResult>;
   addPunishmentCategory: (category: PunishmentCategory) => Promise<MutateResult>;
   updatePunishmentCategory: (category: PunishmentCategory) => Promise<MutateResult>;
@@ -722,7 +728,12 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         if (denied) return denied;
         const result = await upsertBadge(badge, 'insert');
         if (!result.ok) return result;
-        setState((s) => ({ ...s, badges: [...s.badges, result.badge] }));
+        setState((s) => ({
+          ...s,
+          badges: [...s.badges, result.badge].sort(
+            (a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title),
+          ),
+        }));
         return { ok: true };
       },
       updateBadge: async (badge) => {
@@ -732,8 +743,30 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         if (!result.ok) return result;
         setState((s) => ({
           ...s,
-          badges: s.badges.map((b) => (b.id === result.badge.id ? result.badge : b)),
+          badges: s.badges
+            .map((b) => (b.id === result.badge.id ? result.badge : b))
+            .sort(
+              (a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title),
+            ),
         }));
+        return { ok: true };
+      },
+      reorderBadges: async (orderedIds) => {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const result = await updateBadgesOrder(orderedIds);
+        if (!result.ok) return result;
+        setState((s) => {
+          const byId = new Map(s.badges.map((b) => [b.id, b]));
+          const badges = orderedIds
+            .map((id, index) => {
+              const badge = byId.get(id);
+              if (!badge) return null;
+              return { ...badge, sortOrder: index };
+            })
+            .filter((b): b is Badge => b != null);
+          return { ...s, badges };
+        });
         return { ok: true };
       },
       deleteBadge: async (id) => {

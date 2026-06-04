@@ -334,14 +334,15 @@ function AdminLibraryItem({
     </>
   );
 
+  const itemClassName = [
+    'admin-library-item',
+    selected ? 'admin-library-item--selected' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <li
-      className={
-        selected
-          ? 'admin-library-item admin-library-item--selected'
-          : 'admin-library-item'
-      }
-    >
+    <li className={itemClassName}>
       {hideEdit ? (
         <div className="admin-library-item__main">{main}</div>
       ) : (
@@ -1551,7 +1552,7 @@ function buildBadgeRequirement(
 }
 
 function BadgeAdmin() {
-  const { state, addBadge, updateBadge, deleteBadge } = useAppStore();
+  const { state, addBadge, updateBadge, reorderBadges, deleteBadge } = useAppStore();
   const [draft, setDraft] = useState<Badge>(emptyBadgeDraft());
   const [requirementKind, setRequirementKind] = useState<BadgeRequirementKind>('none');
   const [requirementTaskId, setRequirementTaskId] = useState('');
@@ -1563,18 +1564,39 @@ function BadgeAdmin() {
   const [message, setMessage] = useState('');
   const [imageMessage, setImageMessage] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [reordering, setReordering] = useState(false);
+
+  const badges = state.badges;
+  const searchActive = search.trim().length > 0;
 
   const imagePreview = isBadgeImagePreview(draft.imageUrl) ? draft.imageUrl : null;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return state.badges;
-    return state.badges.filter(
+    if (!q) return badges;
+    return badges.filter(
       (b) =>
         b.title.toLowerCase().includes(q) ||
         b.description.toLowerCase().includes(q),
     );
-  }, [state.badges, search]);
+  }, [badges, search]);
+
+  const persistBadgeOrder = async (orderedIds: string[]) => {
+    setReordering(true);
+    setMessage('');
+    const result = await reorderBadges(orderedIds);
+    setReordering(false);
+    if (!result.ok) setMessage(result.error);
+  };
+
+  const moveBadge = async (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= badges.length) return;
+    const next = [...badges];
+    const [removed] = next.splice(index, 1);
+    next.splice(target, 0, removed);
+    await persistBadgeOrder(next.map((b) => b.id));
+  };
 
   const loadDraft = (badge: Badge) => {
     setDraft(badge);
@@ -1638,12 +1660,20 @@ function BadgeAdmin() {
       return;
     }
 
+    const existing = draft.id ? badges.find((b) => b.id === draft.id) : undefined;
+    const nextSortOrder =
+      existing?.sortOrder ??
+      (badges.length === 0
+        ? 0
+        : Math.max(...badges.map((b) => b.sortOrder)) + 1);
+
     const badge: Badge = {
       ...draft,
       id: badgeId,
       title: draft.title.trim(),
       description: draft.description.trim(),
       imageUrl: resolved.url,
+      sortOrder: nextSortOrder,
       requirement: buildBadgeRequirement(
         requirementKind,
         requirementTaskId,
@@ -1678,10 +1708,15 @@ function BadgeAdmin() {
     <AdminListCard
       title="Profile badges"
       count={filtered.length}
-      intro="Small image badges shown on the profile. Locked badges are grayscale; secret badges hide how to unlock."
+      intro="Small image badges shown on the profile and Rewards page. Use ↑ ↓ to reorder (admins can also drag on the Rewards page). Locked badges are grayscale; secret badges hide how to unlock."
       search={search}
       onSearchChange={setSearch}
     >
+      {searchActive && badges.length > 0 && (
+        <p className="muted admin-list-hint">
+          Clear search to reorder badges with ↑ ↓.
+        </p>
+      )}
       {filtered.length === 0 ? (
         <AdminEmpty
           title={search ? 'No matches' : 'No profile badges yet'}
@@ -1694,6 +1729,8 @@ function BadgeAdmin() {
       ) : (
         <ul className="admin-library">
           {filtered.map((b) => {
+            const index = badges.findIndex((x) => x.id === b.id);
+            const showReorder = !searchActive && badges.length > 1;
             const requirementSummary = formatBadgeRequirementSummary(
               b,
               state.tasks,
@@ -1714,6 +1751,16 @@ function BadgeAdmin() {
               }
               onEdit={() => loadDraft(b)}
               onDelete={() => remove(b.id)}
+              onMoveUp={
+                showReorder ? () => void moveBadge(index, -1) : undefined
+              }
+              onMoveDown={
+                showReorder ? () => void moveBadge(index, 1) : undefined
+              }
+              moveUpDisabled={index <= 0 || reordering}
+              moveDownDisabled={
+                index < 0 || index >= badges.length - 1 || reordering
+              }
             />
             );
           })}
@@ -1753,16 +1800,6 @@ function BadgeAdmin() {
               setDraft({ ...draft, description: e.target.value });
               if (errors.description) setErrors((p) => ({ ...p, description: '' }));
             }}
-          />
-        </Field>
-        <Field label="Sort order" htmlFor="badge-sort">
-          <input
-            id="badge-sort"
-            type="number"
-            value={draft.sortOrder}
-            onChange={(e) =>
-              setDraft({ ...draft, sortOrder: Number(e.target.value) || 0 })
-            }
           />
         </Field>
         <Field label="Secret badge">

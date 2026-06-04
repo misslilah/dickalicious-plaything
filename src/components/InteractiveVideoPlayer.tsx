@@ -20,6 +20,7 @@ import {
   type InteractiveVideo,
   type InteractiveVideoCue,
 } from '../lib/interactiveVideos';
+import { PrivacyNotice } from './PrivacyNotice';
 
 const MEDIAPIPE_WASM =
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
@@ -1052,6 +1053,13 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
           autoPlay
           aria-hidden="true"
         />
+
+        {cameraReady && (
+          <PrivacyNotice
+            variant="camera"
+            className="privacy-notice--camera-overlay interactive-video-player__privacy"
+          />
+        )}
       </div>
 
       <div className="interactive-video-player__controls">

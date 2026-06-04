@@ -1123,6 +1123,48 @@ select {
   line-height: 1.45;
 }
 
+.privacy-notice {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--muted, rgba(255, 255, 255, 0.72));
+}
+
+.privacy-notice--login {
+  margin-top: 1.25rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius, 0.5rem);
+  background: rgba(192, 132, 252, 0.08);
+  border: 1px solid rgba(192, 132, 252, 0.22);
+  text-align: left;
+}
+
+.privacy-notice--camera {
+  text-align: center;
+}
+
+.privacy-notice--camera-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
+  font-size: 0.72rem;
+  line-height: 1.35;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(0, 0, 0, 0.75);
+  border-top: 1px solid rgba(192, 132, 252, 0.2);
+  pointer-events: none;
+}
+
+.interactive-video-player__privacy {
+  max-width: 100%;
+}
+
 .setup-banner {
   margin: 1rem 0;
   padding: 0.85rem 1rem;
@@ -2054,6 +2096,37 @@ a.task-list-row {
   transition: border-color 0.15s;
 }
 
+.admin-library-item--sortable {
+  cursor: grab;
+}
+
+.admin-library-item--sortable:active {
+  cursor: grabbing;
+}
+
+.admin-library-item--dragging {
+  opacity: 0.55;
+  cursor: grabbing;
+}
+
+.admin-library-item--drop-target {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(232, 121, 249, 0.35);
+}
+
+.admin-library-item__drag-handle {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  flex-shrink: 0;
+  padding: 0 0.15rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  letter-spacing: -0.15em;
+  user-select: none;
+  pointer-events: none;
+}
+
 @media (min-width: 520px) {
   .admin-library-item {
     flex-direction: row;
@@ -2461,6 +2534,45 @@ a.task-list-row {
   margin: 0.65rem 0 0;
   font-size: 0.8rem;
   text-align: center;
+}
+
+.profile-badge-grid__reorder-hint {
+  margin: 0 0 0.65rem;
+  font-size: 0.85rem;
+}
+
+.profile-badge-grid__reorder-error {
+  margin: 0 0 0.65rem;
+  font-size: 0.85rem;
+  color: #f87171;
+}
+
+.profile-badge--sortable {
+  cursor: grab;
+}
+
+.profile-badge--sortable:active {
+  cursor: grabbing;
+}
+
+.profile-badge--dragging {
+  opacity: 0.55;
+  cursor: grabbing;
+}
+
+.profile-badge--drop-target .profile-badge__icon-wrap {
+  box-shadow: 0 0 0 2px rgba(232, 121, 249, 0.45);
+}
+
+.profile-badge__drag-handle {
+  display: block;
+  margin-bottom: 0.15rem;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  letter-spacing: -0.12em;
+  line-height: 1;
+  user-select: none;
+  pointer-events: none;
 }
 
 .profile-badge {

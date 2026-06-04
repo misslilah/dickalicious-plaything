@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { useBadgeTooltipPosition } from '../hooks/useBadgeTooltipPosition';
+import type { SortableItemProps } from '../hooks/useSortableList';
 import type { Badge, Category, Task } from '../types';
 import { formatBadgeUnlockHint } from '../lib/badgeRequirementFormat';
 
@@ -8,6 +9,9 @@ type BadgeGridProps = {
   unlockedBadgeIds: string[];
   tasks?: Task[];
   categories?: Category[];
+  /** When true (admin on Rewards), badges can be drag-reordered. */
+  sortable?: boolean;
+  getSortableItemProps?: (id: string) => SortableItemProps;
 };
 
 function badgeHoverText(
@@ -64,6 +68,8 @@ export function BadgeGrid({
   unlockedBadgeIds,
   tasks = [],
   categories = [],
+  sortable = false,
+  getSortableItemProps,
 }: BadgeGridProps) {
   if (badges.length === 0) {
     return <p className="muted">No badges in the catalog yet.</p>;
@@ -81,6 +87,10 @@ export function BadgeGrid({
           const unlocked = unlockedBadgeIds.includes(badge.id);
           const showTitle = unlocked || !badge.isSecret;
           const hover = badgeHoverText(badge, unlocked, tasks, categories);
+          const sortableProps =
+            sortable && getSortableItemProps
+              ? getSortableItemProps(badge.id)
+              : undefined;
 
           const icon = badge.imageUrl ? (
             <img
@@ -96,15 +106,36 @@ export function BadgeGrid({
             </span>
           );
 
+          const itemClassName = [
+            'profile-badge',
+            unlocked ? 'profile-badge--unlocked' : 'profile-badge--locked',
+            sortableProps ? 'profile-badge--sortable' : '',
+            sortableProps?.isDragging ? 'profile-badge--dragging' : '',
+            sortableProps?.isOver ? 'profile-badge--drop-target' : '',
+          ]
+            .filter(Boolean)
+            .join(' ');
+
           return (
             <li
               key={badge.id}
-              className={
-                unlocked
-                  ? 'profile-badge profile-badge--unlocked'
-                  : 'profile-badge profile-badge--locked'
-              }
+              className={itemClassName}
+              draggable={sortableProps?.draggable ?? false}
+              aria-grabbed={sortableProps?.isDragging ? true : undefined}
+              onDragStart={sortableProps?.onDragStart}
+              onDragEnd={sortableProps?.onDragEnd}
+              onDragOver={sortableProps?.onDragOver}
+              onDrop={sortableProps?.onDrop}
             >
+              {sortableProps && (
+                <span
+                  className="profile-badge__drag-handle"
+                  aria-hidden="true"
+                  title="Drag to reorder"
+                >
+                  ⋮⋮
+                </span>
+              )}
               {unlocked ? (
                 <div className="profile-badge__icon-wrap" aria-label={hover}>
                   {icon}

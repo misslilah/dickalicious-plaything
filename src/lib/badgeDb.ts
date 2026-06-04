@@ -219,6 +219,22 @@ export async function upsertBadge(
   return { ok: true, badge: mapBadge(data as DbBadge) };
 }
 
+export async function updateBadgesOrder(
+  orderedIds: string[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  for (let i = 0; i < orderedIds.length; i++) {
+    const { error } = await supabase
+      .from('badges')
+      .update({ sort_order: i })
+      .eq('id', orderedIds[i]);
+    if (error) return { ok: false, error: formatBadgeDbError(error) };
+  }
+  return { ok: true };
+}
+
 export async function deleteBadgeDb(
   id: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {

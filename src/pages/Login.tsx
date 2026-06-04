@@ -5,6 +5,7 @@ import {
   getSupabaseConfigStatus,
   isSupabaseConfigured,
 } from '../lib/supabase';
+import { PrivacyNotice } from '../components/PrivacyNotice';
 
 type AuthMode = 'signin' | 'signup';
 
@@ -228,6 +229,8 @@ export function Login() {
             </button>
           </form>
         )}
+
+        <PrivacyNotice variant="login" />
       </div>
     </div>
   );

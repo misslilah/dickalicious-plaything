@@ -15,6 +15,7 @@ import {
   fetchMiniGameUserBestStreak,
   upsertMiniGameBestStreak,
 } from '../lib/miniGameLeaderboardDb';
+import { PrivacyNotice } from './PrivacyNotice';
 
 const MEDIAPIPE_WASM =
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
@@ -389,6 +390,8 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
           )}
         </span>
       </div>
+
+      {cameraReady && <PrivacyNotice variant="camera" />}
 
       {sessionDone ? (
         <div className="follow-instinct-player__done">
