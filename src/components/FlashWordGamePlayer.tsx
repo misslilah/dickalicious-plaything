@@ -21,6 +21,8 @@ import {
   fetchMiniGameUserBestStreak,
   upsertMiniGameBestStreak,
 } from '../lib/miniGameLeaderboardDb';
+import { flashWordZoneStyle } from '../lib/flashWordZonePosition';
+import { useFlashWordImageLayout } from '../hooks/useFlashWordImageLayout';
 
 type GamePhase = 'ready' | 'waiting' | 'flash' | 'choose' | 'result';
 
@@ -89,6 +91,8 @@ export function FlashWordGamePlayer({
   const sessionBestStreakRef = useRef(0);
   const [streakToast, setStreakToast] = useState<FlashWordStreakToast | null>(null);
   const playerRootRef = useRef<HTMLDivElement>(null);
+  const imageFrameRef = useRef<HTMLDivElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
   const [imageFailed, setImageFailed] = useState(false);
   const [distractionFlash, setDistractionFlash] = useState<{
     zoneId: string;
@@ -399,6 +403,11 @@ export function FlashWordGamePlayer({
   const showCard = activeCard != null && phase !== 'ready';
   const zone = activeCard?.zone;
   const imageUrl = activeCard?.imageUrl?.trim() ?? '';
+  const overlayLayoutStyle = useFlashWordImageLayout(
+    imageFrameRef,
+    imageRef,
+    imageUrl,
+  );
   const missingImageUrl = showCard && activeCard != null && !imageUrl;
 
   const blurImageForChoices =
@@ -468,8 +477,9 @@ export function FlashWordGamePlayer({
                   )}
                 </div>
               ) : (
-                <div className="flash-word-player__image-frame">
+                <div className="flash-word-player__image-frame" ref={imageFrameRef}>
                   <img
+                    ref={imageRef}
                     key={imageUrl}
                     src={imageUrl}
                     alt=""
@@ -478,15 +488,13 @@ export function FlashWordGamePlayer({
                     onError={() => setImageFailed(true)}
                   />
                   {zone && (
-                    <div className="flash-word-player__image-overlay">
+                    <div
+                      className="flash-word-player__image-overlay"
+                      style={overlayLayoutStyle}
+                    >
                       <div
                         className={zoneClassName}
-                        style={{
-                          left: `${zone.xPct}%`,
-                          top: `${zone.yPct}%`,
-                          width: `${zone.widthPct}%`,
-                          height: `${zone.heightPct}%`,
-                        }}
+                        style={flashWordZoneStyle(zone)}
                       >
                         {phase === 'flash' && (
                           <span className="flash-word-player__flash-word" aria-live="off">
@@ -499,12 +507,7 @@ export function FlashWordGamePlayer({
                           <div
                             key={distractionZone.id}
                             className="flash-word-player__distraction-zone"
-                            style={{
-                              left: `${distractionZone.zone.xPct}%`,
-                              top: `${distractionZone.zone.yPct}%`,
-                              width: `${distractionZone.zone.widthPct}%`,
-                              height: `${distractionZone.zone.heightPct}%`,
-                            }}
+                            style={flashWordZoneStyle(distractionZone.zone)}
                           >
                             {distractionFlash?.zoneId === distractionZone.id && (
                               <span className="flash-word-player__flash-word" aria-live="off">

@@ -5,6 +5,11 @@ import {
   type FlashWordDistractionZoneInput,
   type FlashWordZone,
 } from '../lib/flashWordGames';
+import {
+  flashWordZoneStyle,
+  getImageContentRect,
+} from '../lib/flashWordZonePosition';
+import { useFlashWordImageLayout } from '../hooks/useFlashWordImageLayout';
 
 interface FlashWordZoneEditorProps {
   imageUrl: string;
@@ -27,6 +32,12 @@ export function FlashWordZoneEditor({
   showDistractionZones = false,
 }: FlashWordZoneEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
+  const overlayLayoutStyle = useFlashWordImageLayout(
+    containerRef,
+    imageRef,
+    imageUrl,
+  );
   const dragRef = useRef<{
     target: DragTarget;
     mode: DragMode;
@@ -68,11 +79,15 @@ export function FlashWordZoneEditor({
 
   const onPointerMove = (event: ReactPointerEvent) => {
     const drag = dragRef.current;
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!drag || !rect || rect.width <= 0 || rect.height <= 0) return;
+    const container = containerRef.current;
+    const img = imageRef.current;
+    if (!drag || !container || !img) return;
 
-    const dxPct = ((event.clientX - drag.startX) / rect.width) * 100;
-    const dyPct = ((event.clientY - drag.startY) / rect.height) * 100;
+    const contentRect = getImageContentRect(img, container);
+    if (!contentRect || contentRect.width <= 0 || contentRect.height <= 0) return;
+
+    const dxPct = ((event.clientX - drag.startX) / contentRect.width) * 100;
+    const dyPct = ((event.clientY - drag.startY) / contentRect.height) * 100;
 
     if (drag.mode === 'move') {
       applyZoneChange(
@@ -148,66 +163,62 @@ export function FlashWordZoneEditor({
         onPointerCancel={onPointerUp}
       >
         <img
+          ref={imageRef}
           src={imageUrl}
           alt=""
           className="flash-zone-editor__image"
           draggable={false}
         />
-        {showDistractionZones &&
-          distractionZones.map((entry, index) => {
-            const normalized = normalizeZone(entry.zone);
-            return (
-              <div
-                key={entry.id ?? `distraction-${index}`}
-                className="flash-zone-editor__zone flash-zone-editor__zone--distraction"
-                style={{
-                  left: `${normalized.xPct}%`,
-                  top: `${normalized.yPct}%`,
-                  width: `${normalized.widthPct}%`,
-                  height: `${normalized.heightPct}%`,
-                }}
-                onPointerDown={onPointerDown(
-                  { kind: 'distraction', index },
-                  'move',
-                  normalized,
-                )}
-                role="presentation"
-              >
-                <span className="flash-zone-editor__zone-label">Distraction zone</span>
-                {entry.word.trim() && (
-                  <span className="flash-zone-editor__zone-word">{entry.word.trim()}</span>
-                )}
-                <button
-                  type="button"
-                  className="flash-zone-editor__resize"
-                  aria-label="Resize distraction zone"
+        <div
+          className="flash-zone-editor__overlay"
+          style={overlayLayoutStyle}
+        >
+          {showDistractionZones &&
+            distractionZones.map((entry, index) => {
+              const normalized = normalizeZone(entry.zone);
+              return (
+                <div
+                  key={entry.id ?? `distraction-${index}`}
+                  className="flash-zone-editor__zone flash-zone-editor__zone--distraction"
+                  style={flashWordZoneStyle(normalized)}
                   onPointerDown={onPointerDown(
                     { kind: 'distraction', index },
-                    'resize',
+                    'move',
                     normalized,
                   )}
-                />
-              </div>
-            );
-          })}
-        <div
-          className="flash-zone-editor__zone flash-zone-editor__zone--main"
-          style={{
-            left: `${normalizedMain.xPct}%`,
-            top: `${normalizedMain.yPct}%`,
-            width: `${normalizedMain.widthPct}%`,
-            height: `${normalizedMain.heightPct}%`,
-          }}
-          onPointerDown={onPointerDown({ kind: 'main' }, 'move', normalizedMain)}
-          role="presentation"
-        >
-          <span className="flash-zone-editor__zone-label">Flash zone</span>
-          <button
-            type="button"
-            className="flash-zone-editor__resize"
-            aria-label="Resize flash zone"
-            onPointerDown={onPointerDown({ kind: 'main' }, 'resize', normalizedMain)}
-          />
+                  role="presentation"
+                >
+                  <span className="flash-zone-editor__zone-label">Distraction zone</span>
+                  {entry.word.trim() && (
+                    <span className="flash-zone-editor__zone-word">{entry.word.trim()}</span>
+                  )}
+                  <button
+                    type="button"
+                    className="flash-zone-editor__resize"
+                    aria-label="Resize distraction zone"
+                    onPointerDown={onPointerDown(
+                      { kind: 'distraction', index },
+                      'resize',
+                      normalized,
+                    )}
+                  />
+                </div>
+              );
+            })}
+          <div
+            className="flash-zone-editor__zone flash-zone-editor__zone--main"
+            style={flashWordZoneStyle(normalizedMain)}
+            onPointerDown={onPointerDown({ kind: 'main' }, 'move', normalizedMain)}
+            role="presentation"
+          >
+            <span className="flash-zone-editor__zone-label">Flash zone</span>
+            <button
+              type="button"
+              className="flash-zone-editor__resize"
+              aria-label="Resize flash zone"
+              onPointerDown={onPointerDown({ kind: 'main' }, 'resize', normalizedMain)}
+            />
+          </div>
         </div>
       </div>
 

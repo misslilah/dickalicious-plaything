@@ -4998,6 +4998,8 @@ a.task-list-row {
 .flash-zone-editor__canvas {
   position: relative;
   width: 100%;
+  min-height: 16rem;
+  height: min(40vh, 22rem);
   border-radius: var(--radius);
   overflow: hidden;
   border: 1px solid rgba(192, 132, 252, 0.25);
@@ -5006,9 +5008,22 @@ a.task-list-row {
 }
 
 .flash-zone-editor__image {
-  width: 100%;
   display: block;
-  vertical-align: top;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: center;
+}
+
+.flash-zone-editor__overlay {
+  position: absolute;
+  pointer-events: none;
+}
+
+.flash-zone-editor__overlay .flash-zone-editor__zone {
+  pointer-events: auto;
 }
 
 .flash-zone-editor__zone {
