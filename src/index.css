@@ -175,6 +175,12 @@ select {
   grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
 }
 
+/* Flash / Focus Training modal lives inside .app-main; raise main above fixed nav. */
+.app-main:has(.flash-word-game-modal) {
+  position: relative;
+  z-index: 110;
+}
+
 .nav-link {
   display: flex;
   flex-direction: column;
@@ -4459,8 +4465,8 @@ a.task-list-row {
   z-index: 220;
   display: flex;
   flex-direction: column;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right)
-    env(safe-area-inset-bottom) env(safe-area-inset-left);
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    calc(var(--nav-h) + var(--safe-bottom)) env(safe-area-inset-left, 0px);
 }
 
 .flash-word-game-modal__backdrop {
@@ -4476,7 +4482,7 @@ a.task-list-row {
   width: 100%;
   height: 100%;
   max-width: 100vw;
-  max-height: 100dvh;
+  max-height: 100%;
   overflow: hidden;
   background: var(--bg);
   border: 1px solid rgba(192, 132, 252, 0.2);
@@ -4486,12 +4492,14 @@ a.task-list-row {
 @media (min-width: 640px) {
   .flash-word-game-modal {
     padding: 1rem;
+    padding-bottom: calc(1rem + var(--safe-bottom));
   }
 
   .flash-word-game-modal__panel {
     margin: auto;
     width: min(100%, 52rem);
     height: min(100dvh, 58rem);
+    max-height: calc(100dvh - 2rem - var(--safe-bottom));
     border-radius: var(--radius);
   }
 }
@@ -4529,8 +4537,10 @@ a.task-list-row {
   display: flex;
   flex-direction: column;
   flex: 1;
-  min-height: min(58vh, 100%);
+  min-height: 0;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-padding-bottom: 1rem;
   padding: 0.75rem 0.5rem 1rem;
 }
 
@@ -4884,8 +4894,10 @@ a.task-list-row {
   .flash-word-game-modal__body {
     min-height: 0;
     flex: 1;
-    overflow: hidden;
-    padding: 0.45rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0.45rem 0.5rem 0.75rem;
+    scroll-padding-bottom: 1rem;
   }
 
   .flash-word-player {
@@ -4935,12 +4947,12 @@ a.task-list-row {
   .flash-word-player__panel {
     flex: 0 0 auto;
     min-height: 0;
-    max-height: min(46dvh, calc(100dvh - 14rem));
-    overflow-y: auto;
+    max-height: none;
+    overflow-y: visible;
     overflow-x: hidden;
-    -webkit-overflow-scrolling: touch;
     gap: 0.5rem;
-    padding-bottom: 0.15rem;
+    padding-bottom: 0.35rem;
+    scroll-margin-bottom: 0.75rem;
   }
 
   .flash-word-player__instruction,
