@@ -5,6 +5,7 @@ import type {
   UserRole,
 } from '../types';
 import {
+  EMAIL_NOT_CONFIRMED_MESSAGE,
   formatSupabaseAuthError,
   getSupabase,
   INVALID_LOGIN_CREDENTIALS_MESSAGE,
@@ -53,6 +54,9 @@ function isEmailNotConfirmedError(message: string): boolean {
   return /email not confirmed/i.test(message);
 }
 
+const CONFIRM_LOCAL_SIGNUP_ADMIN_HINT =
+  'Deploy the confirm-local-signup edge function to your Supabase project, or disable "Confirm email" under Authentication → Providers → Email.';
+
 /** Auto-confirm synthetic @local.app accounts (requires confirm-local-signup edge function). */
 async function confirmLocalAppSignup(
   email: string,
@@ -68,23 +72,17 @@ async function confirmLocalAppSignup(
   });
 
   if (error) {
-    return {
-      ok: false,
-      error:
-        'Could not activate your username account. Deploy the confirm-local-signup edge function to your Supabase project, or disable “Confirm email” under Authentication → Providers → Email.',
-    };
+    console.warn('[auth] confirm-local-signup failed:', error, CONFIRM_LOCAL_SIGNUP_ADMIN_HINT);
+    return { ok: false, error: EMAIL_NOT_CONFIRMED_MESSAGE };
   }
 
   const payload = data as { ok?: boolean; error?: string } | null;
   if (payload?.error === 'not_configured') {
-    return {
-      ok: false,
-      error:
-        'Account activation is not configured on the server. Deploy confirm-local-signup or disable email confirmation in Supabase.',
-    };
+    console.warn('[auth] confirm-local-signup not configured:', CONFIRM_LOCAL_SIGNUP_ADMIN_HINT);
+    return { ok: false, error: EMAIL_NOT_CONFIRMED_MESSAGE };
   }
   if (payload?.ok !== true && payload?.error) {
-    return { ok: false, error: 'Could not activate your account. Try again shortly.' };
+    return { ok: false, error: EMAIL_NOT_CONFIRMED_MESSAGE };
   }
 
   return { ok: true };

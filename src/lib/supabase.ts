@@ -141,6 +141,10 @@ export function isSupabaseColumnMissingError(
   return /column .* does not exist/i.test(error.message ?? '');
 }
 
+/** Shown when Supabase rejects sign-in because the email is unconfirmed. */
+export const EMAIL_NOT_CONFIRMED_MESSAGE =
+  'Your email is not confirmed yet. Please check your inbox and confirm your email before signing in.';
+
 export function formatSupabaseAuthError(
   error: { message?: string } | null | undefined,
   status: SupabaseConfigStatus = getSupabaseConfigStatus(),
@@ -153,7 +157,7 @@ export function formatSupabaseAuthError(
     return `${message} — Check VITE_SUPABASE_ANON_KEY in .env (anon eyJ… or publishable sb_publishable_… from Project Settings → API), then restart the dev server.`;
   }
   if (/email not confirmed/i.test(message)) {
-    return 'Your account is not active yet. Try signing in again in a moment. If this keeps happening, ask an admin to deploy the confirm-local-signup edge function, or turn off “Confirm email” under Authentication → Providers → Email in the Supabase dashboard.';
+    return EMAIL_NOT_CONFIRMED_MESSAGE;
   }
   return message;
 }
