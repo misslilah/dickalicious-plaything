@@ -25,6 +25,8 @@ const PROFILE_SELECT_WITH_PATREON =
   'username, role, patreon_tier, patreon_status, patreon_user_id';
 const PROFILE_SELECT_BASE = 'username, role';
 
+const LOCAL_APP_DOMAIN = '@local.app';
+
 type ProfileRow = {
   username?: string | null;
   role?: string | null;
@@ -37,7 +39,53 @@ type ProfileRow = {
 export function usernameToEmail(username: string): string {
   const trimmed = username.trim().toLowerCase();
   if (trimmed.includes('@')) return trimmed;
-  return `${trimmed}@local.app`;
+  return `${trimmed}${LOCAL_APP_DOMAIN}`;
+}
+
+export function isLocalAppEmail(email: string): boolean {
+  const e = email.trim().toLowerCase();
+  return e.endsWith(LOCAL_APP_DOMAIN) && e.length > LOCAL_APP_DOMAIN.length;
+}
+
+function isEmailNotConfirmedError(message: string): boolean {
+  return /email not confirmed/i.test(message);
+}
+
+/** Auto-confirm synthetic @local.app accounts (requires confirm-local-signup edge function). */
+async function confirmLocalAppSignup(
+  email: string,
+  userId?: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = getSupabase();
+  if (!supabase) {
+    return { ok: false, error: 'Supabase is not configured.' };
+  }
+
+  const { data, error } = await supabase.functions.invoke('confirm-local-signup', {
+    body: { email, ...(userId ? { userId } : {}) },
+  });
+
+  if (error) {
+    return {
+      ok: false,
+      error:
+        'Could not activate your username account. Deploy the confirm-local-signup edge function to your Supabase project, or disable “Confirm email” under Authentication → Providers → Email.',
+    };
+  }
+
+  const payload = data as { ok?: boolean; error?: string } | null;
+  if (payload?.error === 'not_configured') {
+    return {
+      ok: false,
+      error:
+        'Account activation is not configured on the server. Deploy confirm-local-signup or disable email confirmation in Supabase.',
+    };
+  }
+  if (payload?.ok !== true && payload?.error) {
+    return { ok: false, error: 'Could not activate your account. Try again shortly.' };
+  }
+
+  return { ok: true };
 }
 
 function profileRowToSession(
@@ -129,10 +177,25 @@ export async function login(
     ? emailOrUsername.trim().toLowerCase()
     : usernameToEmail(emailOrUsername);
 
-  try {
+  const attemptSignIn = async () => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      return { ok: false, error: formatSupabaseAuthError(error) };
+    return error;
+  };
+
+  try {
+    let signInError = await attemptSignIn();
+    if (
+      signInError &&
+      isEmailNotConfirmedError(signInError.message) &&
+      isLocalAppEmail(email)
+    ) {
+      const confirmed = await confirmLocalAppSignup(email);
+      if (confirmed.ok) {
+        signInError = await attemptSignIn();
+      }
+    }
+    if (signInError) {
+      return { ok: false, error: formatSupabaseAuthError(signInError) };
     }
   } catch (err) {
     return {
@@ -172,7 +235,9 @@ export async function changePassword(
 export async function signUp(
   username: string,
   password: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; session: AuthSession } | { ok: false; error: string }
+> {
   if (!isSupabaseConfigured()) {
     return {
       ok: false,
@@ -188,8 +253,9 @@ export async function signUp(
 
   const email = usernameToEmail(trimmedUsername);
   const supabase = getSupabase()!;
+
   try {
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -199,6 +265,18 @@ export async function signUp(
     if (error) {
       return { ok: false, error: formatSupabaseAuthError(error) };
     }
+
+    if (data.session?.user) {
+      const session = await getCurrentSession();
+      if (session) return { ok: true, session };
+    }
+
+    if (isLocalAppEmail(email)) {
+      const confirmed = await confirmLocalAppSignup(email, data.user?.id);
+      if (!confirmed.ok) return { ok: false, error: confirmed.error };
+    }
+
+    return login(trimmedUsername, password);
   } catch (err) {
     return {
       ok: false,
@@ -207,8 +285,6 @@ export async function signUp(
       ),
     };
   }
-
-  return { ok: true };
 }
 
 /** Admin-only helper: creates a regular user account (never admin). */
@@ -235,7 +311,7 @@ export async function createUser(
   if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
 
   const email = usernameToEmail(trimmed);
-  const { error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
@@ -247,10 +323,16 @@ export async function createUser(
     return {
       ok: false,
       error:
-        error.message +
+        formatSupabaseAuthError(error) +
         ' (If sign-ups are disabled, create the user in the Supabase Dashboard → Authentication.)',
     };
   }
+
+  if (!data.session && isLocalAppEmail(email)) {
+    const confirmed = await confirmLocalAppSignup(email, data.user?.id);
+    if (!confirmed.ok) return { ok: false, error: confirmed.error };
+  }
+
   return { ok: true };
 }
 

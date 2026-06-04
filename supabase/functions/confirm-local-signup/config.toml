@@ -1,0 +1,3 @@
+# Called right after public sign-up (no session yet). Service role confirms @local.app only.
+# Deploy: supabase functions deploy confirm-local-signup --no-verify-jwt
+verify_jwt = false

@@ -121,10 +121,7 @@ interface AppStoreValue {
   signUp: (
     username: string,
     password: string,
-  ) => Promise<
-    | { ok: true; needsEmailConfirmation?: boolean }
-    | { ok: false; error: string }
-  >;
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   refreshProfile: () => Promise<void>;
   logout: () => Promise<void>;
   changePassword: (
@@ -442,20 +439,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       signUp: async (username, password) => {
         const result = await authSignUp(username, password);
         if (!result.ok) return result;
-
-        const supabase = getSupabase();
-        const { data } = supabase ? await supabase.auth.getSession() : { data: null };
-        if (!data?.session?.user) {
-          return { ok: true, needsEmailConfirmation: true };
-        }
-
-        const current = await getCurrentSession();
-        if (!current) {
-          return { ok: true, needsEmailConfirmation: true };
-        }
-        userIdRef.current = current.userId;
-        setSession(sessionToApp(current));
-        await loadAllData(current.userId);
+        userIdRef.current = result.session.userId;
+        setSession(sessionToApp(result.session));
+        await loadAllData(result.session.userId);
         return { ok: true };
       },
       logout: async () => {

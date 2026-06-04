@@ -152,5 +152,8 @@ export function formatSupabaseAuthError(
   if (/invalid api key|apikey|jwt|unauthorized/i.test(message)) {
     return `${message} — Check VITE_SUPABASE_ANON_KEY in .env (anon eyJ… or publishable sb_publishable_… from Project Settings → API), then restart the dev server.`;
   }
+  if (/email not confirmed/i.test(message)) {
+    return 'Your account is not active yet. Try signing in again in a moment. If this keeps happening, ask an admin to deploy the confirm-local-signup edge function, or turn off “Confirm email” under Authentication → Providers → Email in the Supabase dashboard.';
+  }
   return message;
 }

@@ -60,11 +60,6 @@ export function Login() {
       setError(result.error);
       return;
     }
-    if (result.needsEmailConfirmation) {
-      setNotice('Account created. Sign in with your username and password.');
-      setMode('signin');
-      return;
-    }
     navigate(from, { replace: true });
   };
 
