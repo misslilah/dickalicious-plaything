@@ -1,5 +1,22 @@
+/**
+ * Patreon API v2 webhook — tier sync on membership changes.
+ *
+ * Event name: `X-Patreon-Event` header (data.type is always `member`).
+ * Handled: members:create, members:update, members:delete,
+ *   members:pledge:create, members:pledge:update, members:pledge:delete
+ * Signature: `X-Patreon-Signature` HMAC-MD5 body + PATREON_WEBHOOK_SECRET
+ *
+ * Revoke: pledge/member delete, or patron_status declined/former/null without active tier.
+ * Grant: patron_status active_patron + entitled tier title → sweetie | princess | slut.
+ */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { corsHeaders, mapPatreonTierTitle, type AppPatreonTier } from '../_shared/patreon.ts';
+import {
+  corsHeaders,
+  extractPatreonUserId,
+  isPatreonWebhookMemberEvent,
+  resolveWebhookProfileUpdate,
+  type PatreonWebhookPayload,
+} from '../_shared/patreon.ts';
 
 /** Verify Patreon webhook signature (HMAC-MD5). */
 async function verifySignature(
@@ -50,58 +67,45 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: 'Supabase not configured' }), { status: 503 });
   }
 
-  let payload: {
-    data?: {
-      type?: string;
-      attributes?: Record<string, unknown>;
-      relationships?: Record<string, unknown>;
-    };
-    included?: { type: string; attributes?: { title?: string; email?: string } }[];
-  };
-
+  let payload: PatreonWebhookPayload;
   try {
     payload = JSON.parse(rawBody);
   } catch {
     return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400 });
   }
 
-  const eventType = payload?.data?.type ?? '';
-  const supabase = createClient(supabaseUrl, serviceKey);
-
-  const tierTitles = (payload.included ?? [])
-    .filter((x) => x.type === 'tier' || x.type === 'reward')
-    .map((x) => x.attributes?.title ?? '')
-    .filter(Boolean);
-
-  const mapped = tierTitles
-    .map(mapPatreonTierTitle)
-    .filter((t): t is AppPatreonTier => t != null);
-
-  const appTier: AppPatreonTier | null =
-    mapped.includes('slut') ? 'slut' : mapped.includes('princess') ? 'princess' : mapped.includes('sweetie') ? 'sweetie' : null;
-
-  const isActive =
-    eventType.includes('pledge') &&
-    !eventType.includes('delete') &&
-    !eventType.includes('cancel');
-
-  const patreonUserId =
-    (payload.data?.relationships as { user?: { data?: { id?: string } } })?.user?.data?.id ??
-    null;
-
-  if (patreonUserId && (isActive || eventType.includes('delete') || eventType.includes('cancel'))) {
-    await supabase
-      .from('profiles')
-      .update({
-        patreon_user_id: patreonUserId,
-        patreon_tier: isActive ? appTier : null,
-        patreon_status: isActive && appTier ? 'active' : 'cancelled',
-        patreon_updated_at: new Date().toISOString(),
-      })
-      .eq('patreon_user_id', patreonUserId);
+  const event = req.headers.get('x-patreon-event')?.trim() ?? '';
+  if (Deno.env.get('PATREON_WEBHOOK_DEBUG') === '1' && event) {
+    console.log('patreon-webhook', event);
   }
 
-  return new Response(JSON.stringify({ received: true }), {
+  if (!event || !isPatreonWebhookMemberEvent(event)) {
+    return new Response(JSON.stringify({ received: true, ignored: true }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const update = resolveWebhookProfileUpdate(event, payload);
+  const patreonUserId = extractPatreonUserId(payload);
+
+  if (!update || !patreonUserId) {
+    return new Response(JSON.stringify({ received: true }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const supabase = createClient(supabaseUrl, serviceKey);
+  await supabase
+    .from('profiles')
+    .update({
+      patreon_user_id: patreonUserId,
+      patreon_tier: update.appTier,
+      patreon_status: update.patreonStatus,
+      patreon_updated_at: new Date().toISOString(),
+    })
+    .eq('patreon_user_id', patreonUserId);
+
+  return new Response(JSON.stringify({ received: true, event }), {
     headers: { 'Content-Type': 'application/json' },
   });
 });
