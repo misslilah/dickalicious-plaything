@@ -13,7 +13,7 @@ import { getVideoPlaybackUrl } from '../lib/videoStorage';
 import { getTaskLinkedMediaType } from '../lib/taskLinkedMedia';
 import { useNoSeekMedia } from '../lib/useNoSeekMedia';
 import { useAppStore } from '../hooks/useAppStore';
-import type { Task } from '../types';
+import type { AudioPlaylistItem, Task } from '../types';
 
 export type TaskLinkedMediaCloseReason = 'completed' | 'failed' | 'dismissed';
 
@@ -153,7 +153,9 @@ export function TaskLinkedMediaModal({
           setLoading(false);
           return;
         }
-        const item = lib.items.find((i) => i.id === task.linkedAudioItemId);
+        const item = lib.library.items.find(
+          (i: AudioPlaylistItem) => i.id === task.linkedAudioItemId,
+        );
         if (!item?.url) {
           setLoadError('Linked audio track not found.');
           setLoading(false);

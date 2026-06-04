@@ -6274,6 +6274,81 @@ body.interactive-video-player--pseudo-fs {
   font-size: 0.72rem;
 }
 
+.community-channels__tab--admin,
+.community-channels__tab--inbox {
+  flex: 1 1 100%;
+  min-width: 6rem;
+}
+
+.community-channels__tab--inbox {
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.community-channels__tab--inbox.community-channels__tab--active {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.55);
+  background: rgba(251, 191, 36, 0.1);
+}
+
+.community-admin-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.community-admin-panel__hint {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.community-messages--ticket {
+  min-height: 10rem;
+}
+
+.community-messages--inbox {
+  min-height: 14rem;
+  max-height: min(55vh, 32rem);
+}
+
+.community-admin-group {
+  margin-top: 0.35rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(232, 121, 249, 0.15);
+}
+
+.community-admin-group:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.community-admin-group__label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+
+.community-message--inbox {
+  position: relative;
+  max-width: 100%;
+}
+
+.community-admin-badge {
+  display: inline-block;
+  margin-top: 0.35rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
