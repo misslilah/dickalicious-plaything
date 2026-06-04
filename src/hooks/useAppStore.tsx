@@ -86,7 +86,7 @@ import {
   uncompleteTask,
 } from '../lib/gameLogic';
 import { createInitialState } from '../lib/seed';
-import { getSupabase, isSupabaseConfigured, SUPABASE_SETUP_HINT } from '../lib/supabase';
+import { isSupabaseConfigured, SUPABASE_SETUP_HINT } from '../lib/supabase';
 import { fetchUserProgress, saveUserProgress } from '../lib/userProgressDb';
 import { tryRecordVideoCompletion } from '../lib/videoCompletionDb';
 import {
