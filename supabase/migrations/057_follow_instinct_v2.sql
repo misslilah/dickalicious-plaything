@@ -1,4 +1,5 @@
--- Idempotent: Follow your instinct v2 — photo + order rounds, challenge mode.
+-- Idempotent: Follow your instinct v2 — photo + order rounds, per-round order types.
+-- challenge_mode 'both' = mixed rounds (close eyes / open mouth / tongue); admin sets order_type per round.
 -- Safe to run multiple times in Supabase SQL Editor.
 
 do $$ begin

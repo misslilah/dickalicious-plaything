@@ -5658,6 +5658,20 @@ a.task-list-row {
   font-size: 1.15rem;
   font-weight: 700;
   color: var(--accent);
+  min-height: 1.5em;
+}
+
+.follow-instinct-player__order--visible {
+  animation: follow-instinct-order-in 0.35s ease-out;
+}
+
+@keyframes follow-instinct-order-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .follow-instinct-player__mode-pick {
@@ -5680,7 +5694,12 @@ a.task-list-row {
 
 .follow-instinct-player__photo-wrap {
   flex: 1;
-  min-height: 0;
+  min-height: min(42dvh, 22rem);
+  max-height: min(52dvh, 28rem);
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--radius);
   overflow: hidden;
   border: 1px solid rgba(192, 132, 252, 0.25);
@@ -5688,10 +5707,11 @@ a.task-list-row {
 }
 
 .follow-instinct-player__photo {
-  width: 100%;
-  height: 100%;
-  max-height: min(42dvh, 22rem);
-  object-fit: cover;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
   display: block;
 }
 
@@ -5699,6 +5719,12 @@ a.task-list-row {
   margin: 0;
   text-align: center;
   font-weight: 600;
+}
+
+.follow-instinct-player__advance {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.25rem;
 }
 
 .follow-instinct-player__feedback--ok {
@@ -5820,8 +5846,6 @@ a.task-list-row {
 }
 
 .follow-instinct-admin__list-thumb {
-  display: flex;
-  gap: 0.25rem;
   flex-shrink: 0;
 }
 
@@ -5833,8 +5857,9 @@ a.task-list-row {
 }
 
 @media (max-width: 520px) {
-  .follow-instinct-player__photo {
-    max-height: 36dvh;
+  .follow-instinct-player__photo-wrap {
+    min-height: min(36dvh, 18rem);
+    max-height: min(44dvh, 22rem);
   }
 }
 

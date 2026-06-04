@@ -26,6 +26,9 @@ const RIGHT_EYE_OUTER = 263;
 /** Iris centers — present when Face Landmarker returns all 478 landmarks. */
 const LEFT_IRIS_CENTER = 468;
 const RIGHT_IRIS_CENTER = 473;
+/** Eye aspect ratio (EAR) landmark rings. */
+const LEFT_EYE_EAR = [33, 160, 158, 133, 153, 144] as const;
+const RIGHT_EYE_EAR = [263, 387, 385, 362, 380, 373] as const;
 
 function dist(a: NormalizedLandmark, b: NormalizedLandmark): number {
   const dx = a.x - b.x;
@@ -186,4 +189,37 @@ export function isMouthOpen(mar: number | null): boolean {
 
 export function isTongueHeuristic(mar: number | null): boolean {
   return mar !== null && mar >= MAR_TONGUE_HEURISTIC;
+}
+
+function singleEyeAspectRatio(
+  landmarks: NormalizedLandmark[],
+  indices: readonly [number, number, number, number, number, number],
+): number | null {
+  if (landmarks.length <= Math.max(...indices)) return null;
+  const p1 = landmarks[indices[0]];
+  const p2 = landmarks[indices[1]];
+  const p3 = landmarks[indices[2]];
+  const p4 = landmarks[indices[3]];
+  const p5 = landmarks[indices[4]];
+  const p6 = landmarks[indices[5]];
+  const verticalA = dist(p2, p6);
+  const verticalB = dist(p3, p5);
+  const horizontal = Math.max(dist(p1, p4), 0.005);
+  return (verticalA + verticalB) / (2 * horizontal);
+}
+
+/** Eye aspect ratio — lower values mean the eye is more closed. */
+export function eyeAspectRatio(landmarks: NormalizedLandmark[]): number | null {
+  const left = singleEyeAspectRatio(landmarks, LEFT_EYE_EAR);
+  const right = singleEyeAspectRatio(landmarks, RIGHT_EYE_EAR);
+  if (left === null && right === null) return null;
+  if (left === null) return right;
+  if (right === null) return left;
+  return (left + right) / 2;
+}
+
+const EAR_EYES_CLOSED = 0.2;
+
+export function areEyesClosed(ear: number | null): boolean {
+  return ear !== null && ear < EAR_EYES_CLOSED;
 }

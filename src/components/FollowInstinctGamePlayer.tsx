@@ -1,16 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import {
-  gazeYawRatio,
-  isLookingLeft,
-  isLookingRight,
+  areEyesClosed,
+  eyeAspectRatio,
   isMouthOpen,
   isTongueHeuristic,
   mouthAspectRatio,
-  smoothGazeSample,
   type NormalizedLandmark,
 } from '../lib/facePoseDetection';
-import type { FollowInstinctGame } from '../lib/followInstinctGames';
+import {
+  FOLLOW_INSTINCT_ORDER_LABELS,
+  type FollowInstinctGame,
+  type FollowInstinctRound,
+} from '../lib/followInstinctGames';
 import {
   fetchMiniGameUserBestStreak,
   upsertMiniGameBestStreak,
@@ -22,67 +24,48 @@ const MEDIAPIPE_WASM =
 const FACE_MODEL =
   'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
 
-const ROUNDS_PER_SESSION = 8;
-const COMMAND_WINDOW_MS = 3500;
-/** Frames with MAR above tongue threshold before tongue_out validates. */
+const MAX_ROUNDS_PER_SESSION = 8;
+const ORDER_REVEAL_DELAY_MS = 3000;
+const COMMAND_WINDOW_MS = 4500;
 const TONGUE_HOLD_FRAMES = 6;
-/** Neutral-face samples collected at the start of each gaze round. */
-const GAZE_CALIBRATION_FRAMES = 10;
-/** Consecutive frames gaze must hold before look_left / look_right succeeds. */
-const GAZE_HOLD_FRAMES = 7;
-/** EMA smoothing factor — higher reacts faster, lower is steadier. */
-const GAZE_EMA_ALPHA = 0.35;
+const EYES_CLOSED_HOLD_FRAMES = 8;
+const SUCCESS_ADVANCE_MS = 900;
+const FAIL_ADVANCE_MS = 1200;
 
-export type InstinctCommand = 'look_left' | 'look_right' | 'open_mouth' | 'tongue_out';
-
-const COMMAND_LABELS: Record<InstinctCommand, string> = {
-  look_left: 'Look left',
-  look_right: 'Look right',
-  open_mouth: 'Open your mouth',
-  tongue_out: 'Stick your tongue out',
-};
-
-function commandLabel(command: InstinctCommand): string {
-  return COMMAND_LABELS[command];
+function shuffleRounds(pool: FollowInstinctRound[]): FollowInstinctRound[] {
+  const copy = [...pool];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
 }
 
-function randomCommand(): InstinctCommand {
-  const pool: InstinctCommand[] = [
-    'look_left',
-    'look_right',
-    'open_mouth',
-    'tongue_out',
-  ];
-  return pool[Math.floor(Math.random() * pool.length)];
+function buildSessionQueue(pool: FollowInstinctRound[]): FollowInstinctRound[] {
+  if (pool.length === 0) return [];
+  const target = Math.min(MAX_ROUNDS_PER_SESSION, pool.length);
+  return shuffleRounds(pool).slice(0, target);
 }
 
-function isGazeCommand(command: InstinctCommand): boolean {
-  return command === 'look_left' || command === 'look_right';
+function displayOrderText(round: FollowInstinctRound): string {
+  const text = round.orderText.trim();
+  return text || FOLLOW_INSTINCT_ORDER_LABELS[round.orderType];
 }
 
-function heartSideForCommand(command: InstinctCommand): 'left' | 'right' {
-  if (command === 'look_left') return 'left';
-  if (command === 'look_right') return 'right';
-  return Math.random() < 0.5 ? 'left' : 'right';
-}
-
-function validateCommand(
-  command: InstinctCommand,
+function validateRound(
+  round: FollowInstinctRound,
   landmarks: NormalizedLandmark[],
   tongueFrameCount: number,
-  gazeHoldFrames: number,
-  gazeCalibrated: boolean,
+  eyesClosedFrameCount: number,
 ): boolean {
   const mar = mouthAspectRatio(landmarks);
-  switch (command) {
-    case 'look_left':
-      return gazeCalibrated && gazeHoldFrames >= GAZE_HOLD_FRAMES;
-    case 'look_right':
-      return gazeCalibrated && gazeHoldFrames >= GAZE_HOLD_FRAMES;
+  const ear = eyeAspectRatio(landmarks);
+  switch (round.orderType) {
+    case 'close_eyes':
+      return areEyesClosed(ear) && eyesClosedFrameCount >= EYES_CLOSED_HOLD_FRAMES;
     case 'open_mouth':
       return isMouthOpen(mar);
     case 'tongue_out':
-      // Best-effort: wide mouth held briefly — not true tongue detection.
       return isTongueHeuristic(mar) && tongueFrameCount >= TONGUE_HOLD_FRAMES;
     default:
       return false;
@@ -99,28 +82,37 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
   const rafRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const tongueFramesRef = useRef(0);
-  const gazeBaselineRef = useRef<number | null>(null);
-  const gazeCalibrationSumRef = useRef(0);
-  const gazeCalibrationCountRef = useRef(0);
-  const gazeCalibratedRef = useRef(false);
-  const gazeHoldFramesRef = useRef(0);
-  const smoothedGazeRef = useRef<number | null>(null);
+  const eyesClosedFramesRef = useRef(0);
+  const sessionQueueRef = useRef<FollowInstinctRound[]>([]);
+  const advanceTimeoutRef = useRef<number | null>(null);
 
   const [cameraReady, setCameraReady] = useState(false);
   const [modelReady, setModelReady] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [roundIndex, setRoundIndex] = useState(0);
-  const [command, setCommand] = useState<InstinctCommand | null>(null);
-  const [heartSide, setHeartSide] = useState<'left' | 'right'>('left');
+  const [sessionTotal, setSessionTotal] = useState(0);
+  const [activeRound, setActiveRound] = useState<FollowInstinctRound | null>(null);
   const [feedback, setFeedback] = useState<'idle' | 'success' | 'fail'>('idle');
   const [streak, setStreak] = useState(0);
   const [sessionBestStreak, setSessionBestStreak] = useState(0);
   const [allTimeBestStreak, setAllTimeBestStreak] = useState(0);
   const sessionBestStreakRef = useRef(0);
+  const persistSessionBestStreakRef = useRef<() => void>(() => {});
   const [sessionDone, setSessionDone] = useState(false);
   const [detecting, setDetecting] = useState(false);
+  const [orderRevealed, setOrderRevealed] = useState(false);
   const roundStartRef = useRef(0);
   const judgedRef = useRef(false);
+
+  const playableRounds = useMemo(() => game.rounds, [game.rounds]);
+  const sessionActive = !sessionDone && activeRound !== null;
+
+  const clearAdvanceTimeout = useCallback(() => {
+    if (advanceTimeoutRef.current !== null) {
+      window.clearTimeout(advanceTimeoutRef.current);
+      advanceTimeoutRef.current = null;
+    }
+  }, []);
 
   const persistSessionBestStreak = useCallback(() => {
     const best = sessionBestStreakRef.current;
@@ -132,6 +124,8 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
       }
     })();
   }, [allTimeBestStreak, game.id]);
+
+  persistSessionBestStreakRef.current = persistSessionBestStreak;
 
   const recordStreak = useCallback(
     (next: number) => {
@@ -149,30 +143,46 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
     [allTimeBestStreak, game.id],
   );
 
-  const startRound = useCallback((index: number) => {
-    if (index >= ROUNDS_PER_SESSION) {
-      persistSessionBestStreak();
-      setSessionDone(true);
-      setCommand(null);
+  const startRound = useCallback(
+    (index: number) => {
+      const queue = sessionQueueRef.current;
+      if (queue.length === 0) return;
+      clearAdvanceTimeout();
+      if (index >= queue.length) {
+        persistSessionBestStreak();
+        setSessionDone(true);
+        setActiveRound(null);
+        setDetecting(false);
+        setOrderRevealed(false);
+        setFeedback('idle');
+        return;
+      }
+      setRoundIndex(index);
+      setActiveRound(queue[index]);
+      setFeedback('idle');
+      setOrderRevealed(false);
+      judgedRef.current = false;
+      tongueFramesRef.current = 0;
+      eyesClosedFramesRef.current = 0;
       setDetecting(false);
-      return;
-    }
-    const nextCommand = randomCommand();
-    setRoundIndex(index);
-    setCommand(nextCommand);
-    setHeartSide(heartSideForCommand(nextCommand));
-    setFeedback('idle');
-    judgedRef.current = false;
-    tongueFramesRef.current = 0;
-    gazeBaselineRef.current = null;
-    gazeCalibrationSumRef.current = 0;
-    gazeCalibrationCountRef.current = 0;
-    gazeCalibratedRef.current = !isGazeCommand(nextCommand);
-    gazeHoldFramesRef.current = 0;
-    smoothedGazeRef.current = null;
-    roundStartRef.current = performance.now();
-    setDetecting(true);
-  }, [game.id, persistSessionBestStreak]);
+    },
+    [clearAdvanceTimeout, persistSessionBestStreak],
+  );
+
+  const scheduleAdvance = useCallback(
+    (index: number, delayMs: number) => {
+      clearAdvanceTimeout();
+      advanceTimeoutRef.current = window.setTimeout(() => {
+        advanceTimeoutRef.current = null;
+        startRound(index + 1);
+      }, delayMs);
+    },
+    [clearAdvanceTimeout, startRound],
+  );
+
+  const goToNextRound = useCallback(() => {
+    startRound(roundIndex + 1);
+  }, [roundIndex, startRound]);
 
   useEffect(() => {
     let cancelled = false;
@@ -188,30 +198,63 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
 
   useEffect(() => {
     return () => {
-      persistSessionBestStreak();
+      clearAdvanceTimeout();
+      persistSessionBestStreakRef.current();
     };
-  }, [persistSessionBestStreak]);
+  }, [clearAdvanceTimeout]);
 
   useEffect(() => {
+    if (playableRounds.length === 0) return;
+    const queue = buildSessionQueue(playableRounds);
+    sessionQueueRef.current = queue;
+    setSessionTotal(queue.length);
     startRound(0);
-  }, [startRound]);
+    // game.id only: remount/Strict Mode must restart session; avoid restart when startRound identity changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- playableRounds + startRound read at game open
+  }, [game.id]);
+
+  useEffect(() => {
+    if (!sessionActive) {
+      setOrderRevealed(false);
+      return;
+    }
+    setOrderRevealed(false);
+    setDetecting(false);
+    const timerId = window.setTimeout(() => {
+      roundStartRef.current = performance.now();
+      setOrderRevealed(true);
+      setDetecting(true);
+    }, ORDER_REVEAL_DELAY_MS);
+    return () => window.clearTimeout(timerId);
+  }, [roundIndex, sessionActive, activeRound?.imagePath]);
 
   useEffect(() => {
     let cancelled = false;
+
+    const createLandmarker = async (
+      vision: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>,
+      delegate: 'GPU' | 'CPU',
+    ) =>
+      FaceLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: FACE_MODEL,
+          delegate,
+        },
+        runningMode: 'VIDEO',
+        numFaces: 1,
+        outputFaceBlendshapes: false,
+      });
 
     void (async () => {
       try {
         const vision = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM);
         if (cancelled) return;
-        const landmarker = await FaceLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: FACE_MODEL,
-            delegate: 'GPU',
-          },
-          runningMode: 'VIDEO',
-          numFaces: 1,
-          outputFaceBlendshapes: false,
-        });
+        let landmarker: FaceLandmarker;
+        try {
+          landmarker = await createLandmarker(vision, 'GPU');
+        } catch {
+          landmarker = await createLandmarker(vision, 'CPU');
+        }
         if (cancelled) {
           landmarker.close();
           return;
@@ -267,14 +310,14 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
   }, []);
 
   useEffect(() => {
-    if (!cameraReady || !modelReady || !detecting || !command || sessionDone) return;
+    if (!cameraReady || !modelReady || !detecting || !activeRound || sessionDone) return;
 
     const video = videoRef.current;
     const landmarker = landmarkerRef.current;
     if (!video || !landmarker) return;
 
     const tick = () => {
-      if (!detecting || judgedRef.current || !command) return;
+      if (!detecting || judgedRef.current || !activeRound) return;
       if (video.readyState < 2) {
         rafRef.current = requestAnimationFrame(tick);
         return;
@@ -292,47 +335,19 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
           tongueFramesRef.current = 0;
         }
 
-        if (isGazeCommand(command)) {
-          const rawGaze = gazeYawRatio(landmarks);
-          if (rawGaze !== null) {
-            smoothedGazeRef.current = smoothGazeSample(
-              smoothedGazeRef.current,
-              rawGaze,
-              GAZE_EMA_ALPHA,
-            );
-
-            if (!gazeCalibratedRef.current) {
-              gazeCalibrationSumRef.current += smoothedGazeRef.current;
-              gazeCalibrationCountRef.current += 1;
-              if (gazeCalibrationCountRef.current >= GAZE_CALIBRATION_FRAMES) {
-                gazeBaselineRef.current =
-                  gazeCalibrationSumRef.current / gazeCalibrationCountRef.current;
-                gazeCalibratedRef.current = true;
-                roundStartRef.current = performance.now();
-              }
-            } else {
-              const gaze = smoothedGazeRef.current;
-              const baseline = gazeBaselineRef.current;
-              const looking =
-                command === 'look_left'
-                  ? isLookingLeft(gaze, baseline)
-                  : isLookingRight(gaze, baseline);
-              if (looking) {
-                gazeHoldFramesRef.current += 1;
-              } else {
-                gazeHoldFramesRef.current = 0;
-              }
-            }
-          }
+        const ear = eyeAspectRatio(landmarks);
+        if (areEyesClosed(ear)) {
+          eyesClosedFramesRef.current += 1;
+        } else {
+          eyesClosedFramesRef.current = 0;
         }
 
         if (
-          validateCommand(
-            command,
+          validateRound(
+            activeRound,
             landmarks,
             tongueFramesRef.current,
-            gazeHoldFramesRef.current,
-            gazeCalibratedRef.current,
+            eyesClosedFramesRef.current,
           )
         ) {
           judgedRef.current = true;
@@ -343,7 +358,7 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
             recordStreak(next);
             return next;
           });
-          window.setTimeout(() => startRound(roundIndex + 1), 900);
+          scheduleAdvance(roundIndex, SUCCESS_ADVANCE_MS);
         }
       }
 
@@ -352,7 +367,7 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
         setDetecting(false);
         setFeedback('fail');
         setStreak(0);
-        window.setTimeout(() => startRound(roundIndex + 1), 1200);
+        scheduleAdvance(roundIndex, FAIL_ADVANCE_MS);
       }
 
       rafRef.current = requestAnimationFrame(tick);
@@ -362,9 +377,19 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
-  }, [cameraReady, modelReady, detecting, command, roundIndex, sessionDone, startRound, recordStreak]);
+  }, [
+    cameraReady,
+    modelReady,
+    detecting,
+    activeRound,
+    roundIndex,
+    sessionDone,
+    scheduleAdvance,
+    recordStreak,
+  ]);
 
   const displayedBestStreak = Math.max(sessionBestStreak, allTimeBestStreak);
+  const roundsLabel = sessionTotal > 0 ? sessionTotal : MAX_ROUNDS_PER_SESSION;
 
   if (cameraError) {
     return (
@@ -374,11 +399,19 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
     );
   }
 
+  if (playableRounds.length === 0) {
+    return (
+      <p className="login-error" role="alert">
+        This game has no playable rounds. Ask an admin to add photo + order pairs.
+      </p>
+    );
+  }
+
   return (
     <div className="follow-instinct-player">
       <div className="follow-instinct-player__stats">
         <span>
-          Round {Math.min(roundIndex + 1, ROUNDS_PER_SESSION)} / {ROUNDS_PER_SESSION}
+          Round {Math.min(roundIndex + 1, roundsLabel)} / {roundsLabel}
         </span>
         <span className="follow-instinct-player__streak">
           Streak: <strong>{streak}</strong>
@@ -396,14 +429,33 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
       {sessionDone ? (
         <div className="follow-instinct-player__done">
           <p className="follow-instinct-player__done-title">Session complete</p>
-          <p className="muted">You finished {ROUNDS_PER_SESSION} rounds. Play again from Mini Games.</p>
+          <p className="muted">
+            You finished {sessionTotal} round{sessionTotal === 1 ? '' : 's'}. Play again from Mini
+            Games.
+          </p>
         </div>
       ) : (
         <>
-          {command && (
-            <p className="follow-instinct-player__command" aria-live="polite">
-              {commandLabel(command)}
-            </p>
+          {activeRound && (
+            <>
+              <div className="follow-instinct-player__photo-wrap">
+                <img
+                  src={activeRound.imageUrl}
+                  alt=""
+                  className="follow-instinct-player__photo"
+                  loading="eager"
+                  decoding="async"
+                />
+              </div>
+              {orderRevealed && (
+                <p
+                  className="follow-instinct-player__order follow-instinct-player__order--visible"
+                  aria-live="polite"
+                >
+                  {displayOrderText(activeRound)}
+                </p>
+              )}
+            </>
           )}
           {feedback === 'success' && (
             <p className="follow-instinct-player__feedback follow-instinct-player__feedback--ok">
@@ -414,6 +466,13 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
             <p className="follow-instinct-player__feedback follow-instinct-player__feedback--fail">
               Not quite — next round
             </p>
+          )}
+          {feedback !== 'idle' && (
+            <div className="follow-instinct-player__advance">
+              <button type="button" className="btn btn--primary" onClick={goToNextRound}>
+                Next
+              </button>
+            </div>
           )}
         </>
       )}
@@ -428,35 +487,18 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
         />
       </div>
 
-      {(!cameraReady || (!modelReady && cameraReady)) && (
+      {!sessionDone && (!cameraReady || (!modelReady && cameraReady)) && (
         <p className="follow-instinct-player__status muted" aria-live="polite">
           {!cameraReady ? 'Starting camera…' : 'Loading face detection…'}
         </p>
       )}
 
-      <div className="follow-instinct-player__stage">
-        <div className="follow-instinct-player__panel follow-instinct-player__panel--left">
-          <img src={game.leftImageUrl} alt="" className="follow-instinct-player__panel-img" />
-          {heartSide === 'left' && (
-            <span className="follow-instinct-player__heart" aria-hidden="true">
-              ♥
-            </span>
-          )}
-        </div>
-
-        <div className="follow-instinct-player__panel follow-instinct-player__panel--right">
-          <img src={game.rightImageUrl} alt="" className="follow-instinct-player__panel-img" />
-          {heartSide === 'right' && (
-            <span className="follow-instinct-player__heart" aria-hidden="true">
-              ♥
-            </span>
-          )}
-        </div>
-      </div>
-
-      <p className="muted follow-instinct-player__hint">
-        Follow each command using your face. Tongue detection is approximate (wide open mouth).
-      </p>
+      {!sessionDone && orderRevealed && feedback === 'idle' && (
+        <p className="muted follow-instinct-player__hint">
+          Perform the action shown above with your face. Tongue detection is approximate (wide open
+          mouth).
+        </p>
+      )}
     </div>
   );
 }

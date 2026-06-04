@@ -1,20 +1,40 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   FOLLOW_INSTINCT_IMAGE_ACCEPT,
+  FOLLOW_INSTINCT_ORDER_LABELS,
   MAX_FOLLOW_INSTINCT_IMAGE_BYTES,
   createFollowInstinctGame,
   deleteFollowInstinctGame,
   fetchAllFollowInstinctGames,
+  newRoundDraft,
   updateFollowInstinctGame,
   type FollowInstinctGame,
   type FollowInstinctGameInput,
+  type FollowInstinctOrderType,
+  type FollowInstinctRoundDraft,
 } from '../../lib/followInstinctGames';
 
-function blankForm(): FollowInstinctGameInput & {
-  leftPreview?: string;
-  rightPreview?: string;
-} {
-  return { title: '', description: '' };
+function blankForm(): FollowInstinctGameInput & { rounds: FollowInstinctRoundDraft[] } {
+  return {
+    title: '',
+    description: '',
+    rounds: [newRoundDraft('close_eyes'), newRoundDraft('open_mouth')],
+  };
+}
+
+function gameToDrafts(game: FollowInstinctGame): FollowInstinctRoundDraft[] {
+  return game.rounds.map((round) => ({
+    id: crypto.randomUUID(),
+    orderType: round.orderType,
+    orderText: round.orderText,
+    imagePath: round.imagePath,
+    imageUrl: round.imageUrl,
+  }));
+}
+
+function summarizeOrderTypes(rounds: { orderType: FollowInstinctOrderType }[]): string {
+  const labels = [...new Set(rounds.map((round) => FOLLOW_INSTINCT_ORDER_LABELS[round.orderType]))];
+  return labels.join(', ');
 }
 
 export function FollowInstinctGameAdmin() {
@@ -26,8 +46,6 @@ export function FollowInstinctGameAdmin() {
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(blankForm());
-  const [leftFile, setLeftFile] = useState<File | undefined>();
-  const [rightFile, setRightFile] = useState<File | undefined>();
 
   const filteredGames = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -58,8 +76,6 @@ export function FollowInstinctGameAdmin() {
   const resetForm = () => {
     setEditingId(null);
     setForm(blankForm());
-    setLeftFile(undefined);
-    setRightFile(undefined);
   };
 
   const startEdit = (game: FollowInstinctGame) => {
@@ -67,45 +83,60 @@ export function FollowInstinctGameAdmin() {
     setForm({
       title: game.title,
       description: game.description ?? '',
-      leftPreview: game.leftImageUrl,
-      rightPreview: game.rightImageUrl,
+      rounds: gameToDrafts(game),
     });
-    setLeftFile(undefined);
-    setRightFile(undefined);
     setMessage('');
     setError('');
   };
 
-  const onPickImage = (side: 'left' | 'right', file: File | undefined) => {
+  const onPickRoundImage = (roundId: string, file: File | undefined) => {
     if (!file) return;
     if (file.size > MAX_FOLLOW_INSTINCT_IMAGE_BYTES) {
-      setError(`${side === 'left' ? 'Left' : 'Right'} image must be 5 MB or smaller.`);
+      setError('Round photo must be 5 MB or smaller.');
       return;
     }
     const preview = URL.createObjectURL(file);
-    if (side === 'left') {
-      setLeftFile(file);
-      setForm((prev) => ({ ...prev, leftPreview: preview }));
-    } else {
-      setRightFile(file);
-      setForm((prev) => ({ ...prev, rightPreview: preview }));
-    }
+    setForm((prev) => ({
+      ...prev,
+      rounds: prev.rounds.map((round) =>
+        round.id === roundId ? { ...round, file, imageUrl: preview } : round,
+      ),
+    }));
+  };
+
+  const updateRound = (roundId: string, patch: Partial<FollowInstinctRoundDraft>) => {
+    setForm((prev) => ({
+      ...prev,
+      rounds: prev.rounds.map((round) => (round.id === roundId ? { ...round, ...patch } : round)),
+    }));
+  };
+
+  const addRound = () => {
+    setForm((prev) => ({
+      ...prev,
+      rounds: [...prev.rounds, newRoundDraft('close_eyes')],
+    }));
+  };
+
+  const removeRound = (roundId: string) => {
+    setForm((prev) => {
+      if (prev.rounds.length <= 1) return prev;
+      return { ...prev, rounds: prev.rounds.filter((round) => round.id !== roundId) };
+    });
   };
 
   const handleSave = async () => {
     setSaving(true);
     setError('');
     setMessage('');
+
     const input: FollowInstinctGameInput = {
       title: form.title,
       description: form.description?.trim() ? form.description : null,
     };
 
     if (editingId) {
-      const result = await updateFollowInstinctGame(editingId, input, {
-        leftFile,
-        rightFile,
-      });
+      const result = await updateFollowInstinctGame(editingId, input, form.rounds);
       setSaving(false);
       if (!result.ok) {
         setError(result.error);
@@ -117,13 +148,7 @@ export function FollowInstinctGameAdmin() {
       return;
     }
 
-    if (!leftFile || !rightFile) {
-      setSaving(false);
-      setError('Upload both left and right panel images.');
-      return;
-    }
-
-    const result = await createFollowInstinctGame(input, leftFile, rightFile);
+    const result = await createFollowInstinctGame(input, form.rounds);
     setSaving(false);
     if (!result.ok) {
       setError(result.error);
@@ -150,8 +175,8 @@ export function FollowInstinctGameAdmin() {
   return (
     <div className="follow-instinct-admin">
       <p className="muted">
-        Configure left and right distraction images. During play, a pink heart appears on one
-        side each round; players follow voice-style commands with the camera.
+        Configure photo + order rounds. Each round shows one image and one instruction during play.
+        Set the order type per round; players get a shuffled mix of all rounds in one session.
       </p>
 
       {error && (
@@ -182,38 +207,74 @@ export function FollowInstinctGameAdmin() {
           />
         </label>
 
-        <div className="follow-instinct-admin__preview">
-          <div className="follow-instinct-admin__preview-panel">
-            <span className="follow-instinct-admin__preview-label">Left image</span>
-            <div className="follow-instinct-admin__preview-slot">
-              {form.leftPreview ? (
-                <img src={form.leftPreview} alt="" />
-              ) : (
-                <span className="muted">No image</span>
-              )}
-            </div>
-            <input
-              type="file"
-              accept={FOLLOW_INSTINCT_IMAGE_ACCEPT}
-              onChange={(event) => onPickImage('left', event.target.files?.[0])}
-            />
+        <div className="follow-instinct-admin__rounds">
+          <div className="follow-instinct-admin__rounds-header">
+            <h4>Photo + order rounds</h4>
+            <button type="button" className="btn btn--ghost btn--small" onClick={addRound}>
+              Add round
+            </button>
           </div>
 
-          <div className="follow-instinct-admin__preview-panel">
-            <span className="follow-instinct-admin__preview-label">Right image</span>
-            <div className="follow-instinct-admin__preview-slot">
-              {form.rightPreview ? (
-                <img src={form.rightPreview} alt="" />
-              ) : (
-                <span className="muted">No image</span>
-              )}
+          {form.rounds.map((round, index) => (
+            <div key={round.id} className="follow-instinct-admin__round card">
+              <div className="follow-instinct-admin__round-heading">
+                <strong>Round {index + 1}</strong>
+                {form.rounds.length > 1 && (
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--small btn--danger"
+                    onClick={() => removeRound(round.id)}
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+
+              <div className="follow-instinct-admin__round-photo">
+                {round.imageUrl ? (
+                  <img src={round.imageUrl} alt="" />
+                ) : (
+                  <span className="muted">No photo</span>
+                )}
+              </div>
+              <input
+                type="file"
+                accept={FOLLOW_INSTINCT_IMAGE_ACCEPT}
+                onChange={(event) => onPickRoundImage(round.id, event.target.files?.[0])}
+              />
+
+              <label className="field">
+                <span>Order type</span>
+                <select
+                  value={round.orderType}
+                  onChange={(event) => {
+                    const orderType = event.target.value as FollowInstinctOrderType;
+                    updateRound(round.id, {
+                      orderType,
+                      orderText: FOLLOW_INSTINCT_ORDER_LABELS[orderType],
+                    });
+                  }}
+                >
+                  {(Object.keys(FOLLOW_INSTINCT_ORDER_LABELS) as FollowInstinctOrderType[]).map(
+                    (type) => (
+                      <option key={type} value={type}>
+                        {FOLLOW_INSTINCT_ORDER_LABELS[type]}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </label>
+
+              <label className="field">
+                <span>Order text (shown to player)</span>
+                <input
+                  type="text"
+                  value={round.orderText}
+                  onChange={(event) => updateRound(round.id, { orderText: event.target.value })}
+                />
+              </label>
             </div>
-            <input
-              type="file"
-              accept={FOLLOW_INSTINCT_IMAGE_ACCEPT}
-              onChange={(event) => onPickImage('right', event.target.files?.[0])}
-            />
-          </div>
+          ))}
         </div>
 
         <div className="follow-instinct-admin__actions">
@@ -252,12 +313,15 @@ export function FollowInstinctGameAdmin() {
           {filteredGames.map((game) => (
             <li key={game.id} className="admin-list-item">
               <div className="follow-instinct-admin__list-thumb">
-                <img src={game.leftImageUrl} alt="" />
-                <img src={game.rightImageUrl} alt="" />
+                <img src={game.rounds[0]?.imageUrl} alt="" />
               </div>
               <div className="admin-list-item__body">
                 <strong>{game.title}</strong>
                 {game.description && <p className="muted">{game.description}</p>}
+                <p className="muted">
+                  {game.rounds.length} round{game.rounds.length === 1 ? '' : 's'} ·{' '}
+                  {summarizeOrderTypes(game.rounds)}
+                </p>
               </div>
               <div className="admin-list-item__actions">
                 <button type="button" className="btn btn--ghost btn--small" onClick={() => startEdit(game)}>

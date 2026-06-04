@@ -8,19 +8,40 @@ export const FOLLOW_INSTINCT_IMAGE_ACCEPT =
   'image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif';
 
 const MIGRATION_HINT =
-  'Follow your instinct is not set up yet. In Supabase SQL Editor, run supabase/migrations/033_follow_instinct_game.sql, then retry.';
+  'Follow your instinct is not set up yet. In Supabase SQL Editor, run supabase/migrations/033_follow_instinct_game.sql and 057_follow_instinct_v2.sql, then retry.';
 
 const BUCKET_HINT =
   'The follow-instinct-images storage bucket is not set up yet. In Supabase SQL Editor, run supabase/migrations/033_follow_instinct_game.sql, then retry the upload.';
+
+export type FollowInstinctChallengeMode = 'close_eyes' | 'mouth_tongue' | 'both';
+
+export type FollowInstinctOrderType = 'close_eyes' | 'open_mouth' | 'tongue_out';
+
+export const FOLLOW_INSTINCT_ORDER_LABELS: Record<FollowInstinctOrderType, string> = {
+  close_eyes: 'Close your eyes',
+  open_mouth: 'Open your mouth',
+  tongue_out: 'Stick your tongue out',
+};
+
+export const FOLLOW_INSTINCT_CHALLENGE_MODE_LABELS: Record<FollowInstinctChallengeMode, string> = {
+  close_eyes: 'Close your eyes',
+  mouth_tongue: 'Open mouth / Stick tongue out',
+  both: 'Mixed rounds',
+};
+
+export interface FollowInstinctRound {
+  imagePath: string;
+  imageUrl: string;
+  orderText: string;
+  orderType: FollowInstinctOrderType;
+}
 
 export interface FollowInstinctGame {
   id: string;
   title: string;
   description: string | null;
-  leftImagePath: string;
-  rightImagePath: string;
-  leftImageUrl: string;
-  rightImageUrl: string;
+  challengeMode: FollowInstinctChallengeMode;
+  rounds: FollowInstinctRound[];
   createdAt: string;
 }
 
@@ -28,7 +49,8 @@ export interface FollowInstinctGameSummary {
   id: string;
   title: string;
   description: string | null;
-  leftImageUrl: string;
+  previewImageUrl: string;
+  roundCount: number;
   createdAt: string;
 }
 
@@ -37,12 +59,29 @@ export interface FollowInstinctGameInput {
   description: string | null;
 }
 
+export interface FollowInstinctRoundDraft {
+  id: string;
+  orderType: FollowInstinctOrderType;
+  orderText: string;
+  imagePath?: string;
+  imageUrl?: string;
+  file?: File;
+}
+
+type DbFollowInstinctRound = {
+  image_path: string;
+  order_text: string;
+  order_type: FollowInstinctOrderType;
+};
+
 type DbFollowInstinctGame = {
   id: string;
   title: string;
   description: string | null;
-  left_image_path: string;
-  right_image_path: string;
+  challenge_mode: FollowInstinctChallengeMode;
+  rounds: DbFollowInstinctRound[] | null;
+  left_image_path: string | null;
+  right_image_path: string | null;
   created_at: string;
 };
 
@@ -52,6 +91,9 @@ function formatDbError(error: { message?: string; code?: string }): string {
     error.code === 'PGRST205' ||
     message.includes("Could not find the table 'public.follow_instinct_games'")
   ) {
+    return MIGRATION_HINT;
+  }
+  if (message.includes('challenge_mode') || message.includes('rounds')) {
     return MIGRATION_HINT;
   }
   return message;
@@ -65,11 +107,11 @@ function formatUploadError(error: { message?: string }): string {
 
 export function followInstinctStoragePath(
   gameId: string,
-  side: 'left' | 'right',
+  roundId: string,
   fileName: string,
 ): string {
   const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-  return `${gameId}/${side}/${safe}`;
+  return `${gameId}/rounds/${roundId}/${safe}`;
 }
 
 export function getFollowInstinctImageUrl(storagePath: string): string | null {
@@ -79,37 +121,114 @@ export function getFollowInstinctImageUrl(storagePath: string): string | null {
   return data.publicUrl ?? null;
 }
 
+function parseDbRounds(raw: DbFollowInstinctGame): DbFollowInstinctRound[] {
+  if (Array.isArray(raw.rounds) && raw.rounds.length > 0) {
+    return raw.rounds.filter(
+      (round): round is DbFollowInstinctRound =>
+        typeof round?.image_path === 'string' &&
+        typeof round?.order_text === 'string' &&
+        typeof round?.order_type === 'string',
+    );
+  }
+  const legacy: DbFollowInstinctRound[] = [];
+  if (raw.left_image_path) {
+    legacy.push({
+      image_path: raw.left_image_path,
+      order_text: FOLLOW_INSTINCT_ORDER_LABELS.close_eyes,
+      order_type: 'close_eyes',
+    });
+  }
+  if (raw.right_image_path) {
+    legacy.push({
+      image_path: raw.right_image_path,
+      order_text: FOLLOW_INSTINCT_ORDER_LABELS.open_mouth,
+      order_type: 'open_mouth',
+    });
+  }
+  return legacy;
+}
+
+function mapRounds(dbRounds: DbFollowInstinctRound[]): FollowInstinctRound[] {
+  const mapped: FollowInstinctRound[] = [];
+  for (const round of dbRounds) {
+    const imageUrl = getFollowInstinctImageUrl(round.image_path);
+    if (!imageUrl) continue;
+    mapped.push({
+      imagePath: round.image_path,
+      imageUrl,
+      orderText: round.order_text.trim() || FOLLOW_INSTINCT_ORDER_LABELS[round.order_type],
+      orderType: round.order_type,
+    });
+  }
+  return mapped;
+}
+
 function mapGame(row: DbFollowInstinctGame): FollowInstinctGame | null {
-  const leftImageUrl = getFollowInstinctImageUrl(row.left_image_path);
-  const rightImageUrl = getFollowInstinctImageUrl(row.right_image_path);
-  if (!leftImageUrl || !rightImageUrl) return null;
+  const rounds = mapRounds(parseDbRounds(row));
+  if (rounds.length === 0) return null;
   return {
     id: row.id,
     title: row.title,
     description: row.description,
-    leftImagePath: row.left_image_path,
-    rightImagePath: row.right_image_path,
-    leftImageUrl,
-    rightImageUrl,
+    challengeMode: row.challenge_mode ?? 'both',
+    rounds,
     createdAt: row.created_at,
   };
 }
 
 function mapSummary(row: DbFollowInstinctGame): FollowInstinctGameSummary | null {
-  const leftImageUrl = getFollowInstinctImageUrl(row.left_image_path);
-  if (!leftImageUrl) return null;
+  const rounds = mapRounds(parseDbRounds(row));
+  if (rounds.length === 0) return null;
   return {
     id: row.id,
     title: row.title,
     description: row.description,
-    leftImageUrl,
+    previewImageUrl: rounds[0].imageUrl,
+    roundCount: rounds.length,
     createdAt: row.created_at,
   };
 }
 
-function validateInput(title: string): string | null {
+function validateInput(title: string, rounds: FollowInstinctRoundDraft[]): string | null {
   if (!title.trim()) return 'Title is required.';
+  if (rounds.length === 0) return 'Add at least one photo + order round.';
+  for (let index = 0; index < rounds.length; index += 1) {
+    const round = rounds[index];
+    if (!round.imagePath && !round.file) {
+      return `Round ${index + 1} needs a photo.`;
+    }
+    if (!round.orderText.trim()) {
+      return `Round ${index + 1} needs order text.`;
+    }
+  }
   return null;
+}
+
+function orderTypesAllowedForMode(mode: FollowInstinctChallengeMode): FollowInstinctOrderType[] {
+  if (mode === 'close_eyes') return ['close_eyes'];
+  if (mode === 'mouth_tongue') return ['open_mouth', 'tongue_out'];
+  return ['close_eyes', 'open_mouth', 'tongue_out'];
+}
+
+export function validateRoundsForChallengeMode(
+  mode: FollowInstinctChallengeMode,
+  rounds: FollowInstinctRoundDraft[],
+): string | null {
+  const allowed = new Set(orderTypesAllowedForMode(mode));
+  for (let index = 0; index < rounds.length; index += 1) {
+    if (!allowed.has(rounds[index].orderType)) {
+      return `Round ${index + 1} order type does not match the selected challenge mode.`;
+    }
+  }
+  return null;
+}
+
+function serializeRounds(rounds: FollowInstinctRound[]): DbFollowInstinctRound[] {
+  return rounds.map((round) => ({
+    image_path: round.imagePath,
+    order_text: round.orderText,
+    order_type: round.orderType,
+  }));
 }
 
 async function uploadImage(
@@ -130,6 +249,48 @@ async function removeImages(paths: string[]): Promise<void> {
   const supabase = getSupabase();
   if (!supabase || paths.length === 0) return;
   await supabase.storage.from(FOLLOW_INSTINCT_BUCKET).remove(paths);
+}
+
+async function materializeRoundDrafts(
+  gameId: string,
+  drafts: FollowInstinctRoundDraft[],
+): Promise<{ ok: true; rounds: FollowInstinctRound[] } | { ok: false; error: string }> {
+  const rounds: FollowInstinctRound[] = [];
+  const uploadedPaths: string[] = [];
+
+  for (const draft of drafts) {
+    let imagePath = draft.imagePath;
+    if (draft.file) {
+      if (draft.file.size > MAX_FOLLOW_INSTINCT_IMAGE_BYTES) {
+        await removeImages(uploadedPaths);
+        return { ok: false, error: 'Each round photo must be 5 MB or smaller.' };
+      }
+      imagePath = followInstinctStoragePath(gameId, draft.id, draft.file.name);
+      const uploaded = await uploadImage(imagePath, draft.file);
+      if (!uploaded.ok) {
+        await removeImages(uploadedPaths);
+        return uploaded;
+      }
+      uploadedPaths.push(imagePath);
+    }
+    if (!imagePath) {
+      await removeImages(uploadedPaths);
+      return { ok: false, error: 'Each round needs a photo.' };
+    }
+    const imageUrl = getFollowInstinctImageUrl(imagePath);
+    if (!imageUrl) {
+      await removeImages(uploadedPaths);
+      return { ok: false, error: 'Round image could not be resolved.' };
+    }
+    rounds.push({
+      imagePath,
+      imageUrl,
+      orderText: draft.orderText.trim() || FOLLOW_INSTINCT_ORDER_LABELS[draft.orderType],
+      orderType: draft.orderType,
+    });
+  }
+
+  return { ok: true, rounds };
 }
 
 export async function fetchFollowInstinctGameSummaries(): Promise<
@@ -168,7 +329,7 @@ export async function fetchFollowInstinctGame(
   if (!data) return { ok: false, error: 'Game not found.' };
 
   const game = mapGame(data as DbFollowInstinctGame);
-  if (!game) return { ok: false, error: 'Game images could not be loaded.' };
+  if (!game) return { ok: false, error: 'Game has no playable rounds.' };
   return { ok: true, game };
 }
 
@@ -194,32 +355,17 @@ export async function fetchAllFollowInstinctGames(): Promise<
 
 export async function createFollowInstinctGame(
   input: FollowInstinctGameInput,
-  leftFile: File,
-  rightFile: File,
+  roundDrafts: FollowInstinctRoundDraft[],
 ): Promise<{ ok: true; game: FollowInstinctGame } | { ok: false; error: string }> {
-  const validation = validateInput(input.title);
+  const validation = validateInput(input.title, roundDrafts);
   if (validation) return { ok: false, error: validation };
-  if (leftFile.size > MAX_FOLLOW_INSTINCT_IMAGE_BYTES) {
-    return { ok: false, error: 'Left image must be 5 MB or smaller.' };
-  }
-  if (rightFile.size > MAX_FOLLOW_INSTINCT_IMAGE_BYTES) {
-    return { ok: false, error: 'Right image must be 5 MB or smaller.' };
-  }
 
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
 
   const gameId = crypto.randomUUID();
-  const leftPath = followInstinctStoragePath(gameId, 'left', leftFile.name);
-  const rightPath = followInstinctStoragePath(gameId, 'right', rightFile.name);
-
-  const leftUpload = await uploadImage(leftPath, leftFile);
-  if (!leftUpload.ok) return leftUpload;
-  const rightUpload = await uploadImage(rightPath, rightFile);
-  if (!rightUpload.ok) {
-    await removeImages([leftPath]);
-    return rightUpload;
-  }
+  const materialized = await materializeRoundDrafts(gameId, roundDrafts);
+  if (!materialized.ok) return materialized;
 
   const { data, error } = await supabase
     .from('follow_instinct_games')
@@ -227,21 +373,23 @@ export async function createFollowInstinctGame(
       id: gameId,
       title: input.title.trim(),
       description: input.description?.trim() || null,
-      left_image_path: leftPath,
-      right_image_path: rightPath,
+      challenge_mode: 'both',
+      rounds: serializeRounds(materialized.rounds),
+      left_image_path: null,
+      right_image_path: null,
     })
     .select('*')
     .single();
 
   if (error) {
-    await removeImages([leftPath, rightPath]);
+    await removeImages(materialized.rounds.map((round) => round.imagePath));
     return { ok: false, error: formatDbError(error) };
   }
 
   const game = mapGame(data as DbFollowInstinctGame);
   if (!game) {
-    await removeImages([leftPath, rightPath]);
-    return { ok: false, error: 'Game was created but images could not be loaded.' };
+    await removeImages(materialized.rounds.map((round) => round.imagePath));
+    return { ok: false, error: 'Game was created but rounds could not be loaded.' };
   }
   return { ok: true, game };
 }
@@ -249,9 +397,9 @@ export async function createFollowInstinctGame(
 export async function updateFollowInstinctGame(
   gameId: string,
   input: FollowInstinctGameInput,
-  options: { leftFile?: File; rightFile?: File },
+  roundDrafts: FollowInstinctRoundDraft[],
 ): Promise<{ ok: true; game: FollowInstinctGame } | { ok: false; error: string }> {
-  const validation = validateInput(input.title);
+  const validation = validateInput(input.title, roundDrafts);
   if (validation) return { ok: false, error: validation };
 
   const supabase = getSupabase();
@@ -260,39 +408,20 @@ export async function updateFollowInstinctGame(
   const existing = await fetchFollowInstinctGame(gameId);
   if (!existing.ok) return existing;
 
-  let leftPath = existing.game.leftImagePath;
-  let rightPath = existing.game.rightImagePath;
-  const pathsToRemove: string[] = [];
+  const materialized = await materializeRoundDrafts(gameId, roundDrafts);
+  if (!materialized.ok) return materialized;
 
-  if (options.leftFile) {
-    if (options.leftFile.size > MAX_FOLLOW_INSTINCT_IMAGE_BYTES) {
-      return { ok: false, error: 'Left image must be 5 MB or smaller.' };
-    }
-    const nextPath = followInstinctStoragePath(gameId, 'left', options.leftFile.name);
-    const uploaded = await uploadImage(nextPath, options.leftFile);
-    if (!uploaded.ok) return uploaded;
-    if (nextPath !== leftPath) pathsToRemove.push(leftPath);
-    leftPath = nextPath;
-  }
-
-  if (options.rightFile) {
-    if (options.rightFile.size > MAX_FOLLOW_INSTINCT_IMAGE_BYTES) {
-      return { ok: false, error: 'Right image must be 5 MB or smaller.' };
-    }
-    const nextPath = followInstinctStoragePath(gameId, 'right', options.rightFile.name);
-    const uploaded = await uploadImage(nextPath, options.rightFile);
-    if (!uploaded.ok) return uploaded;
-    if (nextPath !== rightPath) pathsToRemove.push(rightPath);
-    rightPath = nextPath;
-  }
+  const previousPaths = new Set(existing.game.rounds.map((round) => round.imagePath));
+  const nextPaths = new Set(materialized.rounds.map((round) => round.imagePath));
+  const pathsToRemove = [...previousPaths].filter((path) => !nextPaths.has(path));
 
   const { data, error } = await supabase
     .from('follow_instinct_games')
     .update({
       title: input.title.trim(),
       description: input.description?.trim() || null,
-      left_image_path: leftPath,
-      right_image_path: rightPath,
+      challenge_mode: 'both',
+      rounds: serializeRounds(materialized.rounds),
     })
     .eq('id', gameId)
     .select('*')
@@ -303,7 +432,7 @@ export async function updateFollowInstinctGame(
   if (pathsToRemove.length > 0) await removeImages(pathsToRemove);
 
   const game = mapGame(data as DbFollowInstinctGame);
-  if (!game) return { ok: false, error: 'Game was saved but images could not be loaded.' };
+  if (!game) return { ok: false, error: 'Game was saved but rounds could not be loaded.' };
   return { ok: true, game };
 }
 
@@ -319,6 +448,14 @@ export async function deleteFollowInstinctGame(
   const { error } = await supabase.from('follow_instinct_games').delete().eq('id', gameId);
   if (error) return { ok: false, error: formatDbError(error) };
 
-  await removeImages([existing.game.leftImagePath, existing.game.rightImagePath]);
+  await removeImages(existing.game.rounds.map((round) => round.imagePath));
   return { ok: true };
+}
+
+export function newRoundDraft(orderType: FollowInstinctOrderType = 'close_eyes'): FollowInstinctRoundDraft {
+  return {
+    id: crypto.randomUUID(),
+    orderType,
+    orderText: FOLLOW_INSTINCT_ORDER_LABELS[orderType],
+  };
 }
