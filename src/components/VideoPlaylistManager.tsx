@@ -33,6 +33,7 @@ export function VideoPlaylistManager({
   const { state, session } = useAppStore();
   const isAdmin = session?.role === 'admin';
   const [title, setTitle] = useState(playlist?.title ?? '');
+  const [titleTouched, setTitleTouched] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>(initialVideoIds);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +91,13 @@ export function VideoPlaylistManager({
   }, []);
 
   const trimmedTitle = title.trim();
-  const canSave = !saving && trimmedTitle.length > 0 && selectedIds.length > 0;
+  const hasTitle = trimmedTitle.length > 0;
+  const hasVideos = selectedIds.length > 0;
+  const canSave = !saving && hasTitle && hasVideos;
+  const showTitleError = !hasTitle && (titleTouched || hasVideos);
+  const saveBlockers: string[] = [];
+  if (!hasTitle) saveBlockers.push('Enter a playlist name');
+  if (!hasVideos) saveBlockers.push('Select at least one video');
 
   const handleSave = async () => {
     if (!canSave) return;
@@ -134,6 +141,71 @@ export function VideoPlaylistManager({
     return selectedIds.map((id) => byId.get(id)?.title ?? id);
   }, [type, selectedIds, state.videos, interactiveCatalog]);
 
+  const catalogList =
+    type === 'normal' ? (
+      <ul className="video-playlist-manager__catalog">
+        {normalCatalog.length === 0 ? (
+          <li className="muted">No videos in the catalog yet.</li>
+        ) : (
+          normalCatalog.map(({ video, category, locked }) => (
+            <li key={video.id}>
+              <label
+                className={`video-playlist-manager__pick${
+                  locked ? ' video-playlist-manager__pick--locked' : ''
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(video.id)}
+                  disabled={locked}
+                  onChange={(e) =>
+                    setVideoSelected(video.id, e.target.checked, locked)
+                  }
+                />
+                <span>
+                  <strong>{video.title}</strong>
+                  <span className="muted">
+                    {category?.name ?? 'Uncategorized'}
+                    {video.durationSeconds != null &&
+                      ` · ${formatDuration(video.durationSeconds)}`}
+                    {locked ? ' · Locked' : ''}
+                  </span>
+                </span>
+              </label>
+            </li>
+          ))
+        )}
+      </ul>
+    ) : (
+      <ul className="video-playlist-manager__catalog">
+        {interactiveCatalog.length === 0 ? (
+          <li className="muted">No interactive videos published yet.</li>
+        ) : (
+          interactiveCatalog.map((video) => (
+            <li key={video.id}>
+              <label className="video-playlist-manager__pick">
+                <input
+                  type="checkbox"
+                  checked={selectedIds.includes(video.id)}
+                  onChange={(e) =>
+                    setVideoSelected(video.id, e.target.checked, false)
+                  }
+                />
+                <span>
+                  <strong>{video.title}</strong>
+                  <span className="muted">
+                    {video.cueCount} cue{video.cueCount === 1 ? '' : 's'}
+                    {video.durationSeconds != null &&
+                      ` · ${formatDuration(video.durationSeconds)}`}
+                  </span>
+                </span>
+              </label>
+            </li>
+          ))
+        )}
+      </ul>
+    );
+
   return (
     <div
       className="video-playlist-manager"
@@ -156,123 +228,107 @@ export function VideoPlaylistManager({
           </button>
         </header>
 
-        <label className="video-playlist-manager__field">
+        <label
+          className={`video-playlist-manager__field${
+            showTitleError ? ' video-playlist-manager__field--error' : ''
+          }`}
+        >
           <span className="muted">Playlist name</span>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            onBlur={() => setTitleTouched(true)}
             placeholder="My playlist"
             maxLength={120}
+            aria-invalid={showTitleError}
+            aria-describedby={
+              showTitleError ? 'video-playlist-manager-title-error' : undefined
+            }
+            autoFocus={!playlist}
           />
+          {showTitleError && (
+            <span
+              id="video-playlist-manager-title-error"
+              className="video-playlist-manager__field-error"
+              role="alert"
+            >
+              Enter a playlist name
+            </span>
+          )}
         </label>
 
         <p className="muted video-playlist-manager__hint">
-          Add videos in play order. Locked videos cannot be added.
+          Pick videos below, then set play order. Locked videos cannot be added.
         </p>
 
-        {type === 'normal' ? (
-          <ul className="video-playlist-manager__catalog">
-            {normalCatalog.length === 0 ? (
-              <li className="muted">No videos in the catalog yet.</li>
-            ) : (
-              normalCatalog.map(({ video, category, locked }) => (
-                <li key={video.id}>
-                  <label
-                    className={`video-playlist-manager__pick${
-                      locked ? ' video-playlist-manager__pick--locked' : ''
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(video.id)}
-                      disabled={locked}
-                      onChange={(e) =>
-                        setVideoSelected(video.id, e.target.checked, locked)
-                      }
-                    />
-                    <span>
-                      <strong>{video.title}</strong>
-                      <span className="muted">
-                        {category?.name ?? 'Uncategorized'}
-                        {video.durationSeconds != null &&
-                          ` · ${formatDuration(video.durationSeconds)}`}
-                        {locked ? ' · Locked' : ''}
-                      </span>
-                    </span>
-                  </label>
-                </li>
-              ))
-            )}
-          </ul>
-        ) : (
-          <ul className="video-playlist-manager__catalog">
-            {interactiveCatalog.length === 0 ? (
-              <li className="muted">No interactive videos published yet.</li>
-            ) : (
-              interactiveCatalog.map((video) => (
-                <li key={video.id}>
-                  <label className="video-playlist-manager__pick">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(video.id)}
-                      onChange={(e) =>
-                        setVideoSelected(video.id, e.target.checked, false)
-                      }
-                    />
-                    <span>
-                      <strong>{video.title}</strong>
-                      <span className="muted">
-                        {video.cueCount} cue{video.cueCount === 1 ? '' : 's'}
-                        {video.durationSeconds != null &&
-                          ` · ${formatDuration(video.durationSeconds)}`}
-                      </span>
-                    </span>
-                  </label>
-                </li>
-              ))
-            )}
-          </ul>
+        {hasVideos && (
+          <p className="video-playlist-manager__selection-count" aria-live="polite">
+            {selectedIds.length} video{selectedIds.length === 1 ? '' : 's'} selected
+          </p>
         )}
 
-        {selectedIds.length > 0 && (
-          <section className="video-playlist-manager__order">
-            <h4 className="section-title">Play order</h4>
-            <ol className="video-playlist-manager__order-list">
-              {selectedIds.map((id, index) => (
-                <li key={id}>
-                  <span className="video-playlist-manager__order-index">{index + 1}</span>
-                  <span>{selectedLabels[index]}</span>
-                  <span className="video-playlist-manager__order-actions">
-                    <button
-                      type="button"
-                      className="btn btn--ghost btn--small"
-                      disabled={index === 0}
-                      onClick={() => moveSelected(id, -1)}
-                      aria-label="Move up"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn--ghost btn--small"
-                      disabled={index === selectedIds.length - 1}
-                      onClick={() => moveSelected(id, 1)}
-                      aria-label="Move down"
-                    >
-                      ↓
-                    </button>
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </section>
-        )}
+        <div className="video-playlist-manager__body">
+          <div className="video-playlist-manager__catalog-wrap">
+            <h4 className="video-playlist-manager__subhead">Videos</h4>
+            {catalogList}
+          </div>
+
+          {hasVideos && (
+            <section className="video-playlist-manager__order" aria-label="Play order">
+              <h4 className="video-playlist-manager__subhead">Play order</h4>
+              <ol className="video-playlist-manager__order-list">
+                {selectedIds.map((id, index) => (
+                  <li key={id}>
+                    <span className="video-playlist-manager__order-index">
+                      {index + 1}
+                    </span>
+                    <span className="video-playlist-manager__order-label">
+                      {selectedLabels[index]}
+                    </span>
+                    <span className="video-playlist-manager__order-actions">
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--small"
+                        disabled={index === 0}
+                        onClick={() => moveSelected(id, -1)}
+                        aria-label="Move up"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--small"
+                        disabled={index === selectedIds.length - 1}
+                        onClick={() => moveSelected(id, 1)}
+                        aria-label="Move down"
+                      >
+                        ↓
+                      </button>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+        </div>
 
         {error && (
           <p className="login-error" role="alert">
             {error}
           </p>
+        )}
+
+        {!canSave && !saving && saveBlockers.length > 0 && (
+          <ul
+            id="video-playlist-manager-save-hints"
+            className="video-playlist-manager__save-hints"
+            aria-live="polite"
+          >
+            {saveBlockers.map((hint) => (
+              <li key={hint}>{hint}</li>
+            ))}
+          </ul>
         )}
 
         <div className="video-playlist-manager__actions">
@@ -285,6 +341,10 @@ export function VideoPlaylistManager({
             onClick={() => void handleSave()}
             disabled={!canSave}
             aria-disabled={!canSave}
+            aria-describedby={
+              !canSave ? 'video-playlist-manager-save-hints' : undefined
+            }
+            title={!canSave ? saveBlockers.join(' · ') : undefined}
           >
             {saving ? 'Saving…' : 'Save playlist'}
           </button>
