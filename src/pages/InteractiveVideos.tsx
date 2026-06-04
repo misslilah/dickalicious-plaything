@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { formatDuration } from '../lib/formatDuration';
 import {
   fetchInteractiveVideoSummaries,
   type InteractiveVideoSummary,
@@ -60,7 +61,7 @@ export function InteractiveVideos({ embedded = false }: InteractiveVideosProps) 
                 <p className="interactive-videos__meta muted">
                   {video.cueCount} cue{video.cueCount === 1 ? '' : 's'}
                   {video.durationSeconds != null &&
-                    ` · ${Math.round(video.durationSeconds)}s`}
+                    ` · ${formatDuration(video.durationSeconds)}`}
                 </p>
               </Link>
             </li>

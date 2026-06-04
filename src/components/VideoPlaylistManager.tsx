@@ -9,6 +9,7 @@ import {
   replaceVideoPlaylistItems,
   updateVideoPlaylistTitle,
 } from '../lib/videoPlaylistDb';
+import { formatDuration } from '../lib/formatDuration';
 import type { InteractiveVideoSummary } from '../lib/interactiveVideos';
 import type { VideoPlaylist, VideoPlaylistType } from '../types';
 
@@ -189,6 +190,8 @@ export function VideoPlaylistManager({
                       <strong>{video.title}</strong>
                       <span className="muted">
                         {category?.name ?? 'Uncategorized'}
+                        {video.durationSeconds != null &&
+                          ` · ${formatDuration(video.durationSeconds)}`}
                         {locked ? ' · Locked' : ''}
                       </span>
                     </span>
@@ -214,6 +217,8 @@ export function VideoPlaylistManager({
                       <strong>{video.title}</strong>
                       <span className="muted">
                         {video.cueCount} cue{video.cueCount === 1 ? '' : 's'}
+                        {video.durationSeconds != null &&
+                          ` · ${formatDuration(video.durationSeconds)}`}
                       </span>
                     </span>
                   </label>

@@ -1,3 +1,5 @@
+import { isCommunityAdmin } from './adminDirectMessages';
+import { getCurrentSession } from './auth';
 import type { PatreonMemberTier, PatreonStatus } from './tiers';
 import { getSupabase, isSupabaseColumnMissingError } from './supabase';
 
@@ -115,6 +117,11 @@ export async function updateProfilePatreon(
   patreonTier: PatreonMemberTier | null,
   patreonStatus: PatreonStatus,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  const session = await getCurrentSession();
+  if (!isCommunityAdmin(session)) {
+    return { ok: false, error: 'Admin access required.' };
+  }
+
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
 

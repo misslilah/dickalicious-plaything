@@ -40,6 +40,25 @@ export function formatMb(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** Reads duration from a local video file via browser metadata (best-effort). */
+export function readVideoDuration(file: File): Promise<number | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    video.onloadedmetadata = () => {
+      const d = Number.isFinite(video.duration) ? video.duration : null;
+      URL.revokeObjectURL(url);
+      resolve(d);
+    };
+    video.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+    video.src = url;
+  });
+}
+
 export function videoStoragePath(videoId: string, fileName: string): string {
   const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
   return `${videoId}/${safe}`;

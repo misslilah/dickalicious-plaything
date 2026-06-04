@@ -121,6 +121,7 @@ type DbVideo = {
   auto_loop?: boolean | null;
   xp_reward?: number | null;
   shop_points_cost?: number | null;
+  duration_seconds?: number | null;
 };
 
 function mapCategory(row: DbCategory): Category {
@@ -262,6 +263,7 @@ function mapVideo(row: DbVideo): Video {
     autoLoop: row.auto_loop ?? false,
     xpReward: row.xp_reward ?? 0,
     shopPointsCost: row.shop_points_cost ?? null,
+    durationSeconds: row.duration_seconds ?? null,
   };
 }
 
@@ -702,6 +704,7 @@ export async function insertVideoRow(
     auto_loop: video.autoLoop ?? false,
     xp_reward: video.xpReward ?? 0,
     shop_points_cost: video.shopPointsCost ?? null,
+    duration_seconds: video.durationSeconds ?? null,
   };
 
   const { data, error } = await supabase
@@ -731,6 +734,7 @@ export async function updateVideoRow(
       auto_loop: video.autoLoop ?? false,
       xp_reward: video.xpReward ?? 0,
       shop_points_cost: video.shopPointsCost ?? null,
+      duration_seconds: video.durationSeconds ?? null,
     })
     .eq('id', video.id)
     .select()

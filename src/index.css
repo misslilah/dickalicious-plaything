@@ -2434,6 +2434,25 @@ a.task-list-row {
   min-width: 0;
 }
 
+.video-list-item__title-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.5rem;
+}
+
+.video-list-item__duration {
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted, #94a3b8);
+  font-weight: 500;
+}
+
+.video-watch-card__duration {
+  margin-left: 0.35rem;
+  font-weight: 500;
+}
+
 .video-list-item__desc {
   font-size: 0.78rem;
   display: block;

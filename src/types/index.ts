@@ -282,6 +282,8 @@ export interface Video {
   xpReward?: number;
   /** Reward points to unlock individually in the shop; null/0 = not for sale. */
   shopPointsCost?: number | null;
+  /** Length in seconds from upload metadata; null for legacy uploads. */
+  durationSeconds?: number | null;
 }
 
 export interface AppState {

@@ -47,11 +47,13 @@ import {
   VIDEO_ACCESS_OPTIONS,
 } from '../lib/tiers';
 import { TierBadge } from '../components/TierBadge';
+import { formatDuration } from '../lib/formatDuration';
 import {
   formatMb,
   formatVideoSizeError,
   MAX_VIDEO_BYTES,
   MAX_VIDEO_SIZE_LABEL,
+  readVideoDuration,
 } from '../lib/videoStorage';
 import { CategoryImagePicker } from '../components/CategoryImagePicker';
 import { useAppStore } from '../hooks/useAppStore';
@@ -3017,6 +3019,8 @@ function VideoUploadAdmin() {
       return;
     }
 
+    const durationSeconds = await readVideoDuration(file);
+
     const video: Video = {
       id: '',
       categoryId,
@@ -3033,6 +3037,7 @@ function VideoUploadAdmin() {
         shopPointsCost === '' || shopPointsCost === 0
           ? null
           : Math.max(1, Math.floor(Number(shopPointsCost))),
+      durationSeconds,
     };
 
     setUploading(true);
@@ -3096,6 +3101,9 @@ function VideoUploadAdmin() {
                   {(v.xpReward ?? 0) > 0 ? ` · ${v.xpReward} XP` : ''}
                   {(v.shopPointsCost ?? 0) > 0
                     ? ` · Shop ${v.shopPointsCost} pts`
+                    : ''}
+                  {v.durationSeconds != null
+                    ? ` · ${formatDuration(v.durationSeconds)}`
                     : ''}{' '}
                   · {formatMb(v.sizeBytes)}
                 </>
