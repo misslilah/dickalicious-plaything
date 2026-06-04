@@ -1,4 +1,5 @@
 import type { Task } from '../types';
+import { taskHasLinkedMedia } from './taskLinkedMedia';
 
 export function taskHasTimer(task: Task): boolean {
   return (task.timerSeconds ?? 0) > 0;
@@ -25,9 +26,12 @@ export function taskHasRequirements(task: Task): boolean {
     taskHasTimer(task) ||
     taskHasDuration(task) ||
     taskHasOpenUrl(task) ||
-    taskHasPhrase(task)
+    taskHasPhrase(task) ||
+    taskHasLinkedMedia(task)
   );
 }
+
+export { taskHasLinkedMedia } from './taskLinkedMedia';
 
 /** Case-sensitive match; leading/trailing whitespace ignored on both sides. */
 export function phraseMatches(input: string, required: string): boolean {

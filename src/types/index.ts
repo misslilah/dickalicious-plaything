@@ -4,6 +4,8 @@ export type TaskFrequency = 'daily' | 'weekly' | 'once';
 
 export type TaskScope = 'category' | 'daily' | 'custom';
 
+export type TaskLinkedMediaType = 'none' | 'video' | 'audio';
+
 export type UserRole = 'user' | 'admin';
 
 export type ContentTier = 'public' | 'sweetie' | 'princess' | 'slut';
@@ -83,6 +85,14 @@ export interface Task {
   requiredPhraseRepeatCount?: number;
   /** Malus added at day end if started (category) or on plan (daily/custom) and incomplete. */
   malusPointsOnFail?: number;
+  /** Optional video or audio the user must finish before completing. */
+  linkedMediaType?: TaskLinkedMediaType;
+  /** Catalog video when linkedMediaType is `video`. */
+  linkedVideoId?: string;
+  /** Audio library track when linkedMediaType is `audio`. */
+  linkedAudioItemId?: string;
+  /** External audio URL when linkedMediaType is `audio` (alternative to library track). */
+  linkedAudioUrl?: string;
 }
 
 export interface UserProgress {

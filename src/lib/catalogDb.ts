@@ -61,6 +61,10 @@ type DbTask = {
   required_phrase_repeat_count: number;
   malus_points_on_fail: number;
   points_reward: number;
+  linked_media_type: string;
+  linked_video_id: string | null;
+  linked_audio_item_id: string | null;
+  linked_audio_url: string | null;
 };
 
 type DbReward = {
@@ -155,6 +159,13 @@ function mapTask(row: DbTask): Task {
       : 1,
     malusPointsOnFail: row.malus_points_on_fail ?? 0,
     pointsReward: row.points_reward ?? 0,
+    linkedMediaType:
+      row.linked_media_type === 'video' || row.linked_media_type === 'audio'
+        ? row.linked_media_type
+        : 'none',
+    linkedVideoId: row.linked_video_id ?? undefined,
+    linkedAudioItemId: row.linked_audio_item_id ?? undefined,
+    linkedAudioUrl: row.linked_audio_url?.trim() || undefined,
   };
 }
 
@@ -458,6 +469,15 @@ export async function upsertTask(
       : 1,
     malus_points_on_fail: task.malusPointsOnFail ?? 0,
     points_reward: task.pointsReward ?? 0,
+    linked_media_type: task.linkedMediaType ?? 'none',
+    linked_video_id:
+      task.linkedMediaType === 'video' ? task.linkedVideoId ?? null : null,
+    linked_audio_item_id:
+      task.linkedMediaType === 'audio' ? task.linkedAudioItemId ?? null : null,
+    linked_audio_url:
+      task.linkedMediaType === 'audio'
+        ? task.linkedAudioUrl?.trim() || null
+        : null,
   };
 
   const { data, error } = task.id

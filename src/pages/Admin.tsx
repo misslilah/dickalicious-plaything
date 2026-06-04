@@ -21,6 +21,7 @@ import type {
   RewardTrigger,
   Task,
   TaskFrequency,
+  TaskLinkedMediaType,
   TaskScope,
   Video,
   VideoCategory,
@@ -939,6 +940,12 @@ function emptyTaskDraft(categoryId: string): Task {
   };
 }
 
+const LINKED_MEDIA_OPTIONS: { value: TaskLinkedMediaType; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'video', label: 'Video' },
+  { value: 'audio', label: 'Audio' },
+];
+
 function TaskAdmin() {
   const { state, addTask, updateTask, deleteTask } = useAppStore();
   const defaultCat = state.categories[0]?.id ?? '';
@@ -948,6 +955,8 @@ function TaskAdmin() {
   const [message, setMessage] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [profiles, setProfiles] = useState<AdminProfileRow[]>([]);
+  const [audioLibrary, setAudioLibrary] = useState<AudioPlaylistItem[]>([]);
+  const [videoMediaSearch, setVideoMediaSearch] = useState('');
 
   useEffect(() => {
     void (async () => {
@@ -956,7 +965,29 @@ function TaskAdmin() {
     })();
   }, []);
 
+  useEffect(() => {
+    if ((draft.linkedMediaType ?? 'none') !== 'audio') return;
+    void (async () => {
+      const result = await fetchAudioLibrary();
+      if (result.ok) setAudioLibrary(result.library.items ?? []);
+    })();
+  }, [draft.linkedMediaType]);
+
   const taskScope = draft.taskScope ?? 'category';
+  const linkedMediaType = draft.linkedMediaType ?? 'none';
+
+  const videoPickerOptions = useMemo(() => {
+    const q = videoMediaSearch.trim().toLowerCase();
+    return [...state.videos]
+      .filter((v) => {
+        if (!q) return true;
+        return (
+          v.title.toLowerCase().includes(q) ||
+          (v.description ?? '').toLowerCase().includes(q)
+        );
+      })
+      .sort((a, b) => a.title.localeCompare(b.title));
+  }, [state.videos, videoMediaSearch]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -989,6 +1020,16 @@ function TaskAdmin() {
     }
     if (taskScope === 'custom' && !draft.assignedUserId) {
       next.assignedUserId = 'Select a user.';
+    }
+    if (linkedMediaType === 'video' && !draft.linkedVideoId) {
+      next.linkedVideoId = 'Select a catalog video.';
+    }
+    if (
+      linkedMediaType === 'audio' &&
+      !draft.linkedAudioItemId &&
+      !draft.linkedAudioUrl?.trim()
+    ) {
+      next.linkedAudio = 'Pick a library track or enter an audio URL.';
     }
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -1070,7 +1111,7 @@ function TaskAdmin() {
               key={t.id}
               selected={draft.id === t.id}
               title={t.title}
-              meta={`${TASK_SCOPE_LABELS[t.taskScope ?? 'category']}${(t.taskScope ?? 'category') === 'category' ? ` · ${categoryName(t.categoryId)}` : ''}${(t.taskScope ?? 'category') === 'custom' ? ` · ${profileName(t.assignedUserId)}` : ''} · ${getStageLabel(t.userStage ?? 'any')} · ${t.xpReward} XP · ${t.pointsReward ?? 0} pts · malus ${t.malusPointsOnFail ?? 0} · ${t.frequency}${t.timerSeconds ? ` · timer ${t.timerSeconds}s` : ''}${t.durationSeconds ? ` · duration ${t.durationSeconds}s` : ''}${t.openUrl ? ' · URL' : ''}${t.requiredPhrase ? ` · phrase${(t.requiredPhraseRepeatCount ?? 1) > 1 ? ` ×${t.requiredPhraseRepeatCount}` : ''}` : ''}`}
+              meta={`${TASK_SCOPE_LABELS[t.taskScope ?? 'category']}${(t.taskScope ?? 'category') === 'category' ? ` · ${categoryName(t.categoryId)}` : ''}${(t.taskScope ?? 'category') === 'custom' ? ` · ${profileName(t.assignedUserId)}` : ''} · ${getStageLabel(t.userStage ?? 'any')} · ${t.xpReward} XP · ${t.pointsReward ?? 0} pts · malus ${t.malusPointsOnFail ?? 0} · ${t.frequency}${t.timerSeconds ? ` · timer ${t.timerSeconds}s` : ''}${t.durationSeconds ? ` · duration ${t.durationSeconds}s` : ''}${t.openUrl ? ' · URL' : ''}${t.requiredPhrase ? ` · phrase${(t.requiredPhraseRepeatCount ?? 1) > 1 ? ` ×${t.requiredPhraseRepeatCount}` : ''}` : ''}${(t.linkedMediaType ?? 'none') !== 'none' ? ` · ${t.linkedMediaType}` : ''}`}
               onEdit={() => {
                 setDraft(t);
                 setErrors({});
@@ -1440,6 +1481,127 @@ function TaskAdmin() {
             }
           />
         </Field>
+      </FormBlock>
+
+      <FormBlock title="Linked media">
+        <p className="muted" style={{ marginTop: 0 }}>
+          Optional. Player must watch or listen to the end in a popup. Closing early
+          fails the task (malus applies).
+        </p>
+        <Field label="Media type">
+          <ChipSelect
+            label="Linked media type"
+            options={LINKED_MEDIA_OPTIONS}
+            value={linkedMediaType}
+            onChange={(type) => {
+              const next = type as TaskLinkedMediaType;
+              setDraft({
+                ...draft,
+                linkedMediaType: next,
+                linkedVideoId: next === 'video' ? draft.linkedVideoId : undefined,
+                linkedAudioItemId:
+                  next === 'audio' ? draft.linkedAudioItemId : undefined,
+                linkedAudioUrl: next === 'audio' ? draft.linkedAudioUrl : undefined,
+              });
+              setErrors((p) => ({
+                ...p,
+                linkedVideoId: '',
+                linkedAudio: '',
+              }));
+            }}
+          />
+        </Field>
+
+        {linkedMediaType === 'video' && (
+          <>
+            <Field
+              label="Catalog video"
+              required
+              error={errors.linkedVideoId}
+              hint="Search by title, then select a video from the catalog."
+            >
+              <input
+                type="search"
+                placeholder="Search videos…"
+                value={videoMediaSearch}
+                onChange={(e) => setVideoMediaSearch(e.target.value)}
+                aria-label="Search catalog videos"
+              />
+              {state.videos.length === 0 ? (
+                <p className="muted">Upload videos in the Videos admin section first.</p>
+              ) : (
+                <ChipSelect
+                  label="Linked video"
+                  scroll
+                  options={videoPickerOptions.map((v) => ({
+                    value: v.id,
+                    label: v.title,
+                  }))}
+                  value={draft.linkedVideoId ?? ''}
+                  onChange={(videoId) => {
+                    setDraft({ ...draft, linkedVideoId: videoId || undefined });
+                    if (errors.linkedVideoId) {
+                      setErrors((p) => ({ ...p, linkedVideoId: '' }));
+                    }
+                  }}
+                />
+              )}
+            </Field>
+          </>
+        )}
+
+        {linkedMediaType === 'audio' && (
+          <>
+            <Field
+              label="Library track"
+              error={errors.linkedAudio}
+              hint="Pick a track from audio playlists, or use an external URL below."
+            >
+              {(audioLibrary ?? []).length === 0 ? (
+                <p className="muted">No audio tracks yet — add playlists in Audio admin.</p>
+              ) : (
+                <ChipSelect
+                  label="Linked audio track"
+                  scroll
+                  options={(audioLibrary ?? []).map((item) => ({
+                    value: item.id,
+                    label: item.title,
+                  }))}
+                  value={draft.linkedAudioItemId ?? ''}
+                  onChange={(itemId) => {
+                    setDraft({
+                      ...draft,
+                      linkedAudioItemId: itemId || undefined,
+                      linkedAudioUrl: itemId ? undefined : draft.linkedAudioUrl,
+                    });
+                    if (errors.linkedAudio) {
+                      setErrors((p) => ({ ...p, linkedAudio: '' }));
+                    }
+                  }}
+                />
+              )}
+            </Field>
+            <Field label="Or audio URL" htmlFor="task-linked-audio-url">
+              <input
+                id="task-linked-audio-url"
+                type="url"
+                placeholder="https://…"
+                value={draft.linkedAudioUrl ?? ''}
+                onChange={(e) => {
+                  const url = e.target.value.trim();
+                  setDraft({
+                    ...draft,
+                    linkedAudioUrl: url || undefined,
+                    linkedAudioItemId: url ? undefined : draft.linkedAudioItemId,
+                  });
+                  if (errors.linkedAudio) {
+                    setErrors((p) => ({ ...p, linkedAudio: '' }));
+                  }
+                }}
+              />
+            </Field>
+          </>
+        )}
       </FormBlock>
 
       <FormActions

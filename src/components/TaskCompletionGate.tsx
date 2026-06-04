@@ -3,9 +3,15 @@ import type { Task } from '../types';
 import { useTaskCompletion } from '../hooks/useTaskCompletion';
 import { useAppStore } from '../hooks/useAppStore';
 import { getPhraseRepeatCount } from '../lib/phraseChallenge';
+import {
+  markLinkedMediaComplete,
+  markLinkedMediaFailed,
+} from '../lib/taskLinkedMedia';
 import { taskHasRequirements } from '../lib/taskRequirements';
 import { clearTimer, isTimerComplete } from '../lib/taskTimers';
+import { clearDuration } from '../lib/taskDuration';
 import { PhraseChallengeModal } from './PhraseChallengeModal';
+import { TaskLinkedMediaModal } from './TaskLinkedMediaModal';
 
 interface TaskCompletionGateProps {
   task: Task;
@@ -30,7 +36,9 @@ export function TaskCompletionGate({
 }: TaskCompletionGateProps) {
   const { applyTaskMalus, recordBadgeTaskTime } = useAppStore();
   const [showPhraseModal, setShowPhraseModal] = useState(false);
+  const [showMediaModal, setShowMediaModal] = useState(false);
   const [phraseFailNotice, setPhraseFailNotice] = useState<string | null>(null);
+  const [mediaFailNotice, setMediaFailNotice] = useState<string | null>(null);
   const focusMode = variant === 'focus';
   const timerCreditedRef = useRef(false);
   const durationCreditedRef = useRef(false);
@@ -40,6 +48,10 @@ export function TaskCompletionGate({
     hasDuration,
     hasPage,
     hasPhrase,
+    hasLinkedMedia,
+    linkedMediaDone,
+    linkedMediaFailed,
+    refreshLinkedMedia,
     countdown,
     durationCountdown,
     timerStarted,
@@ -60,7 +72,7 @@ export function TaskCompletionGate({
   } = useTaskCompletion(task, completed);
 
   const hasRequirements = taskHasRequirements(task);
-  const needsManualStart = hasTimer || hasDuration;
+  const needsManualStart = hasTimer || hasDuration || hasLinkedMedia;
   const repeatCount = getPhraseRepeatCount(task);
   const malusOnFail = task.malusPointsOnFail ?? 0;
 
@@ -141,6 +153,25 @@ export function TaskCompletionGate({
     setShowPhraseModal(true);
   };
 
+  const openLinkedMedia = () => {
+    if (
+      disabled ||
+      completed ||
+      linkedMediaDone ||
+      linkedMediaFailed ||
+      phraseChallengeFailed
+    ) {
+      return;
+    }
+    setShowMediaModal(true);
+    onStart?.();
+  };
+
+  const resetTaskProgressOnMediaFail = () => {
+    if (hasTimer) clearTimer(task.id);
+    if (hasDuration) clearDuration(task.id);
+  };
+
   const handleToggle = () => {
     if (completed) {
       onUncomplete?.();
@@ -179,6 +210,26 @@ export function TaskCompletionGate({
     setPhraseFailNotice(malusText);
   };
 
+  const handleMediaClose = (reason: 'completed' | 'failed' | 'dismissed') => {
+    setShowMediaModal(false);
+    if (reason === 'dismissed') return;
+    if (reason === 'completed') {
+      markLinkedMediaComplete(task.id);
+      refreshLinkedMedia();
+      setMediaFailNotice(null);
+      return;
+    }
+    applyTaskMalus(task.id);
+    markLinkedMediaFailed(task.id);
+    resetTaskProgressOnMediaFail();
+    refreshLinkedMedia();
+    const malusText =
+      malusOnFail > 0
+        ? `Media not finished. +${malusOnFail} malus applied — this task cannot be completed today.`
+        : 'Media not finished — this task cannot be completed today.';
+    setMediaFailNotice(malusText);
+  };
+
   const checkboxDisabled =
     disabled || (!completed && hasRequirements && !canComplete);
 
@@ -193,6 +244,10 @@ export function TaskCompletionGate({
     if (hasPhrase && phraseChallengeFailed)
       requirementHints.push('Phrase challenge failed');
     else if (hasPhrase && !phraseDone) requirementHints.push('Complete the phrase challenge');
+    if (hasLinkedMedia && linkedMediaFailed)
+      requirementHints.push('Linked media failed');
+    else if (hasLinkedMedia && !linkedMediaDone)
+      requirementHints.push('Watch or listen to linked media');
   }
 
   const gateContent = (
@@ -203,6 +258,15 @@ export function TaskCompletionGate({
             (malusOnFail > 0
               ? `Phrase challenge failed. +${malusOnFail} malus applied — this task cannot be completed today.`
               : 'Phrase challenge failed — this task cannot be completed today.')}
+        </p>
+      )}
+
+      {(mediaFailNotice || linkedMediaFailed) && !completed && (
+        <p className="task-card__phrase-fail" role="alert">
+          {mediaFailNotice ??
+            (malusOnFail > 0
+              ? `Media not finished. +${malusOnFail} malus applied — this task cannot be completed today.`
+              : 'Media not finished — this task cannot be completed today.')}
         </p>
       )}
 
@@ -291,6 +355,26 @@ export function TaskCompletionGate({
             </div>
           )}
 
+          {hasLinkedMedia && !linkedMediaFailed && (
+            <div className="task-gate__block">
+              <span className="task-gate__label">
+                {task.linkedMediaType === 'video' ? 'Video' : 'Audio'}
+              </span>
+              {linkedMediaDone ? (
+                <span className="task-gate__ok">Finished</span>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--small"
+                  onClick={openLinkedMedia}
+                  disabled={disabled}
+                >
+                  Start
+                </button>
+              )}
+            </div>
+          )}
+
           {requirementHints.length > 0 && (
             <p className="task-gate__hint muted">{requirementHints.join(' · ')}</p>
           )}
@@ -309,7 +393,7 @@ export function TaskCompletionGate({
             </button>
           ) : (
             <p className="task-focus__lock muted">
-              {phraseChallengeFailed
+              {phraseChallengeFailed || linkedMediaFailed
                 ? 'This task cannot be completed today.'
                 : 'Complete all requirements above to finish.'}
             </p>
@@ -322,6 +406,12 @@ export function TaskCompletionGate({
         open={showPhraseModal}
         onPassed={handlePhrasePassed}
         onFailed={handlePhraseFailed}
+      />
+
+      <TaskLinkedMediaModal
+        task={task}
+        open={showMediaModal}
+        onClose={handleMediaClose}
       />
     </>
   );

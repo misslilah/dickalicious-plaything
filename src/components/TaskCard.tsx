@@ -2,6 +2,7 @@ import { getStageLabel } from '../lib/levels';
 import type { Category, Task } from '../types';
 import { TaskCompletionGate } from './TaskCompletionGate';
 import { getPhraseRepeatCount } from '../lib/phraseChallenge';
+import { getTaskLinkedMediaType } from '../lib/taskLinkedMedia';
 import { taskHasRequirements } from '../lib/taskRequirements';
 
 interface TaskCardProps {
@@ -44,6 +45,9 @@ function TaskCardBody({
     const times = getPhraseRepeatCount(task);
     requirementBadges.push(times > 1 ? `Phrase ×${times}` : 'Phrase');
   }
+  const linkedType = getTaskLinkedMediaType(task);
+  if (linkedType === 'video') requirementBadges.push('Video');
+  if (linkedType === 'audio') requirementBadges.push('Audio');
 
   return (
     <div className="task-card__body">

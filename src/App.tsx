@@ -34,6 +34,7 @@ import { InteractiveVideos } from './pages/InteractiveVideos';
 import { InteractiveVideoPlay } from './pages/InteractiveVideoPlay';
 import { VideoPlaylistPlay } from './pages/VideoPlaylistPlay';
 import { AgeGate } from './components/AgeGate';
+import { Community } from './pages/Community';
 
 function AppChrome() {
   const { state } = useAppStore();
@@ -87,6 +88,7 @@ const router = createBrowserRouter([
                 path: 'library',
                 element: <Navigate to="/videos" replace />,
               },
+              { path: 'community', element: <Community /> },
               { path: 'rewards', element: <Rewards /> },
               { path: 'punishments', element: <Punishments /> },
               { path: 'profile', element: <Profile /> },

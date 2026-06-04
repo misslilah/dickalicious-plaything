@@ -767,6 +767,71 @@ select {
   width: 100%;
 }
 
+.task-linked-media-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1150;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.task-linked-media-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: rgba(0, 0, 0, 0.72);
+  cursor: pointer;
+}
+
+.task-linked-media-modal__panel {
+  position: relative;
+  width: min(100%, 22rem);
+  max-height: min(90vh, 32rem);
+  overflow: auto;
+  padding: 1rem 1.1rem 1.15rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(192, 132, 252, 0.35);
+  background: var(--surface);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.task-linked-media-modal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.task-linked-media-modal__title {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.3;
+}
+
+.task-linked-media-modal__warning {
+  margin: 0 0 0.65rem;
+  font-size: 0.78rem;
+  color: #fbbf24;
+}
+
+.task-linked-media-modal__hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+}
+
+.task-linked-media-modal__player {
+  display: block;
+  width: 100%;
+  max-height: 14rem;
+  border-radius: var(--radius-sm);
+  background: #000;
+}
+
 .forced-mode-warning {
   position: fixed;
   inset: 0;
@@ -6063,4 +6128,160 @@ body.interactive-video-player--pseudo-fs {
 
 .age-gate__panel--blocked .age-gate__title {
   color: var(--danger);
+}
+
+/* Community chat */
+.community-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: min(70vh, calc(100dvh - var(--nav-h) - 8rem));
+}
+
+.community-page__header {
+  margin-bottom: 0.25rem;
+}
+
+.community-channels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.community-channels__tab {
+  flex: 1 1 auto;
+  min-width: 4.5rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid rgba(232, 121, 249, 0.2);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.community-channels__tab--active {
+  color: var(--accent);
+  border-color: rgba(232, 121, 249, 0.45);
+  background: rgba(232, 121, 249, 0.12);
+}
+
+.community-channels__tab--locked {
+  opacity: 0.75;
+}
+
+.community-locked {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.25rem;
+}
+
+.community-messages {
+  flex: 1 1 auto;
+  min-height: 12rem;
+  max-height: min(50vh, 28rem);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid rgba(232, 121, 249, 0.12);
+}
+
+.community-messages__empty {
+  margin: auto 0;
+  text-align: center;
+}
+
+.community-message {
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  border: 1px solid rgba(167, 139, 184, 0.15);
+  max-width: 92%;
+  align-self: flex-start;
+}
+
+.community-message--own {
+  align-self: flex-end;
+  border-color: rgba(232, 121, 249, 0.35);
+  background: rgba(232, 121, 249, 0.1);
+}
+
+.community-message__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem 0.75rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.72rem;
+}
+
+.community-message__meta strong {
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.community-message__meta time {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+
+.community-message__body {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.9rem;
+}
+
+.community-compose {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.community-compose__input {
+  width: 100%;
+  resize: vertical;
+  min-height: 3rem;
+  max-height: 8rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(232, 121, 249, 0.25);
+  background: var(--bg-card);
+  color: var(--text);
+  font: inherit;
+}
+
+.community-compose__input:focus {
+  outline: 2px solid rgba(232, 121, 249, 0.45);
+  outline-offset: 1px;
+}
+
+.community-compose__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.community-compose__count {
+  font-size: 0.72rem;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

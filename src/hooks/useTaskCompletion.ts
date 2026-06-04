@@ -25,6 +25,12 @@ import {
   startDuration,
 } from '../lib/taskDuration';
 import {
+  clearLinkedMediaProgress,
+  isLinkedMediaComplete,
+  isLinkedMediaFailed,
+  taskHasLinkedMedia,
+} from '../lib/taskLinkedMedia';
+import {
   taskHasDuration,
   taskHasOpenUrl,
   taskHasPhrase,
@@ -36,6 +42,7 @@ export function useTaskCompletion(task: Task, completed: boolean) {
   const hasDuration = taskHasDuration(task);
   const hasPage = taskHasOpenUrl(task);
   const hasPhrase = taskHasPhrase(task);
+  const hasLinkedMedia = taskHasLinkedMedia(task);
 
   const [remainingMs, setRemainingMs] = useState(() =>
     hasTimer ? getRemainingMs(task.id) : 0,
@@ -47,9 +54,14 @@ export function useTaskCompletion(task: Task, completed: boolean) {
     hasPage ? isPageOpened(task.id) : true,
   );
   const [phraseRevision, setPhraseRevision] = useState(0);
+  const [mediaRevision, setMediaRevision] = useState(0);
 
   const refreshPhraseChallenge = useCallback(() => {
     setPhraseRevision((n) => n + 1);
+  }, []);
+
+  const refreshLinkedMedia = useCallback(() => {
+    setMediaRevision((n) => n + 1);
   }, []);
 
   const phraseChallengePassed = useMemo(() => {
@@ -69,6 +81,18 @@ export function useTaskCompletion(task: Task, completed: boolean) {
     void phraseRevision;
     return getPhraseChallengeState(task.id);
   }, [hasPhrase, task.id, phraseRevision]);
+
+  const linkedMediaDone = useMemo(() => {
+    if (!hasLinkedMedia) return true;
+    void mediaRevision;
+    return isLinkedMediaComplete(task.id);
+  }, [hasLinkedMedia, task.id, mediaRevision]);
+
+  const linkedMediaFailed = useMemo(() => {
+    if (!hasLinkedMedia) return false;
+    void mediaRevision;
+    return isLinkedMediaFailed(task.id);
+  }, [hasLinkedMedia, task.id, mediaRevision]);
 
   const prevCompleted = useRef(completed);
   useEffect(() => {
@@ -160,6 +184,7 @@ export function useTaskCompletion(task: Task, completed: boolean) {
     if (hasTimer) clearTimer(task.id);
     if (hasDuration) clearDuration(task.id);
     if (hasPhrase) clearPhraseChallenge(task.id);
+    if (hasLinkedMedia) clearLinkedMediaProgress(task.id);
   };
 
   return {
@@ -167,6 +192,10 @@ export function useTaskCompletion(task: Task, completed: boolean) {
     hasDuration,
     hasPage,
     hasPhrase,
+    hasLinkedMedia,
+    linkedMediaDone,
+    linkedMediaFailed,
+    refreshLinkedMedia,
     remainingMs,
     countdown: formatCountdown(remainingMs),
     durationCountdown: formatCountdown(durationRemainingMs),
@@ -184,7 +213,13 @@ export function useTaskCompletion(task: Task, completed: boolean) {
     phraseChallengeState,
     refreshPhraseChallenge,
     canComplete:
-      timerDone && durationDone && pageDone && phraseDone && !phraseChallengeFailed,
+      timerDone &&
+      durationDone &&
+      pageDone &&
+      phraseDone &&
+      linkedMediaDone &&
+      !phraseChallengeFailed &&
+      !linkedMediaFailed,
     openPage,
     finishRequirements,
   };
