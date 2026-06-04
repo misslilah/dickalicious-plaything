@@ -124,6 +124,7 @@ interface AppStoreValue {
     password: string,
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   signUp: (
+    email: string,
     username: string,
     password: string,
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
@@ -447,8 +448,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         await loadAllData(result.session.userId);
         return { ok: true };
       },
-      signUp: async (username, password) => {
-        const result = await authSignUp(username, password);
+      signUp: async (email, username, password) => {
+        const result = await authSignUp(email, username, password);
         if (!result.ok) return result;
         userIdRef.current = result.session.userId;
         setSession(sessionToApp(result.session));

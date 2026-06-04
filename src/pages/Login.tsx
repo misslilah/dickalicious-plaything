@@ -17,6 +17,7 @@ export function Login() {
     (location.state as { from?: string } | null)?.from ?? '/';
 
   const [mode, setMode] = useState<AuthMode>('signin');
+  const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -54,7 +55,7 @@ export function Login() {
     setError('');
     setNotice('');
     setSubmitting(true);
-    const result = await signUp(username, password);
+    const result = await signUp(email, username, password);
     setSubmitting(false);
     if (!result.ok) {
       setError(result.error);
@@ -167,6 +168,18 @@ export function Login() {
           </form>
         ) : (
           <form className="login-form" onSubmit={(e) => void handleSignUp(e)}>
+            <label className="field">
+              <span>Email</span>
+              <input
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                required
+                disabled={!supabaseConfigured}
+              />
+            </label>
             <label className="field">
               <span>Username</span>
               <input

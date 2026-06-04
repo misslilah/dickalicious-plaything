@@ -7,6 +7,8 @@ import type {
 import {
   formatSupabaseAuthError,
   getSupabase,
+  INVALID_LOGIN_CREDENTIALS_MESSAGE,
+  isInvalidLoginCredentialsError,
   isSupabaseColumnMissingError,
   isSupabaseConfigured,
 } from './supabase';
@@ -164,6 +166,36 @@ export function sessionToApp(session: AuthSession): AppSession {
   };
 }
 
+/** Resolve auth email for username login via RPC (migration 056). */
+async function resolveLoginEmailForUsername(
+  username: string,
+): Promise<string | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
+  const trimmed = username.trim();
+  if (!trimmed) return null;
+
+  const { data, error } = await supabase.rpc('resolve_login_email_for_username', {
+    p_username: trimmed,
+  });
+
+  if (error || data == null || String(data).trim() === '') {
+    return null;
+  }
+  return String(data).trim().toLowerCase();
+}
+
+function formatLoginFailure(
+  signInError: { message?: string } | null,
+): string {
+  if (!signInError) return INVALID_LOGIN_CREDENTIALS_MESSAGE;
+  if (isInvalidLoginCredentialsError(signInError)) {
+    return INVALID_LOGIN_CREDENTIALS_MESSAGE;
+  }
+  return formatSupabaseAuthError(signInError);
+}
+
 export async function login(
   emailOrUsername: string,
   password: string,
@@ -173,9 +205,21 @@ export async function login(
   }
 
   const supabase = getSupabase()!;
-  const email = emailOrUsername.includes('@')
-    ? emailOrUsername.trim().toLowerCase()
-    : usernameToEmail(emailOrUsername);
+  const trimmed = emailOrUsername.trim();
+  if (!trimmed) {
+    return { ok: false, error: INVALID_LOGIN_CREDENTIALS_MESSAGE };
+  }
+
+  let email: string;
+  if (trimmed.includes('@')) {
+    email = trimmed.toLowerCase();
+  } else {
+    const resolved = await resolveLoginEmailForUsername(trimmed);
+    if (!resolved) {
+      return { ok: false, error: INVALID_LOGIN_CREDENTIALS_MESSAGE };
+    }
+    email = resolved;
+  }
 
   const attemptSignIn = async () => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -195,15 +239,14 @@ export async function login(
       }
     }
     if (signInError) {
-      return { ok: false, error: formatSupabaseAuthError(signInError) };
+      return { ok: false, error: formatLoginFailure(signInError) };
     }
   } catch (err) {
-    return {
-      ok: false,
-      error: formatSupabaseAuthError(
-        err instanceof Error ? err : { message: String(err) },
-      ),
-    };
+    const errObj = err instanceof Error ? err : { message: String(err) };
+    if (isInvalidLoginCredentialsError(errObj)) {
+      return { ok: false, error: INVALID_LOGIN_CREDENTIALS_MESSAGE };
+    }
+    return { ok: false, error: formatSupabaseAuthError(errObj) };
   }
 
   const session = await getCurrentSession();
@@ -232,9 +275,10 @@ export async function changePassword(
   return { ok: true };
 }
 
-export async function signUp(
-  username: string,
+export async function signUpWithEmail(
+  email: string,
   password: string,
+  username: string,
 ): Promise<
   { ok: true; session: AuthSession } | { ok: false; error: string }
 > {
@@ -245,18 +289,21 @@ export async function signUp(
     };
   }
 
+  const trimmedEmail = email.trim().toLowerCase();
   const trimmedUsername = username.trim();
+  if (!trimmedEmail || !trimmedEmail.includes('@')) {
+    return { ok: false, error: 'A valid email address is required.' };
+  }
   if (!trimmedUsername) return { ok: false, error: 'Username is required.' };
   if (password.length < 6) {
     return { ok: false, error: 'Password must be at least 6 characters.' };
   }
 
-  const email = usernameToEmail(trimmedUsername);
   const supabase = getSupabase()!;
 
   try {
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: trimmedEmail,
       password,
       options: {
         data: { username: trimmedUsername },
@@ -271,8 +318,8 @@ export async function signUp(
       if (session) return { ok: true, session };
     }
 
-    if (isLocalAppEmail(email)) {
-      const confirmed = await confirmLocalAppSignup(email, data.user?.id);
+    if (isLocalAppEmail(trimmedEmail)) {
+      const confirmed = await confirmLocalAppSignup(trimmedEmail, data.user?.id);
       if (!confirmed.ok) return { ok: false, error: confirmed.error };
     }
 
@@ -286,6 +333,9 @@ export async function signUp(
     };
   }
 }
+
+/** @deprecated Use signUpWithEmail — kept as alias for imports. */
+export const signUp = signUpWithEmail;
 
 /** Admin-only helper: creates a regular user account (never admin). */
 export async function createUser(

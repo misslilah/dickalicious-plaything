@@ -157,3 +157,14 @@ export function formatSupabaseAuthError(
   }
   return message;
 }
+
+/** Generic message for failed username/password login (avoids user enumeration). */
+export const INVALID_LOGIN_CREDENTIALS_MESSAGE =
+  'Invalid username or password.';
+
+export function isInvalidLoginCredentialsError(
+  error: { message?: string } | null | undefined,
+): boolean {
+  const message = error?.message?.trim() ?? '';
+  return /invalid login credentials|invalid email or password/i.test(message);
+}

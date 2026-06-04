@@ -7,7 +7,7 @@ interface PrivacyNoticeProps {
 
 const COPY: Record<PrivacyNoticeVariant, string> = {
   login:
-    'We only store what you need to sign in (username and profile). Camera features run on your device only—we never receive video from your camera on our servers.',
+    'At sign-up we store your email and chosen username; sign-in uses your username and password only. Camera features run on your device—we never receive video from your camera on our servers.',
   camera:
     'Camera is active on your device only. Nothing is recorded or sent to our servers.',
 };
