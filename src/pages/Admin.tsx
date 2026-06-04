@@ -53,6 +53,8 @@ import {
   formatVideoSizeError,
   MAX_VIDEO_BYTES,
   MAX_VIDEO_SIZE_LABEL,
+  getVideoPlaybackUrl,
+  readDurationFromUrl,
   readVideoDuration,
 } from '../lib/videoStorage';
 import { CategoryImagePicker } from '../components/CategoryImagePicker';
@@ -2905,8 +2907,17 @@ function VideoCategoryAdmin() {
   return <AdminSection list={list} form={form} />;
 }
 
+const VIDEO_DURATION_BACKFILL_BATCH = 3;
+
+function videoNeedsDurationBackfill(video: Video): boolean {
+  const missing =
+    video.durationSeconds == null || video.durationSeconds <= 0;
+  return missing && Boolean(video.storagePath?.trim());
+}
+
 function VideoUploadAdmin() {
-  const { state, addVideo, updateVideo, deleteVideo } = useAppStore();
+  const { state, addVideo, updateVideo, patchVideoDuration, deleteVideo } =
+    useAppStore();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -2921,6 +2932,16 @@ function VideoUploadAdmin() {
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [backfillingDurations, setBackfillingDurations] = useState(false);
+  const [backfillProgress, setBackfillProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
+
+  const missingDurationCount = useMemo(
+    () => state.videos.filter(videoNeedsDurationBackfill).length,
+    [state.videos],
+  );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -3064,6 +3085,58 @@ function VideoUploadAdmin() {
     setMessage('Video deleted.');
   };
 
+  const scanMissingDurations = async () => {
+    const targets = state.videos.filter(videoNeedsDurationBackfill);
+    if (targets.length === 0) {
+      setMessage('All uploaded videos already have durations.');
+      setError('');
+      return;
+    }
+
+    setBackfillingDurations(true);
+    setBackfillProgress({ done: 0, total: targets.length });
+    setError('');
+    setMessage('');
+
+    let updated = 0;
+    let failed = 0;
+    let done = 0;
+
+    const processVideo = async (video: Video): Promise<void> => {
+      const urlResult = await getVideoPlaybackUrl(video.storagePath);
+      if (!urlResult.ok) {
+        failed += 1;
+        return;
+      }
+      const duration = await readDurationFromUrl(urlResult.url);
+      if (duration == null || duration <= 0) {
+        failed += 1;
+        return;
+      }
+      const patch = await patchVideoDuration(video.id, duration);
+      if (!patch.ok) {
+        failed += 1;
+        return;
+      }
+      updated += 1;
+    };
+
+    for (let i = 0; i < targets.length; i += VIDEO_DURATION_BACKFILL_BATCH) {
+      const batch = targets.slice(i, i + VIDEO_DURATION_BACKFILL_BATCH);
+      await Promise.all(batch.map((video) => processVideo(video)));
+      done += batch.length;
+      setBackfillProgress({ done, total: targets.length });
+    }
+
+    setBackfillingDurations(false);
+    setBackfillProgress(null);
+    setMessage(
+      failed > 0
+        ? `Duration scan complete: ${updated} updated, ${failed} skipped or failed.`
+        : `Duration scan complete: ${updated} updated.`,
+    );
+  };
+
   const list = (
     <AdminListCard
       title="Uploaded videos"
@@ -3071,6 +3144,35 @@ function VideoUploadAdmin() {
       intro={`Max ${MAX_VIDEO_SIZE_LABEL} per file (client limit). Files are stored in Supabase Storage — free tier often caps uploads around 50 MB.`}
       search={search}
       onSearchChange={setSearch}
+      filter={
+        <div className="admin-video-duration-backfill">
+          <button
+            type="button"
+            className="btn btn--secondary"
+            disabled={
+              backfillingDurations ||
+              uploading ||
+              missingDurationCount === 0
+            }
+            onClick={() => void scanMissingDurations()}
+          >
+            {backfillingDurations
+              ? 'Scanning durations…'
+              : 'Scan video durations'}
+          </button>
+          {missingDurationCount > 0 && !backfillingDurations && (
+            <p className="muted admin-video-duration-backfill__hint">
+              {missingDurationCount} video
+              {missingDurationCount === 1 ? '' : 's'} missing duration
+            </p>
+          )}
+          {backfillProgress && (
+            <p className="muted admin-video-duration-backfill__progress" aria-live="polite">
+              {backfillProgress.done} / {backfillProgress.total}
+            </p>
+          )}
+        </div>
+      }
     >
       {state.videoCategories.length === 0 ? (
         <AdminEmpty

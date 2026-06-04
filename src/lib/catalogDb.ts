@@ -744,6 +744,27 @@ export async function updateVideoRow(
   return { ok: true, video: mapVideo(data as DbVideo) };
 }
 
+export async function updateVideoDuration(
+  id: string,
+  durationSeconds: number,
+): Promise<{ ok: true; video: Video } | { ok: false; error: string }> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    return { ok: false, error: 'Duration must be a positive number of seconds.' };
+  }
+
+  const { data, error } = await supabase
+    .from('videos')
+    .update({ duration_seconds: Math.round(durationSeconds) })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error || !data) return { ok: false, error: error?.message ?? 'Update failed.' };
+  return { ok: true, video: mapVideo(data as DbVideo) };
+}
+
 export async function deleteVideoDb(
   id: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {

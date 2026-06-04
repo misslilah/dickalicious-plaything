@@ -114,14 +114,14 @@ function VideoListItem({
       <span className="video-list-item__body">
         <span className="video-list-item__title-row">
           <strong>{video.title}</strong>
-          {video.durationSeconds != null && (
+        </span>
+        <span className="video-list-item__tier video-meta-badges">
+          <TierBadge tier={required} accessStyle />
+          {video.durationSeconds != null ? (
             <span className="video-list-item__duration" aria-label="Duration">
               {formatDuration(video.durationSeconds)}
             </span>
-          )}
-        </span>
-        <span className="video-list-item__tier">
-          <TierBadge tier={required} accessStyle />
+          ) : null}
         </span>
         {locked ? (
           <span className="muted video-list-item__desc">
@@ -296,21 +296,24 @@ export function VideoCategoryDetail() {
           {playing && (
             <section className="card video-watch-card">
               <div className="video-watch-card__header">
-                <h3 className="section-title">
-                  {playing.title}
-                  {playing.durationSeconds != null && (
-                    <span className="video-list-item__duration video-watch-card__duration">
+                <h3 className="section-title">{playing.title}</h3>
+                <span className="video-meta-badges">
+                  <TierBadge
+                    tier={effectiveVideoTier(
+                      playing.requiredTier,
+                      category.requiredTier,
+                    )}
+                    accessStyle
+                  />
+                  {playing.durationSeconds != null ? (
+                    <span
+                      className="video-list-item__duration"
+                      aria-label="Duration"
+                    >
                       {formatDuration(playing.durationSeconds)}
                     </span>
-                  )}
-                </h3>
-                <TierBadge
-                  tier={effectiveVideoTier(
-                    playing.requiredTier,
-                    category.requiredTier,
-                  )}
-                  accessStyle
-                />
+                  ) : null}
+                </span>
               </div>
               {playingLocked ? (
                 <TierUpgradeBanner

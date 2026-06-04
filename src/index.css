@@ -2135,6 +2135,18 @@ a.task-list-row {
   margin-bottom: 0;
 }
 
+.admin-video-duration-backfill {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+
+.admin-video-duration-backfill__hint,
+.admin-video-duration-backfill__progress {
+  margin: 0;
+}
+
 .admin-count {
   font-size: 0.75rem;
   color: var(--text-muted);
@@ -2388,6 +2400,14 @@ a.task-list-row {
   margin-top: 0.2rem;
 }
 
+.video-meta-badges {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+  flex-shrink: 0;
+}
+
 .tier-access-hint {
   margin: 0.35rem 0 0;
   font-size: 0.88rem;
@@ -2445,11 +2465,6 @@ a.task-list-row {
   font-size: 0.78rem;
   font-variant-numeric: tabular-nums;
   color: var(--muted, #94a3b8);
-  font-weight: 500;
-}
-
-.video-watch-card__duration {
-  margin-left: 0.35rem;
   font-weight: 500;
 }
 

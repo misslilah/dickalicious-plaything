@@ -40,23 +40,39 @@ export function formatMb(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** Reads duration from a local video file via browser metadata (best-effort). */
-export function readVideoDuration(file: File): Promise<number | null> {
+function readDurationFromVideoElement(
+  video: HTMLVideoElement,
+  src: string,
+  revokeObjectUrl?: string,
+): Promise<number | null> {
   return new Promise((resolve) => {
-    const url = URL.createObjectURL(file);
-    const video = document.createElement('video');
     video.preload = 'metadata';
     video.onloadedmetadata = () => {
-      const d = Number.isFinite(video.duration) ? video.duration : null;
-      URL.revokeObjectURL(url);
+      const d = Number.isFinite(video.duration)
+        ? Math.round(video.duration)
+        : null;
+      if (revokeObjectUrl) URL.revokeObjectURL(revokeObjectUrl);
       resolve(d);
     };
     video.onerror = () => {
-      URL.revokeObjectURL(url);
+      if (revokeObjectUrl) URL.revokeObjectURL(revokeObjectUrl);
       resolve(null);
     };
-    video.src = url;
+    video.src = src;
   });
+}
+
+/** Reads duration from a local video file via browser metadata (best-effort). */
+export function readVideoDuration(file: File): Promise<number | null> {
+  const url = URL.createObjectURL(file);
+  const video = document.createElement('video');
+  return readDurationFromVideoElement(video, url, url);
+}
+
+/** Reads duration from a remote or signed playback URL (best-effort). */
+export function readDurationFromUrl(url: string): Promise<number | null> {
+  const video = document.createElement('video');
+  return readDurationFromVideoElement(video, url);
 }
 
 export function videoStoragePath(videoId: string, fileName: string): string {

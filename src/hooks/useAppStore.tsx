@@ -44,6 +44,7 @@ import {
   fetchSharedCatalog,
   insertVideoRow,
   updateVideoRow,
+  updateVideoDuration,
   type SharedCatalog,
   upsertCategory,
   upsertPunishmentCategory,
@@ -187,6 +188,7 @@ interface AppStoreValue {
     onUploadProgress?: (percent: number) => void,
   ) => Promise<MutateResult>;
   updateVideo: (video: Video) => Promise<MutateResult>;
+  patchVideoDuration: (id: string, durationSeconds: number) => Promise<MutateResult>;
   deleteVideo: (id: string) => Promise<MutateResult>;
   resetAll: () => Promise<MutateResult>;
   clearSaveError: () => void;
@@ -952,6 +954,19 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
             ),
           };
         });
+        return { ok: true };
+      },
+      patchVideoDuration: async (id, durationSeconds) => {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const result = await updateVideoDuration(id, durationSeconds);
+        if (!result.ok) return result;
+        setState((s) => ({
+          ...s,
+          videos: s.videos.map((v) =>
+            v.id === result.video.id ? result.video : v,
+          ),
+        }));
         return { ok: true };
       },
       deleteVideo: async (id) => {
