@@ -85,6 +85,10 @@ import {
   purchaseReward,
   uncompleteTask,
 } from '../lib/gameLogic';
+import {
+  readBubblesEnabledFromStorage,
+  writeBubblesEnabledToStorage,
+} from '../lib/appSettings';
 import { createInitialState } from '../lib/seed';
 import { isSupabaseConfigured, SUPABASE_SETUP_HINT } from '../lib/supabase';
 import { fetchUserProgress, saveUserProgress } from '../lib/userProgressDb';
@@ -206,7 +210,12 @@ function mergeCatalogIntoState(base: AppState, catalog: SharedCatalog): AppState
 }
 
 export function AppStoreProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AppState>(() => createInitialState());
+  const [state, setState] = useState<AppState>(() => {
+    const base = createInitialState();
+    const stored = readBubblesEnabledFromStorage();
+    if (stored === null) return base;
+    return { ...base, settings: { ...base.settings, bubblesEnabled: stored } };
+  });
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [dataLoading, setDataLoading] = useState(false);
@@ -587,8 +596,12 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         }));
         return { ok: true };
       },
-      updateSettings: (partial) =>
-        applyUserState({ ...state, settings: { ...state.settings, ...partial } }),
+      updateSettings: (partial) => {
+        if (partial.bubblesEnabled !== undefined) {
+          writeBubblesEnabledToStorage(partial.bubblesEnabled);
+        }
+        applyUserState({ ...state, settings: { ...state.settings, ...partial } });
+      },
       updateCategory: async (category) => {
         const denied = requireAdmin();
         if (denied) return denied;

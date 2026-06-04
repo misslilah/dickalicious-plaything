@@ -17,29 +17,53 @@ interface FlashWordStreakPortalProps {
   anchorRef: RefObject<HTMLElement | null>;
 }
 
+function hasSideSpaceForToast(rect: DOMRect): boolean {
+  const minSidePx = 72;
+  return (
+    window.innerWidth > 640 &&
+    rect.left >= minSidePx &&
+    window.innerWidth - rect.right >= minSidePx
+  );
+}
+
 function buildToastStyle(
   rect: DOMRect,
   placement: StreakToastPlacement,
 ): CSSProperties {
-  const centerY = rect.top + rect.height / 2;
   const base: CSSProperties = {
     position: 'fixed',
-    top: centerY,
-    transform: 'translateY(-50%)',
     zIndex: PORTAL_Z_INDEX,
     pointerEvents: 'none',
   };
 
-  if (placement === 'left') {
+  if (!hasSideSpaceForToast(rect)) {
     return {
       ...base,
+      left: '50%',
+      top: Math.max(8, rect.top - GAP_PX),
+      transform: 'translate(-50%, -100%)',
+      maxWidth: `min(calc(100vw - 1.5rem), ${Math.max(160, rect.width)}px)`,
+      textAlign: 'center',
+    };
+  }
+
+  const centerY = rect.top + rect.height / 2;
+  const sideBase: CSSProperties = {
+    ...base,
+    top: centerY,
+    transform: 'translateY(-50%)',
+  };
+
+  if (placement === 'left') {
+    return {
+      ...sideBase,
       right: window.innerWidth - rect.left + GAP_PX,
       maxWidth: Math.max(140, rect.left - GAP_PX - 16),
     };
   }
 
   return {
-    ...base,
+    ...sideBase,
     left: rect.right + GAP_PX,
     maxWidth: Math.max(140, window.innerWidth - rect.right - GAP_PX - 16),
   };

@@ -192,10 +192,12 @@ export interface Punishment {
   date: string;
 }
 
-/** Legacy JSON in user_progress; only resetHour may be read for day boundary. */
+/** Per-user JSON in user_progress.settings (and localStorage fallback for guests). */
 export interface AppSettings {
   dailyQuotaPercent?: number;
   resetHour?: number;
+  /** Floating soap bubbles; default true when omitted. */
+  bubblesEnabled?: boolean;
 }
 
 export interface VideoCategory {
@@ -230,6 +232,26 @@ export interface AudioPlaylistItem {
   sortOrder: number;
   durationSeconds: number | null;
   url: string;
+  createdAt: string;
+}
+
+export type VideoPlaylistType = 'normal' | 'interactive';
+
+/** User-owned playlist of catalog videos (normal or interactive). */
+export interface VideoPlaylist {
+  id: string;
+  userId: string;
+  title: string;
+  type: VideoPlaylistType;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface VideoPlaylistItem {
+  id: string;
+  playlistId: string;
+  videoId: string;
+  position: number;
   createdAt: string;
 }
 

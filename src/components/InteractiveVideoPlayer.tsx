@@ -21,6 +21,7 @@ import {
   type InteractiveVideoCue,
 } from '../lib/interactiveVideos';
 import { PrivacyNotice } from './PrivacyNotice';
+import { VideoPlaylistProgressBanner } from './VideoPlaylistProgressBanner';
 
 const MEDIAPIPE_WASM =
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
@@ -72,6 +73,9 @@ type PlayerPhase =
 
 interface InteractiveVideoPlayerProps {
   video: InteractiveVideo;
+  onSessionComplete?: () => void;
+  playlistProgress?: { current: number; total: number; title: string } | null;
+  onExitPlaylist?: () => void;
 }
 
 function formatTimeMs(ms: number): string {
@@ -138,11 +142,21 @@ function detectCommandSuccess(
   }
 }
 
-export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
+export function InteractiveVideoPlayer({
+  video,
+  onSessionComplete,
+  playlistProgress,
+  onExitPlaylist,
+}: InteractiveVideoPlayerProps) {
   const { session } = useAppStore();
   const audio = useOptionalAudioPlayer();
   const globalVideo = useOptionalVideoPlayer();
   const isAdmin = session?.role === 'admin';
+
+  const onSessionCompleteRef = useRef(onSessionComplete);
+  useEffect(() => {
+    onSessionCompleteRef.current = onSessionComplete;
+  }, [onSessionComplete]);
 
   const playbackRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -909,6 +923,7 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
       setActiveCue(null);
       phaseRef.current = 'done';
       setPhase('done');
+      onSessionCompleteRef.current?.();
     };
 
     el.addEventListener('loadedmetadata', onLoadedMetadata);
@@ -984,6 +999,15 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
         </Link>
         <h2>{video.title}</h2>
       </div>
+
+      {playlistProgress && onExitPlaylist && (
+        <VideoPlaylistProgressBanner
+          title={playlistProgress.title}
+          current={playlistProgress.current}
+          total={playlistProgress.total}
+          onExit={onExitPlaylist}
+        />
+      )}
 
       {!started && (
         <div className="interactive-video-player__warning card" role="note">
@@ -1077,9 +1101,17 @@ export function InteractiveVideoPlayer({ video }: InteractiveVideoPlayerProps) {
                 : 'Start interactive playback'}
           </button>
         ) : phase === 'done' ? (
-          <button type="button" className="btn btn--primary" onClick={resetSession}>
-            Play again
-          </button>
+          playlistProgress ? (
+            <p className="muted" aria-live="polite">
+              {playlistProgress.current < playlistProgress.total
+                ? 'Loading next video…'
+                : 'Playlist complete.'}
+            </p>
+          ) : (
+            <button type="button" className="btn btn--primary" onClick={resetSession}>
+              Play again
+            </button>
+          )
         ) : (
           <p className="muted">
             {sortedCues.length} cue{sortedCues.length === 1 ? '' : 's'} · {firedCount} triggered

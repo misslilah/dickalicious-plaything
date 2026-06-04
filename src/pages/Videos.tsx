@@ -12,6 +12,7 @@ import {
 } from '../lib/videoAccess';
 import type { Video, VideoCategory } from '../types';
 import { InteractiveVideos } from './InteractiveVideos';
+import { VideoPlaylistSection } from '../components/VideoPlaylistSection';
 
 type MediaTab = 'videos' | 'interactive' | 'audio';
 
@@ -93,7 +94,7 @@ export function Videos() {
     <div className="page">
       <header className="page-header">
         <h2>Media</h2>
-        <p className="muted">Videos and sequential audio playlists</p>
+        <p className="muted">Videos, playlists, and sequential audio</p>
       </header>
 
       <div className="media-tabs" role="tablist" aria-label="Media sections">
@@ -143,6 +144,8 @@ export function Videos() {
               />
             </div>
           )}
+
+          <VideoPlaylistSection type="normal" />
 
           {state.videoCategories.length === 0 ? (
             <section className="card">

@@ -4,6 +4,7 @@ import {
   fetchInteractiveVideoSummaries,
   type InteractiveVideoSummary,
 } from '../lib/interactiveVideos';
+import { VideoPlaylistSection } from '../components/VideoPlaylistSection';
 
 interface InteractiveVideosProps {
   embedded?: boolean;
@@ -34,6 +35,8 @@ export function InteractiveVideos({ embedded = false }: InteractiveVideosProps) 
           gestures. Works best on desktop; mobile support is best-effort.
         </p>
       </div>
+
+      <VideoPlaylistSection type="interactive" />
 
       {error && (
         <p className="login-error" role="alert">

@@ -9,10 +9,12 @@ import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { BackgroundGifOverlay } from './components/BackgroundGifOverlay';
 import { SoapBubbleField } from './components/SoapBubbleField';
-import { AppStoreProvider } from './hooks/useAppStore';
+import { AppStoreProvider, useAppStore } from './hooks/useAppStore';
+import { areBubblesEnabled } from './lib/appSettings';
 import { AudioPlayerProvider } from './contexts/AudioPlayerProvider';
 import { VideoPlaybackProvider } from './contexts/VideoPlaybackContext';
 import { VideoPlayerProvider } from './contexts/VideoPlayerProvider';
+import { VideoPlaylistPlaybackProvider } from './contexts/VideoPlaylistPlaybackContext';
 import { XpToastProvider } from './contexts/XpToastContext';
 import { Admin } from './pages/Admin';
 import { CategoryDetail } from './pages/CategoryDetail';
@@ -30,16 +32,23 @@ import { MiniGames } from './pages/MiniGames';
 import { FlashWordGamePage } from './pages/FlashWordGamePage';
 import { InteractiveVideos } from './pages/InteractiveVideos';
 import { InteractiveVideoPlay } from './pages/InteractiveVideoPlay';
+import { VideoPlaylistPlay } from './pages/VideoPlaylistPlay';
+import { AgeGate } from './components/AgeGate';
 
 function AppChrome() {
+  const { state } = useAppStore();
+  const showBubbles = areBubblesEnabled(state.settings);
+
   return (
     <VideoPlaybackProvider>
       <XpToastProvider>
-        <VideoPlayerProvider>
-          <BackgroundGifOverlay />
-          <SoapBubbleField />
-          <Outlet />
-        </VideoPlayerProvider>
+        <VideoPlaylistPlaybackProvider>
+          <VideoPlayerProvider>
+            <BackgroundGifOverlay />
+            {showBubbles && <SoapBubbleField />}
+            <Outlet />
+          </VideoPlayerProvider>
+        </VideoPlaylistPlaybackProvider>
       </XpToastProvider>
     </VideoPlaybackProvider>
   );
@@ -64,6 +73,7 @@ const router = createBrowserRouter([
                 element: <TaskFocusPage />,
               },
               { path: 'videos', element: <Videos /> },
+              { path: 'videos/playlist/:playlistId', element: <VideoPlaylistPlay /> },
               { path: 'videos/interactive', element: <InteractiveVideos /> },
               {
                 path: 'videos/interactive/:videoId',
@@ -98,10 +108,12 @@ const router = createBrowserRouter([
 
 export default function App() {
   return (
-    <AppStoreProvider>
-      <AudioPlayerProvider>
-        <RouterProvider router={router} />
-      </AudioPlayerProvider>
-    </AppStoreProvider>
+    <AgeGate>
+      <AppStoreProvider>
+        <AudioPlayerProvider>
+          <RouterProvider router={router} />
+        </AudioPlayerProvider>
+      </AppStoreProvider>
+    </AgeGate>
   );
 }

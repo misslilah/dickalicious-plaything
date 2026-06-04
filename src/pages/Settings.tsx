@@ -7,11 +7,14 @@ import {
   patreonOAuthStatusMessageFromProbe,
   probePatreonOAuthStart,
 } from '../lib/patreon';
+import { areBubblesEnabled } from '../lib/appSettings';
 import { tierLabel } from '../lib/tiers';
 
 export function Settings() {
   const {
     session,
+    state,
+    updateSettings,
     resetAll,
     logout,
     changePassword,
@@ -19,6 +22,7 @@ export function Settings() {
     clearSaveError,
     refreshPatreonProfile,
   } = useAppStore();
+  const bubblesEnabled = areBubblesEnabled(state.settings);
   const [searchParams, setSearchParams] = useSearchParams();
   const [patreonNotice, setPatreonNotice] = useState('');
   const [patreonConnectError, setPatreonConnectError] = useState('');
@@ -148,6 +152,22 @@ export function Settings() {
           </Link>
         </section>
       )}
+
+      <section className="card">
+        <h3 className="section-title">Appearance</h3>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={bubblesEnabled}
+            onChange={(e) => updateSettings({ bubblesEnabled: e.target.checked })}
+          />
+          <span>
+            <strong>Soap bubbles</strong>
+            <br />
+            <span className="muted">Show floating bubbles you can pop on screen</span>
+          </span>
+        </label>
+      </section>
 
       <section className="card">
         <h3 className="section-title">Patreon membership</h3>

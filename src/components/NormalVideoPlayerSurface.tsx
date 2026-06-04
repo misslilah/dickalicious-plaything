@@ -14,7 +14,10 @@ export function NormalVideoPlayerSurface() {
     dismissLoopNotice,
     turnOffLoop,
     registerInlineHost,
+    playlistPlayback,
   } = useVideoPlayer();
+
+  const inPlaylist = playlistPlayback != null;
 
   const attachHost = useCallback(
     (el: HTMLDivElement | null) => {
@@ -37,16 +40,18 @@ export function NormalVideoPlayerSurface() {
       ) : null}
       {ready ? (
         <>
-          <div className="video-player-controls">
-            <button
-              type="button"
-              className={loop ? 'chip chip--active' : 'chip'}
-              aria-pressed={loop}
-              onClick={toggleLoop}
-            >
-              Loop
-            </button>
-          </div>
+          {!inPlaylist && (
+            <div className="video-player-controls">
+              <button
+                type="button"
+                className={loop ? 'chip chip--active' : 'chip'}
+                aria-pressed={loop}
+                onClick={toggleLoop}
+              >
+                Loop
+              </button>
+            </div>
+          )}
           <VideoLoopToast
             visible={showLoopNotice}
             onDismiss={dismissLoopNotice}

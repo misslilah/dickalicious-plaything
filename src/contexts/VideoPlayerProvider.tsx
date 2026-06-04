@@ -29,6 +29,18 @@ export interface NormalVideoSession {
   autoLoop: boolean;
 }
 
+export interface VideoPlaylistPlaybackEntry {
+  video: Video;
+  categoryId: string;
+}
+
+export interface VideoPlaylistPlaybackState {
+  playlistId: string;
+  title: string;
+  entries: VideoPlaylistPlaybackEntry[];
+  index: number;
+}
+
 interface VideoPlayerContextValue {
   session: NormalVideoSession | null;
   url: string | null;
@@ -36,7 +48,11 @@ interface VideoPlayerContextValue {
   error: string | null;
   loop: boolean;
   showLoopNotice: boolean;
+  playlistPlayback: VideoPlaylistPlaybackState | null;
+  playlistProgress: { current: number; total: number } | null;
   startNormalPlayback: (video: Video, categoryId: string) => void;
+  startPlaylistPlayback: (state: VideoPlaylistPlaybackState) => void;
+  exitPlaylistPlayback: () => void;
   clearNormalPlayback: () => void;
   toggleLoop: () => void;
   dismissLoopNotice: () => void;
@@ -57,14 +73,23 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
   const [loop, setLoop] = useState(false);
   const [showLoopNotice, setShowLoopNotice] = useState(false);
   const [inlineHost, setInlineHost] = useState<HTMLElement | null>(null);
+  const [playlistPlayback, setPlaylistPlayback] =
+    useState<VideoPlaylistPlaybackState | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const playlistPlaybackRef = useRef<VideoPlaylistPlaybackState | null>(null);
   const fallbackHostRef = useRef<HTMLDivElement | null>(null);
   const loopNoticeShownRef = useRef(false);
   const shouldAutoplayRef = useRef(false);
   const watchTrackerRef = useRef(createVideoWatchTracker());
 
-  useVideoPlaybackActive(session != null);
+  const [normalVideoPlaying, setNormalVideoPlaying] = useState(false);
+
+  useVideoPlaybackActive(session != null && normalVideoPlaying);
+
+  useEffect(() => {
+    playlistPlaybackRef.current = playlistPlayback;
+  }, [playlistPlayback]);
 
   const clearNormalPlayback = useCallback(() => {
     const el = videoRef.current;
@@ -73,6 +98,8 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
       el.removeAttribute('src');
       el.load();
     }
+    setNormalVideoPlaying(false);
+    setPlaylistPlayback(null);
     setSession(null);
     setUrl(null);
     setLoading(false);
@@ -81,15 +108,57 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
     loopNoticeShownRef.current = false;
   }, []);
 
+  const exitPlaylistPlayback = useCallback(() => {
+    setPlaylistPlayback(null);
+    clearNormalPlayback();
+  }, [clearNormalPlayback]);
+
+  const playPlaylistEntry = useCallback(
+    (state: VideoPlaylistPlaybackState, index: number) => {
+      const entry = state.entries[index];
+      if (!entry) return;
+
+      const autoLoop = entry.video.autoLoop ?? false;
+      const initialLoop = false;
+      loopNoticeShownRef.current = false;
+      setShowLoopNotice(false);
+      setLoop(initialLoop);
+      shouldAutoplayRef.current = true;
+      setPlaylistPlayback({ ...state, index });
+      setSession({
+        videoId: entry.video.id,
+        categoryId: entry.categoryId,
+        title: entry.video.title,
+        storagePath: entry.video.storagePath,
+        autoLoop,
+      });
+      setUrl(null);
+      setError(null);
+      setLoading(true);
+    },
+    [],
+  );
+
+  const startPlaylistPlayback = useCallback(
+    (state: VideoPlaylistPlaybackState) => {
+      if (state.entries.length === 0) return;
+      playPlaylistEntry(state, 0);
+    },
+    [playPlaylistEntry],
+  );
+
   const startNormalPlayback = useCallback(
     (video: Video, categoryId: string) => {
       if (
         session?.videoId === video.id &&
         session.categoryId === categoryId &&
-        url
+        url &&
+        !playlistPlaybackRef.current
       ) {
         return;
       }
+
+      setPlaylistPlayback(null);
 
       const autoLoop = video.autoLoop ?? false;
       const initialLoop = autoLoop ? true : readVideoLoopPreference();
@@ -166,6 +235,25 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const el = videoRef.current;
+    if (!el || !session || !url) {
+      setNormalVideoPlaying(false);
+      return;
+    }
+
+    const syncPlaying = () => setNormalVideoPlaying(!el.paused && !el.ended);
+    syncPlaying();
+    el.addEventListener('play', syncPlaying);
+    el.addEventListener('pause', syncPlaying);
+    el.addEventListener('ended', syncPlaying);
+    return () => {
+      el.removeEventListener('play', syncPlaying);
+      el.removeEventListener('pause', syncPlaying);
+      el.removeEventListener('ended', syncPlaying);
+    };
+  }, [session?.videoId, url]);
+
+  useEffect(() => {
+    const el = videoRef.current;
     if (!el) return;
     el.loop = loop;
   }, [loop]);
@@ -183,6 +271,16 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
     const onTimeUpdate = () => tracker.onTimeUpdate(el.currentTime);
     const onSeeking = () => tracker.onSeeking(el.currentTime);
     const onEnded = () => {
+      const playlist = playlistPlaybackRef.current;
+      if (playlist && !el.loop) {
+        const nextIndex = playlist.index + 1;
+        if (nextIndex < playlist.entries.length) {
+          playPlaylistEntry(playlist, nextIndex);
+        } else {
+          setPlaylistPlayback(null);
+        }
+      }
+
       if (!tracker.qualifiesForReward(el.duration, 'normal')) return;
       void awardVideoCompletion(videoId).then((xp) => {
         if (xp > 0) xpToast?.showXpGain(xp);
@@ -197,7 +295,7 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
       el.removeEventListener('seeking', onSeeking);
       el.removeEventListener('ended', onEnded);
     };
-  }, [session?.videoId, url, awardVideoCompletion, xpToast]);
+  }, [session?.videoId, url, awardVideoCompletion, xpToast, playPlaylistEntry]);
 
   const onVideoPlay = useCallback(() => {
     audio?.pausePlayback();
@@ -242,6 +340,14 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
     />
   ) : null;
 
+  const playlistProgress = useMemo(() => {
+    if (!playlistPlayback || playlistPlayback.entries.length === 0) return null;
+    return {
+      current: playlistPlayback.index + 1,
+      total: playlistPlayback.entries.length,
+    };
+  }, [playlistPlayback]);
+
   const value = useMemo<VideoPlayerContextValue>(
     () => ({
       session,
@@ -250,7 +356,11 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
       error,
       loop,
       showLoopNotice,
+      playlistPlayback,
+      playlistProgress,
       startNormalPlayback,
+      startPlaylistPlayback,
+      exitPlaylistPlayback,
       clearNormalPlayback,
       toggleLoop,
       dismissLoopNotice,
@@ -264,7 +374,11 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
       error,
       loop,
       showLoopNotice,
+      playlistPlayback,
+      playlistProgress,
       startNormalPlayback,
+      startPlaylistPlayback,
+      exitPlaylistPlayback,
       clearNormalPlayback,
       toggleLoop,
       dismissLoopNotice,
