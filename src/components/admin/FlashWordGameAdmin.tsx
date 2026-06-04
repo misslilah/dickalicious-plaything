@@ -22,6 +22,7 @@ import {
   type FlashWordDistractionZoneInput,
   type FlashWordGame,
   type FlashWordGameInput,
+  type FlashWordHardDistractionZoneInput,
   type FlashWordSavedCombination,
   type FlashWordStreakTier,
   type FlashWordTripletInput,
@@ -41,6 +42,8 @@ type CardFormEntry = {
   imageUrl?: string;
   zone: FlashWordZone;
   distractionZones: FlashWordDistractionZoneInput[];
+  hardModeZones: FlashWordZone[];
+  hardDistractionZones: FlashWordHardDistractionZoneInput[];
   pendingFile?: File;
   pendingPreviewUrl?: string;
 };
@@ -81,6 +84,12 @@ function cardToFormEntry(card: FlashWordCard): CardFormEntry {
     imageUrl: card.imageUrl,
     zone: { ...card.zone },
     distractionZones: card.distractionZones.map((zone) => ({
+      id: zone.id,
+      zone: { ...zone.zone },
+      word: zone.word,
+    })),
+    hardModeZones: card.hardModeZones.map((zone) => ({ ...zone })),
+    hardDistractionZones: card.hardDistractionZones.map((zone) => ({
       id: zone.id,
       zone: { ...zone.zone },
       word: zone.word,
@@ -246,6 +255,27 @@ export function FlashWordGameAdmin() {
     }));
   };
 
+  const updateCardHardModeZones = (index: number, hardModeZones: FlashWordZone[]) => {
+    setForm((prev) => ({
+      ...prev,
+      cards: prev.cards.map((card, i) =>
+        i === index ? { ...card, hardModeZones } : card,
+      ),
+    }));
+  };
+
+  const updateCardHardDistractionZones = (
+    index: number,
+    hardDistractionZones: FlashWordHardDistractionZoneInput[],
+  ) => {
+    setForm((prev) => ({
+      ...prev,
+      cards: prev.cards.map((card, i) =>
+        i === index ? { ...card, hardDistractionZones } : card,
+      ),
+    }));
+  };
+
   const addCardFromFile = (file: File) => {
     if (!file.type.startsWith('image/')) {
       setError('Only image files are allowed.');
@@ -263,6 +293,8 @@ export function FlashWordGameAdmin() {
         {
           zone: { ...DEFAULT_ZONE },
           distractionZones: [],
+          hardModeZones: [],
+          hardDistractionZones: [],
           pendingFile: file,
           pendingPreviewUrl: previewUrl,
         },
@@ -465,6 +497,8 @@ export function FlashWordGameAdmin() {
       id: card.id,
       zone: card.zone,
       distractionZones: form.distractionZonesEnabled ? card.distractionZones : [],
+      hardModeZones: card.hardModeZones,
+      hardDistractionZones: card.hardDistractionZones,
     })),
     triplets: form.triplets,
     streakTiers: form.streakTiers.map((tier) => ({
@@ -800,6 +834,14 @@ export function FlashWordGameAdmin() {
                   distractionZones={selectedCard.distractionZones}
                   onDistractionZonesChange={(distractionZones) =>
                     updateCardDistractionZones(selectedCardIndex, distractionZones)
+                  }
+                  hardModeHighlightZones={selectedCard.hardModeZones}
+                  onHardModeHighlightZonesChange={(hardModeZones) =>
+                    updateCardHardModeZones(selectedCardIndex, hardModeZones)
+                  }
+                  hardDistractionZones={selectedCard.hardDistractionZones}
+                  onHardDistractionZonesChange={(hardDistractionZones) =>
+                    updateCardHardDistractionZones(selectedCardIndex, hardDistractionZones)
                   }
                 />
               )}

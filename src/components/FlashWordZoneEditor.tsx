@@ -1,8 +1,11 @@
 import { useCallback, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   DEFAULT_DISTRACTION_ZONE,
+  DEFAULT_HARD_HIGHLIGHT_ZONE,
+  FLASH_HARD_MODE_STREAK_THRESHOLD,
   normalizeZone,
   type FlashWordDistractionZoneInput,
+  type FlashWordHardDistractionZoneInput,
   type FlashWordZone,
 } from '../lib/flashWordGames';
 import {
@@ -18,10 +21,24 @@ interface FlashWordZoneEditorProps {
   distractionZones?: FlashWordDistractionZoneInput[];
   onDistractionZonesChange?: (zones: FlashWordDistractionZoneInput[]) => void;
   showDistractionZones?: boolean;
+  hardModeHighlightZones?: FlashWordZone[];
+  onHardModeHighlightZonesChange?: (zones: FlashWordZone[]) => void;
+  hardDistractionZones?: FlashWordHardDistractionZoneInput[];
+  onHardDistractionZonesChange?: (zones: FlashWordHardDistractionZoneInput[]) => void;
 }
 
 type DragMode = 'move' | 'resize';
-type DragTarget = { kind: 'main' } | { kind: 'distraction'; index: number };
+type DragTarget =
+  | { kind: 'main' }
+  | { kind: 'distraction'; index: number }
+  | { kind: 'hardHighlight'; index: number }
+  | { kind: 'hardDistraction'; index: number };
+
+const HARD_HIGHLIGHT_COLOR_COUNT = 3;
+
+function hardHighlightEditorClass(index: number): string {
+  return `flash-zone-editor__zone flash-zone-editor__zone--hard-highlight flash-zone-editor__zone--hard-highlight-${index % HARD_HIGHLIGHT_COLOR_COUNT}`;
+}
 
 export function FlashWordZoneEditor({
   imageUrl,
@@ -30,7 +47,14 @@ export function FlashWordZoneEditor({
   distractionZones = [],
   onDistractionZonesChange,
   showDistractionZones = false,
+  hardModeHighlightZones = [],
+  onHardModeHighlightZonesChange,
+  hardDistractionZones = [],
+  onHardDistractionZonesChange,
 }: FlashWordZoneEditorProps) {
+  const showHardMode =
+    onHardModeHighlightZonesChange != null || onHardDistractionZonesChange != null;
+
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const overlayLayoutStyle = useFlashWordImageLayout(
@@ -67,14 +91,40 @@ export function FlashWordZoneEditor({
         onChange(nextZone);
         return;
       }
-      if (!onDistractionZonesChange) return;
-      onDistractionZonesChange(
-        distractionZones.map((entry, index) =>
+      if (target.kind === 'distraction') {
+        if (!onDistractionZonesChange) return;
+        onDistractionZonesChange(
+          distractionZones.map((entry, index) =>
+            index === target.index ? { ...entry, zone: nextZone } : entry,
+          ),
+        );
+        return;
+      }
+      if (target.kind === 'hardHighlight') {
+        if (!onHardModeHighlightZonesChange) return;
+        onHardModeHighlightZonesChange(
+          hardModeHighlightZones.map((entry, index) =>
+            index === target.index ? nextZone : entry,
+          ),
+        );
+        return;
+      }
+      if (!onHardDistractionZonesChange) return;
+      onHardDistractionZonesChange(
+        hardDistractionZones.map((entry, index) =>
           index === target.index ? { ...entry, zone: nextZone } : entry,
         ),
       );
     },
-    [distractionZones, onChange, onDistractionZonesChange],
+    [
+      distractionZones,
+      hardDistractionZones,
+      hardModeHighlightZones,
+      onChange,
+      onDistractionZonesChange,
+      onHardDistractionZonesChange,
+      onHardModeHighlightZonesChange,
+    ],
   );
 
   const onPointerMove = (event: ReactPointerEvent) => {
@@ -146,6 +196,52 @@ export function FlashWordZoneEditor({
     );
   };
 
+  const addHardHighlightZone = () => {
+    if (!onHardModeHighlightZonesChange) return;
+    const offset = hardModeHighlightZones.length * 7;
+    onHardModeHighlightZonesChange([
+      ...hardModeHighlightZones,
+      normalizeZone({
+        ...DEFAULT_HARD_HIGHLIGHT_ZONE,
+        xPct: DEFAULT_HARD_HIGHLIGHT_ZONE.xPct + offset,
+        yPct: DEFAULT_HARD_HIGHLIGHT_ZONE.yPct + offset * 0.5,
+      }),
+    ]);
+  };
+
+  const removeHardHighlightZone = (index: number) => {
+    if (!onHardModeHighlightZonesChange) return;
+    onHardModeHighlightZonesChange(hardModeHighlightZones.filter((_, i) => i !== index));
+  };
+
+  const addHardDistractionZone = () => {
+    if (!onHardDistractionZonesChange) return;
+    const offset = hardDistractionZones.length * 6;
+    onHardDistractionZonesChange([
+      ...hardDistractionZones,
+      {
+        zone: normalizeZone({
+          ...DEFAULT_DISTRACTION_ZONE,
+          xPct: DEFAULT_DISTRACTION_ZONE.xPct + offset + 20,
+          yPct: DEFAULT_DISTRACTION_ZONE.yPct - offset,
+        }),
+        word: '',
+      },
+    ]);
+  };
+
+  const removeHardDistractionZone = (index: number) => {
+    if (!onHardDistractionZonesChange) return;
+    onHardDistractionZonesChange(hardDistractionZones.filter((_, i) => i !== index));
+  };
+
+  const updateHardDistractionWord = (index: number, word: string) => {
+    if (!onHardDistractionZonesChange) return;
+    onHardDistractionZonesChange(
+      hardDistractionZones.map((entry, i) => (i === index ? { ...entry, word } : entry)),
+    );
+  };
+
   const normalizedMain = normalizeZone(zone);
 
   return (
@@ -154,6 +250,8 @@ export function FlashWordZoneEditor({
         Drag the purple box for the main flash zone (answer choices come from word combinations).
         {showDistractionZones &&
           ' Green boxes are distraction zones — visible here only; they flash extra words during the wait.'}
+        {showHardMode &&
+          ' Hard mode boxes (cyan, orange, amber) appear only when a player streak reaches 20+.'}
       </p>
       <div
         ref={containerRef}
@@ -198,6 +296,67 @@ export function FlashWordZoneEditor({
                     aria-label="Resize distraction zone"
                     onPointerDown={onPointerDown(
                       { kind: 'distraction', index },
+                      'resize',
+                      normalized,
+                    )}
+                  />
+                </div>
+              );
+            })}
+          {onHardModeHighlightZonesChange &&
+            hardModeHighlightZones.map((entry, index) => {
+              const normalized = normalizeZone(entry);
+              return (
+                <div
+                  key={`hard-highlight-${index}`}
+                  className={hardHighlightEditorClass(index)}
+                  style={flashWordZoneStyle(normalized)}
+                  onPointerDown={onPointerDown(
+                    { kind: 'hardHighlight', index },
+                    'move',
+                    normalized,
+                  )}
+                  role="presentation"
+                >
+                  <span className="flash-zone-editor__zone-label">Hard highlight</span>
+                  <button
+                    type="button"
+                    className="flash-zone-editor__resize"
+                    aria-label="Resize hard mode highlight zone"
+                    onPointerDown={onPointerDown(
+                      { kind: 'hardHighlight', index },
+                      'resize',
+                      normalized,
+                    )}
+                  />
+                </div>
+              );
+            })}
+          {onHardDistractionZonesChange &&
+            hardDistractionZones.map((entry, index) => {
+              const normalized = normalizeZone(entry.zone);
+              return (
+                <div
+                  key={entry.id ?? `hard-distraction-${index}`}
+                  className="flash-zone-editor__zone flash-zone-editor__zone--hard-distraction"
+                  style={flashWordZoneStyle(normalized)}
+                  onPointerDown={onPointerDown(
+                    { kind: 'hardDistraction', index },
+                    'move',
+                    normalized,
+                  )}
+                  role="presentation"
+                >
+                  <span className="flash-zone-editor__zone-label">Hard distraction</span>
+                  {entry.word.trim() && (
+                    <span className="flash-zone-editor__zone-word">{entry.word.trim()}</span>
+                  )}
+                  <button
+                    type="button"
+                    className="flash-zone-editor__resize"
+                    aria-label="Resize hard mode distraction zone"
+                    onPointerDown={onPointerDown(
+                      { kind: 'hardDistraction', index },
                       'resize',
                       normalized,
                     )}
@@ -259,6 +418,101 @@ export function FlashWordZoneEditor({
                 </li>
               ))}
             </ul>
+          )}
+        </div>
+      )}
+
+      {showHardMode && (
+        <div className="flash-zone-editor__hard-mode">
+          <h5 className="section-title">Hard mode</h5>
+          <p className="muted flash-zone-editor__hard-mode-desc">
+            Applies in-game when the player streak reaches {FLASH_HARD_MODE_STREAK_THRESHOLD} or
+            higher. Extra colored highlight zones and faster distraction flashes stack on top of
+            normal zones.
+          </p>
+
+          {onHardModeHighlightZonesChange && (
+            <div className="flash-zone-editor__hard-highlights">
+              <div className="flash-zone-editor__distractions-header">
+                <h6 className="section-title">Hard mode highlight zones</h6>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--small"
+                  onClick={addHardHighlightZone}
+                >
+                  Add highlight zone
+                </button>
+              </div>
+              {hardModeHighlightZones.length === 0 ? (
+                <p className="muted">
+                  No hard highlight zones — add decoy highlight boxes (cyan / orange / amber).
+                </p>
+              ) : (
+                <ul className="flash-zone-editor__distraction-list">
+                  {hardModeHighlightZones.map((_, index) => (
+                    <li
+                      key={`hard-highlight-field-${index}`}
+                      className="flash-zone-editor__distraction-row"
+                    >
+                      <span className="muted">Highlight zone {index + 1}</span>
+                      <button
+                        type="button"
+                        className="btn btn--danger btn--small"
+                        onClick={() => removeHardHighlightZone(index)}
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {onHardDistractionZonesChange && (
+            <div className="flash-zone-editor__hard-distractions">
+              <div className="flash-zone-editor__distractions-header">
+                <h6 className="section-title">Hard mode distraction zones</h6>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--small"
+                  onClick={addHardDistractionZone}
+                >
+                  Add hard distraction
+                </button>
+              </div>
+              {hardDistractionZones.length === 0 ? (
+                <p className="muted">
+                  No hard distraction zones — add words that flash more often during hard mode.
+                </p>
+              ) : (
+                <ul className="flash-zone-editor__distraction-list">
+                  {hardDistractionZones.map((entry, index) => (
+                    <li
+                      key={entry.id ?? `hard-distraction-field-${index}`}
+                      className="flash-zone-editor__distraction-row"
+                    >
+                      <label className="form-field flash-zone-editor__distraction-word">
+                        Hard distraction word {index + 1}
+                        <input
+                          type="text"
+                          value={entry.word}
+                          onChange={(e) => updateHardDistractionWord(index, e.target.value)}
+                          placeholder="Extra word during hard mode"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="btn btn--danger btn--small"
+                        onClick={() => removeHardDistractionZone(index)}
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
         </div>
       )}

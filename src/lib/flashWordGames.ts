@@ -26,13 +26,23 @@ export const DEFAULT_DISTRACTION_ZONE = {
   heightPct: 8,
 };
 
+/** Streak count at which hard mode activates for subsequent rounds. */
+export const FLASH_HARD_MODE_STREAK_THRESHOLD = 20;
+
+export const DEFAULT_HARD_HIGHLIGHT_ZONE = {
+  xPct: 55,
+  yPct: 25,
+  widthPct: 18,
+  heightPct: 10,
+};
+
 export const MAX_FLASH_GAME_IMAGE_BYTES = 5 * 1024 * 1024;
 
 export const FLASH_GAME_IMAGE_ACCEPT =
   'image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif';
 
 const MIGRATION_HINT =
-  'Flash Cards games are not set up yet. In Supabase SQL Editor, run supabase/migrations/028_flash_word_games.sql through 032_flash_card_distraction_zones.sql and 045_flash_word_streak_rewards.sql, then retry.';
+  'Flash Cards games are not set up yet. In Supabase SQL Editor, run supabase/migrations/028_flash_word_games.sql through 032_flash_card_distraction_zones.sql, 045_flash_word_streak_rewards.sql, and 050_flash_card_hard_mode.sql, then retry.';
 
 const BUCKET_HINT =
   'The flash-game-images storage bucket is not set up yet. In Supabase SQL Editor, run supabase/migrations/028_flash_word_games.sql, then retry the upload.';
@@ -55,6 +65,12 @@ export interface FlashWordDistractionZone {
   sortOrder: number;
 }
 
+export interface FlashWordHardDistractionZone {
+  id: string;
+  zone: FlashWordZone;
+  word: string;
+}
+
 export interface FlashWordCard {
   id: string;
   gameId: string;
@@ -62,6 +78,8 @@ export interface FlashWordCard {
   imageUrl: string;
   zone: FlashWordZone;
   distractionZones: FlashWordDistractionZone[];
+  hardModeZones: FlashWordZone[];
+  hardDistractionZones: FlashWordHardDistractionZone[];
   sortOrder: number;
 }
 
@@ -114,10 +132,18 @@ export interface FlashWordDistractionZoneInput {
   word: string;
 }
 
+export interface FlashWordHardDistractionZoneInput {
+  id?: string;
+  zone: FlashWordZone;
+  word: string;
+}
+
 export interface FlashWordCardInput {
   id?: string;
   zone: FlashWordZone;
   distractionZones?: FlashWordDistractionZoneInput[];
+  hardModeZones?: FlashWordZone[];
+  hardDistractionZones?: FlashWordHardDistractionZoneInput[];
 }
 
 export interface FlashWordTripletInput {
@@ -176,7 +202,22 @@ type DbFlashWordCard = {
   zone_y_pct: number;
   zone_width_pct: number;
   zone_height_pct: number;
+  hard_zones?: unknown;
+  hard_distraction_zones?: unknown;
   sort_order: number;
+};
+
+type HardZoneJson = {
+  xPct?: number;
+  yPct?: number;
+  widthPct?: number;
+  heightPct?: number;
+};
+
+type HardDistractionZoneJson = {
+  id?: string;
+  word?: string;
+  zone?: HardZoneJson;
 };
 
 type DbFlashWordDistractionZone = {
@@ -244,6 +285,13 @@ function formatDbError(error: { message?: string; code?: string }): string {
     return `${message} Run supabase/migrations/032_flash_card_distraction_zones.sql in Supabase SQL Editor, then retry.`;
   }
   if (
+    message.includes('hard_zones') ||
+    message.includes('hard_distraction_zones') ||
+    (message.includes('column') && message.includes('flash_word_cards'))
+  ) {
+    return `${message} Run supabase/migrations/050_flash_card_hard_mode.sql in Supabase SQL Editor, then retry.`;
+  }
+  if (
     message.includes('correct_word') ||
     message.includes('distractor_1') ||
     (message.includes('column') && message.includes('flash_word_game_rounds'))
@@ -274,6 +322,68 @@ export function normalizeZone(zone: FlashWordZone): FlashWordZone {
     widthPct,
     heightPct,
   };
+}
+
+function parseZoneJson(value: unknown): FlashWordZone | null {
+  if (!value || typeof value !== 'object') return null;
+  const row = value as HardZoneJson;
+  const xPct = Number(row.xPct);
+  const yPct = Number(row.yPct);
+  const widthPct = Number(row.widthPct);
+  const heightPct = Number(row.heightPct);
+  if (![xPct, yPct, widthPct, heightPct].every(Number.isFinite)) return null;
+  return normalizeZone({ xPct, yPct, widthPct, heightPct });
+}
+
+export function parseHardModeZonesJson(value: unknown): FlashWordZone[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => parseZoneJson(entry))
+    .filter((zone): zone is FlashWordZone => zone != null);
+}
+
+export function parseHardDistractionZonesJson(value: unknown): FlashWordHardDistractionZone[] {
+  if (!Array.isArray(value)) return [];
+  const result: FlashWordHardDistractionZone[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue;
+    const row = entry as HardDistractionZoneJson;
+    const zone = parseZoneJson(row.zone);
+    if (!zone) continue;
+    const word = typeof row.word === 'string' ? row.word : '';
+    result.push({
+      id: typeof row.id === 'string' && row.id.trim() ? row.id : crypto.randomUUID(),
+      zone,
+      word,
+    });
+  }
+  return result;
+}
+
+export function serializeHardModeZones(zones: FlashWordZone[]): HardZoneJson[] {
+  return zones.map((zone) => {
+    const normalized = normalizeZone(zone);
+    return {
+      xPct: normalized.xPct,
+      yPct: normalized.yPct,
+      widthPct: normalized.widthPct,
+      heightPct: normalized.heightPct,
+    };
+  });
+}
+
+export function serializeHardDistractionZones(
+  zones: FlashWordHardDistractionZoneInput[],
+): HardDistractionZoneJson[] {
+  return zones.map((entry) => ({
+    id: entry.id ?? crypto.randomUUID(),
+    word: entry.word.trim(),
+    zone: serializeHardModeZones([entry.zone])[0]!,
+  }));
+}
+
+export function isFlashHardModeActive(streak: number): boolean {
+  return streak >= FLASH_HARD_MODE_STREAK_THRESHOLD;
 }
 
 export function validateFlashDurationMs(ms: number): string | null {
@@ -409,6 +519,8 @@ function mapCard(
     imageUrl,
     zone: mapZoneFromRow(row),
     distractionZones,
+    hardModeZones: parseHardModeZonesJson(row.hard_zones),
+    hardDistractionZones: parseHardDistractionZonesJson(row.hard_distraction_zones),
     sortOrder: row.sort_order,
   };
 }
@@ -1069,6 +1181,10 @@ async function replaceGameCards(
           zone_y_pct: zone.yPct,
           zone_width_pct: zone.widthPct,
           zone_height_pct: zone.heightPct,
+          hard_zones: serializeHardModeZones(cardInput.hardModeZones ?? []),
+          hard_distraction_zones: serializeHardDistractionZones(
+            cardInput.hardDistractionZones ?? [],
+          ),
           sort_order: index,
         })
         .eq('id', cardInput.id);
@@ -1117,6 +1233,10 @@ async function replaceGameCards(
       zone_y_pct: zone.yPct,
       zone_width_pct: zone.widthPct,
       zone_height_pct: zone.heightPct,
+      hard_zones: serializeHardModeZones(cardInput.hardModeZones ?? []),
+      hard_distraction_zones: serializeHardDistractionZones(
+        cardInput.hardDistractionZones ?? [],
+      ),
       sort_order: index,
     });
 

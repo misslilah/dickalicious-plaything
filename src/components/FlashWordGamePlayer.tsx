@@ -8,6 +8,7 @@ import { useAppStore } from '../hooks/useAppStore';
 import { useOptionalXpToast } from '../contexts/XpToastContext';
 import {
   getFlashedWord,
+  isFlashHardModeActive,
   pickRandomCard,
   pickRandomFlashIndex,
   pickRandomTriplet,
@@ -16,6 +17,7 @@ import {
   type FlashWordCard,
   type FlashWordGame,
   type FlashWordGameTriplet,
+  type FlashWordHardDistractionZone,
 } from '../lib/flashWordGames';
 import {
   fetchMiniGameUserBestStreak,
@@ -32,7 +34,23 @@ const DISTRACTION_FLASH_MIN_MS = 300;
 const DISTRACTION_FLASH_RANGE_MS = 250;
 const DISTRACTION_GAP_MIN_MS = 800;
 const DISTRACTION_GAP_RANGE_MS = 1200;
+const HARD_DISTRACTION_GAP_MIN_MS = 350;
+const HARD_DISTRACTION_GAP_RANGE_MS = 450;
 const STREAK_MESSAGE_MS = 4500;
+
+const HARD_HIGHLIGHT_COLOR_COUNT = 3;
+
+function hardHighlightPlayerClass(index: number, hardModeActive: boolean): string {
+  const base = `flash-word-player__hard-zone flash-word-player__hard-zone--${index % HARD_HIGHLIGHT_COLOR_COUNT}`;
+  return hardModeActive
+    ? `${base} flash-word-player__hard-zone--active`
+    : base;
+}
+
+type DistractionFlashTarget = {
+  zoneId: string;
+  word: string;
+};
 
 function focusTrainingStreakKey(gameId: string): string {
   return `focus-training-streak-${gameId}`;
@@ -269,8 +287,11 @@ export function FlashWordGamePlayer({
     setImageFailed(false);
   }, [activeCard?.imageUrl]);
 
+  const hardModeActive = isFlashHardModeActive(streak);
+
   useEffect(() => {
-    if (phase !== 'waiting' || !game.distractionZonesEnabled || !activeCard) {
+    const distractionsEnabled = game.distractionZonesEnabled || hardModeActive;
+    if (phase !== 'waiting' || !distractionsEnabled || !activeCard) {
       setDistractionFlash(null);
       if (distractionTimerRef.current != null) {
         window.clearTimeout(distractionTimerRef.current);
@@ -279,19 +300,37 @@ export function FlashWordGamePlayer({
       return;
     }
 
-    const zones = activeCard.distractionZones.filter((zone) => zone.word.trim());
-    if (zones.length === 0) {
+    const targets: DistractionFlashTarget[] = [];
+    if (game.distractionZonesEnabled) {
+      for (const zone of activeCard.distractionZones) {
+        const word = zone.word.trim();
+        if (word) targets.push({ zoneId: zone.id, word });
+      }
+    }
+    if (hardModeActive) {
+      for (const zone of activeCard.hardDistractionZones) {
+        const word = zone.word.trim();
+        if (word) targets.push({ zoneId: zone.id, word });
+      }
+    }
+
+    if (targets.length === 0) {
       setDistractionFlash(null);
       return;
     }
 
+    const gapMinMs = hardModeActive ? HARD_DISTRACTION_GAP_MIN_MS : DISTRACTION_GAP_MIN_MS;
+    const gapRangeMs = hardModeActive
+      ? HARD_DISTRACTION_GAP_RANGE_MS
+      : DISTRACTION_GAP_RANGE_MS;
+
     const scheduleNextDistraction = () => {
-      const gapMs = DISTRACTION_GAP_MIN_MS + Math.random() * DISTRACTION_GAP_RANGE_MS;
+      const gapMs = gapMinMs + Math.random() * gapRangeMs;
       distractionTimerRef.current = window.setTimeout(() => {
         if (phaseRef.current !== 'waiting') return;
 
-        const zone = zones[Math.floor(Math.random() * zones.length)]!;
-        setDistractionFlash({ zoneId: zone.id, word: zone.word.trim() });
+        const target = targets[Math.floor(Math.random() * targets.length)]!;
+        setDistractionFlash({ zoneId: target.zoneId, word: target.word });
 
         const flashMs =
           DISTRACTION_FLASH_MIN_MS + Math.random() * DISTRACTION_FLASH_RANGE_MS;
@@ -311,7 +350,7 @@ export function FlashWordGamePlayer({
       }
       setDistractionFlash(null);
     };
-  }, [phase, activeCard, game.distractionZonesEnabled]);
+  }, [phase, activeCard, game.distractionZonesEnabled, hardModeActive]);
 
   const flashedWord =
     activeTriplet != null ? getFlashedWord(activeTriplet, flashIndex) : '';
@@ -421,6 +460,13 @@ export function FlashWordGamePlayer({
     .filter(Boolean)
     .join(' ');
 
+  const renderDistractionFlash = (zone: FlashWordHardDistractionZone | { id: string }) =>
+    distractionFlash?.zoneId === zone.id ? (
+      <span className="flash-word-player__flash-word" aria-live="off">
+        {distractionFlash.word}
+      </span>
+    ) : null;
+
   return (
     <div className="flash-word-player" ref={playerRootRef}>
       <FlashWordStreakPortal toast={streakToast} anchorRef={playerRootRef} />
@@ -432,6 +478,11 @@ export function FlashWordGamePlayer({
               {' '}
               · Best: <strong>{displayedBestStreak}</strong>
             </>
+          )}
+          {hardModeActive && (
+            <span className="flash-word-player__hard-badge" aria-label="Hard mode active">
+              Hard mode
+            </span>
           )}
         </span>
         <span className="muted">
@@ -502,6 +553,14 @@ export function FlashWordGamePlayer({
                           </span>
                         )}
                       </div>
+                      {hardModeActive &&
+                        activeCard.hardModeZones.map((hardZone, index) => (
+                          <div
+                            key={`hard-highlight-${index}`}
+                            className={hardHighlightPlayerClass(index, hardModeActive)}
+                            style={flashWordZoneStyle(hardZone)}
+                          />
+                        ))}
                       {game.distractionZonesEnabled &&
                         activeCard.distractionZones.map((distractionZone) => (
                           <div
@@ -509,11 +568,17 @@ export function FlashWordGamePlayer({
                             className="flash-word-player__distraction-zone"
                             style={flashWordZoneStyle(distractionZone.zone)}
                           >
-                            {distractionFlash?.zoneId === distractionZone.id && (
-                              <span className="flash-word-player__flash-word" aria-live="off">
-                                {distractionFlash.word}
-                              </span>
-                            )}
+                            {renderDistractionFlash(distractionZone)}
+                          </div>
+                        ))}
+                      {hardModeActive &&
+                        activeCard.hardDistractionZones.map((distractionZone) => (
+                          <div
+                            key={distractionZone.id}
+                            className="flash-word-player__distraction-zone flash-word-player__distraction-zone--hard"
+                            style={flashWordZoneStyle(distractionZone.zone)}
+                          >
+                            {renderDistractionFlash(distractionZone)}
                           </div>
                         ))}
                     </div>
