@@ -5665,12 +5665,23 @@ a.task-list-row {
   animation: follow-instinct-order-in 0.35s ease-out;
 }
 
+.follow-instinct-player__order,
+.follow-instinct-player__phrase {
+  flex-shrink: 0;
+}
+
 .follow-instinct-player__phrase {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
   width: min(100%, 22rem);
   margin: 0 auto;
+}
+
+.follow-instinct-player--has-phrase .follow-instinct-player__photo-wrap {
+  flex: 0 1 auto;
+  min-height: min(24dvh, 12rem);
+  max-height: min(34dvh, 17rem);
 }
 
 .follow-instinct-player__phrase-label {
@@ -5688,7 +5699,8 @@ a.task-list-row {
 .follow-instinct-player__phrase-quote {
   display: inline-block;
   margin-top: 0.15rem;
-  font-size: 1.2rem;
+  font-size: 1.25rem;
+  font-weight: 700;
   color: var(--accent, #c084fc);
 }
 
