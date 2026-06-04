@@ -277,8 +277,8 @@ export async function changePassword(
 
 export async function signUpWithEmail(
   email: string,
-  password: string,
   username: string,
+  password: string,
 ): Promise<
   { ok: true; session: AuthSession } | { ok: false; error: string }
 > {

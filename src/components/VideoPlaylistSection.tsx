@@ -21,6 +21,9 @@ import {
 import type { Video, VideoPlaylist, VideoPlaylistType } from '../types';
 import { VideoPlaylistManager } from './VideoPlaylistManager';
 
+/** Stable empty array for create-mode initial ids (avoids prop reference churn). */
+const EMPTY_MANAGER_IDS: string[] = [];
+
 interface VideoPlaylistSectionProps {
   type: VideoPlaylistType;
 }
@@ -185,26 +188,52 @@ export function VideoPlaylistSection({ type }: VideoPlaylistSectionProps) {
     await reload();
   };
 
-  const managerInitialIds =
-    managerPlaylist && managerPlaylist !== 'new'
-      ? videoIdsForPlaylist(managerPlaylist.id, library?.items ?? [])
-      : [];
+  const managerInitialIds = useMemo(() => {
+    if (!managerPlaylist || managerPlaylist === 'new') return EMPTY_MANAGER_IDS;
+    return videoIdsForPlaylist(managerPlaylist.id, library?.items ?? []);
+  }, [managerPlaylist, library?.items]);
+
+  const managerKey =
+    managerPlaylist == null
+      ? null
+      : managerPlaylist === 'new'
+        ? 'new'
+        : managerPlaylist.id;
+
+  const managerDialog =
+    managerKey != null ? (
+      <VideoPlaylistManager
+        key={managerKey}
+        type={type}
+        playlist={managerPlaylist === 'new' ? null : managerPlaylist}
+        initialVideoIds={managerInitialIds}
+        interactiveCatalog={interactiveCatalog}
+        onClose={() => setManagerPlaylist(null)}
+        onSaved={() => void reload()}
+      />
+    ) : null;
 
   if (loading) {
     return (
-      <section className="card video-playlist-section">
-        <p className="muted">Loading your playlists…</p>
-      </section>
+      <>
+        <section className="card video-playlist-section">
+          <p className="muted">Loading your playlists…</p>
+        </section>
+        {managerDialog}
+      </>
     );
   }
 
   if (error) {
     return (
-      <section className="card video-playlist-section">
-        <p className="login-error" role="alert">
-          {error}
-        </p>
-      </section>
+      <>
+        <section className="card video-playlist-section">
+          <p className="login-error" role="alert">
+            {error}
+          </p>
+        </section>
+        {managerDialog}
+      </>
     );
   }
 
@@ -299,16 +328,7 @@ export function VideoPlaylistSection({ type }: VideoPlaylistSectionProps) {
         </p>
       )}
 
-      {managerPlaylist != null && (
-        <VideoPlaylistManager
-          type={type}
-          playlist={managerPlaylist === 'new' ? null : managerPlaylist}
-          initialVideoIds={managerInitialIds}
-          interactiveCatalog={interactiveCatalog}
-          onClose={() => setManagerPlaylist(null)}
-          onSaved={() => void reload()}
-        />
-      )}
+      {managerDialog}
     </section>
   );
 }

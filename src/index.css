@@ -3715,6 +3715,7 @@ a.task-list-row {
   align-items: flex-end;
   justify-content: center;
   padding: 1rem;
+  isolation: isolate;
 }
 
 @media (min-width: 520px) {
@@ -3725,6 +3726,8 @@ a.task-list-row {
 
 .video-playlist-manager__panel {
   position: relative;
+  z-index: 1;
+  pointer-events: auto;
   width: 100%;
   max-width: 28rem;
   max-height: min(90vh, 36rem);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useAppStore } from '../hooks/useAppStore';
 import {
   canWatchVideo,
@@ -37,11 +37,6 @@ export function VideoPlaylistManager({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setTitle(playlist?.title ?? '');
-    setSelectedIds(initialVideoIds);
-  }, [playlist?.id, playlist?.title, initialVideoIds]);
-
   const videoAccessCtx: VideoAccessContext = useMemo(
     () => ({
       patreonTier: session?.patreonTier,
@@ -68,14 +63,18 @@ export function VideoPlaylistManager({
       .sort((a, b) => a.video.title.localeCompare(b.video.title));
   }, [state.videos, state.videoCategories, videoAccessCtx]);
 
-  const toggleId = useCallback((videoId: string, locked: boolean) => {
-    if (locked) return;
-    setSelectedIds((prev) =>
-      prev.includes(videoId)
-        ? prev.filter((id) => id !== videoId)
-        : [...prev, videoId],
-    );
-  }, []);
+  const setVideoSelected = useCallback(
+    (videoId: string, selected: boolean, locked: boolean) => {
+      if (locked) return;
+      setSelectedIds((prev) => {
+        const has = prev.includes(videoId);
+        if (selected && !has) return [...prev, videoId];
+        if (!selected && has) return prev.filter((id) => id !== videoId);
+        return prev;
+      });
+    },
+    [],
+  );
 
   const moveSelected = useCallback((videoId: string, direction: -1 | 1) => {
     setSelectedIds((prev) => {
@@ -90,20 +89,24 @@ export function VideoPlaylistManager({
     });
   }, []);
 
+  const trimmedTitle = title.trim();
+  const canSave = !saving && trimmedTitle.length > 0 && selectedIds.length > 0;
+
   const handleSave = async () => {
+    if (!canSave) return;
     setError(null);
     setSaving(true);
     try {
       let playlistId = playlist?.id;
       if (!playlistId) {
-        const created = await createVideoPlaylist(title, type);
+        const created = await createVideoPlaylist(trimmedTitle, type);
         if (!created.ok) {
           setError(created.error);
           return;
         }
         playlistId = created.playlist.id;
       } else {
-        const updated = await updateVideoPlaylistTitle(playlistId, title);
+        const updated = await updateVideoPlaylistTitle(playlistId, trimmedTitle);
         if (!updated.ok) {
           setError(updated.error);
           return;
@@ -184,7 +187,9 @@ export function VideoPlaylistManager({
                       type="checkbox"
                       checked={selectedIds.includes(video.id)}
                       disabled={locked}
-                      onChange={() => toggleId(video.id, locked)}
+                      onChange={(e) =>
+                        setVideoSelected(video.id, e.target.checked, locked)
+                      }
                     />
                     <span>
                       <strong>{video.title}</strong>
@@ -211,7 +216,9 @@ export function VideoPlaylistManager({
                     <input
                       type="checkbox"
                       checked={selectedIds.includes(video.id)}
-                      onChange={() => toggleId(video.id, false)}
+                      onChange={(e) =>
+                        setVideoSelected(video.id, e.target.checked, false)
+                      }
                     />
                     <span>
                       <strong>{video.title}</strong>
@@ -276,7 +283,8 @@ export function VideoPlaylistManager({
             type="button"
             className="btn btn--primary"
             onClick={() => void handleSave()}
-            disabled={saving || !title.trim() || selectedIds.length === 0}
+            disabled={!canSave}
+            aria-disabled={!canSave}
           >
             {saving ? 'Saving…' : 'Save playlist'}
           </button>
