@@ -170,9 +170,8 @@ export async function changePassword(
 }
 
 export async function signUp(
-  email: string,
-  password: string,
   username: string,
+  password: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!isSupabaseConfigured()) {
     return {
@@ -181,18 +180,17 @@ export async function signUp(
     };
   }
 
-  const trimmedEmail = email.trim().toLowerCase();
   const trimmedUsername = username.trim();
-  if (!trimmedEmail) return { ok: false, error: 'Email is required.' };
   if (!trimmedUsername) return { ok: false, error: 'Username is required.' };
   if (password.length < 6) {
     return { ok: false, error: 'Password must be at least 6 characters.' };
   }
 
+  const email = usernameToEmail(trimmedUsername);
   const supabase = getSupabase()!;
   try {
     const { error } = await supabase.auth.signUp({
-      email: trimmedEmail,
+      email,
       password,
       options: {
         data: { username: trimmedUsername },

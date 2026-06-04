@@ -2347,7 +2347,7 @@ function UserAdmin() {
     setMessage('');
     const result = await createAppUser(username, password, 'user');
     if (result.ok) {
-      setMessage(`User "${username.trim()}" created. They can sign in with ${username.includes('@') ? username.trim() : `${username.trim()}@local.app`}.`);
+      setMessage(`User "${username.trim()}" created. They can sign in with their username.`);
       setUsername('');
       setPassword('');
       void loadProfiles();

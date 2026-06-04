@@ -3,14 +3,12 @@ import { BadgeGrid } from '../components/BadgeGrid';
 import { useAppStore } from '../hooks/useAppStore';
 import { getUserStage, getStageLabel, formatLevelDisplay } from '../lib/levels';
 import { updateProfileUsername } from '../lib/profileDb';
-import { getSupabase } from '../lib/supabase';
 import { tierLabel } from '../lib/tiers';
 
 export function Profile() {
   const { state, session, refreshProfile } = useAppStore();
   const { progress, unlockedBadgeIds } = state;
 
-  const [email, setEmail] = useState('');
   const [username, setUsername] = useState(session?.username ?? '');
   const [usernameMessage, setUsernameMessage] = useState('');
   const [usernameError, setUsernameError] = useState('');
@@ -26,14 +24,6 @@ export function Profile() {
   useEffect(() => {
     setUsername(session?.username ?? '');
   }, [session?.username]);
-
-  useEffect(() => {
-    const supabase = getSupabase();
-    if (!supabase) return;
-    void supabase.auth.getUser().then(({ data }) => {
-      setEmail(data.user?.email ?? '');
-    });
-  }, [session?.userId]);
 
   const handleUsernameSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -65,10 +55,6 @@ export function Profile() {
           <div className="profile-stats__row">
             <dt>Username</dt>
             <dd>{session?.username ?? '—'}</dd>
-          </div>
-          <div className="profile-stats__row">
-            <dt>Email</dt>
-            <dd>{email || '—'}</dd>
           </div>
           <div className="profile-stats__row">
             <dt>Role</dt>

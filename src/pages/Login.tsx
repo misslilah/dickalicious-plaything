@@ -17,9 +17,8 @@ export function Login() {
     (location.state as { from?: string } | null)?.from ?? '/';
 
   const [mode, setMode] = useState<AuthMode>('signin');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -41,7 +40,7 @@ export function Login() {
     setError('');
     setNotice('');
     setSubmitting(true);
-    const result = await login(email, password);
+    const result = await login(username, password);
     setSubmitting(false);
     if (result.ok) {
       navigate(from, { replace: true });
@@ -55,16 +54,14 @@ export function Login() {
     setError('');
     setNotice('');
     setSubmitting(true);
-    const result = await signUp(email, password, username);
+    const result = await signUp(username, password);
     setSubmitting(false);
     if (!result.ok) {
       setError(result.error);
       return;
     }
     if (result.needsEmailConfirmation) {
-      setNotice(
-        'Account created. Check your email to confirm your address, then sign in.',
-      );
+      setNotice('Account created. Sign in with your username and password.');
       setMode('signin');
       return;
     }
@@ -138,21 +135,17 @@ export function Login() {
         {mode === 'signin' ? (
           <form className="login-form" onSubmit={(e) => void handleSignIn(e)}>
             <label className="field">
-              <span>Email</span>
+              <span>Username</span>
               <input
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
+                type="text"
+                autoComplete="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Your username"
                 required
                 disabled={!supabaseConfigured}
               />
             </label>
-            <p className="muted login-hint">
-              Legacy username accounts: use <code>username@local.app</code> as the
-              email.
-            </p>
             <label className="field">
               <span>Password</span>
               <input
@@ -180,25 +173,13 @@ export function Login() {
         ) : (
           <form className="login-form" onSubmit={(e) => void handleSignUp(e)}>
             <label className="field">
-              <span>Email</span>
-              <input
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                required
-                disabled={!supabaseConfigured}
-              />
-            </label>
-            <label className="field">
               <span>Username</span>
               <input
                 type="text"
                 autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="Your display name"
+                placeholder="Choose a username"
                 required
                 disabled={!supabaseConfigured}
               />

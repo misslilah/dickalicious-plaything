@@ -119,9 +119,8 @@ interface AppStoreValue {
     password: string,
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   signUp: (
-    email: string,
-    password: string,
     username: string,
+    password: string,
   ) => Promise<
     | { ok: true; needsEmailConfirmation?: boolean }
     | { ok: false; error: string }
@@ -440,8 +439,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         await loadAllData(result.session.userId);
         return { ok: true };
       },
-      signUp: async (email, password, username) => {
-        const result = await authSignUp(email, password, username);
+      signUp: async (username, password) => {
+        const result = await authSignUp(username, password);
         if (!result.ok) return result;
 
         const supabase = getSupabase();
