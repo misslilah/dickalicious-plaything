@@ -495,8 +495,16 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
     );
   }
 
+  const showPhraseUi = Boolean(activeRound && phraseRequired && orderRevealed);
+
   return (
-    <div className="follow-instinct-player">
+    <div
+      className={
+        showPhraseUi
+          ? 'follow-instinct-player follow-instinct-player--has-phrase'
+          : 'follow-instinct-player'
+      }
+    >
       <div className="follow-instinct-player__stats">
         <span>
           Round {Math.min(roundIndex + 1, roundsLabel)} / {roundsLabel}
