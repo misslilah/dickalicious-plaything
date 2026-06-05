@@ -60,11 +60,29 @@ export function Settings() {
         campaign_include_missing:
           'Patreon linked, but campaign data was missing from the API response (redeploy callback).',
       };
+      const isCampaignMismatchDetail =
+        detail?.startsWith('campaign_mismatch_expected_') ||
+        detail?.startsWith('campaign_mismatch_f');
+      const detailKey = isCampaignMismatchDetail ? 'campaign_mismatch' : (detail ?? '');
       const base =
-        detailMessages[detail ?? ''] ??
+        detailMessages[detailKey] ??
         'Patreon account linked, but no matching tier was found. If you are an active patron, ask an admin to check Edge Function logs.';
+      let campaignMismatchAdminHint = '';
+      if (isAdmin && detail) {
+        const expectedGot = detail.match(/^campaign_mismatch_expected_([^_]+)_got_(.+)$/);
+        if (expectedGot) {
+          campaignMismatchAdminHint = ` Expected ${expectedGot[1]}, got ${expectedGot[2].replace(/_/g, ', ')}.`;
+        } else {
+          const legacy = detail.match(/^campaign_mismatch_f([^_]+)_m(.+)$/);
+          if (legacy) {
+            campaignMismatchAdminHint = ` Expected ${legacy[1]}, got ${legacy[2]}.`;
+          }
+        }
+      }
       setPatreonNotice(
-        isAdmin && detail ? `${base} (detail: ${detail})` : base,
+        isAdmin && detail
+          ? `${base}${campaignMismatchAdminHint} (detail: ${detail})`
+          : base,
       );
       void refreshPatreonProfile();
     } else if (patreon === 'not_configured') {

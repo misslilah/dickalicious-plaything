@@ -111,7 +111,7 @@ export function logPatreonTierDebug(context: string, details: Record<string, unk
 }
 
 export function getPatreonCreatorCampaignId(): string | null {
-  return Deno.env.get('PATREON_CREATOR_CAMPAIGN_ID')?.trim() || null;
+  return normalizePatreonId(Deno.env.get('PATREON_CREATOR_CAMPAIGN_ID'));
 }
 
 export const corsHeaders = {
@@ -557,39 +557,112 @@ export function extractEntitledTierTitles(payload: PatreonWebhookPayload): strin
   return extractEntitledTierResources(payload).map((r) => r.title);
 }
 
+/** Campaign id from member JSON:API relationship (same numeric id as Patreon campaign API, e.g. 12498755). */
+function extractMemberCampaignId(member: PatreonIncludedResource): string | null {
+  return normalizePatreonId(member.relationships?.campaign?.data?.id);
+}
+
+function collectMemberCampaignIds(members: PatreonIncludedResource[]): string[] {
+  return members
+    .map((m) => extractMemberCampaignId(m))
+    .filter((id): id is string => id != null);
+}
+
+function memberHasMappedEntitledTier(
+  member: PatreonIncludedResource,
+  included: PatreonIncludedResource[],
+): boolean {
+  if (member.attributes?.patron_status !== 'active_patron') return false;
+  const entitledRefs = normalizeEntitledTierRefs(
+    member.relationships?.currently_entitled_tiers?.data,
+  );
+  const entitledIds = new Set(entitledRefs.map((r) => r.id));
+  const resources = entitledTierResourcesFromIds(included, entitledIds);
+  return mapEntitledResources(resources).length > 0;
+}
+
 function filterMembersForCampaign(
   members: PatreonIncludedResource[],
   campaignId: string | null,
+  included: PatreonIncludedResource[],
+  options?: { membershipRefCount?: number },
 ): {
   relevantMembers: PatreonIncludedResource[];
   campaignFilterSkipped: boolean;
   campaignFilterMiss: boolean;
+  campaignFilterBypass?: string;
+  memberCampaignIds: string[];
 } {
+  const memberCampaignIds = collectMemberCampaignIds(members);
+
   if (!campaignId) {
-    return { relevantMembers: members, campaignFilterSkipped: false, campaignFilterMiss: false };
+    return {
+      relevantMembers: members,
+      campaignFilterSkipped: false,
+      campaignFilterMiss: false,
+      memberCampaignIds,
+    };
   }
 
-  const strict = members.filter(
-    (m) => normalizePatreonId(m.relationships?.campaign?.data?.id) === campaignId,
-  );
+  const strict = members.filter((m) => extractMemberCampaignId(m) === campaignId);
   if (strict.length > 0) {
-    return { relevantMembers: strict, campaignFilterSkipped: false, campaignFilterMiss: false };
+    return {
+      relevantMembers: strict,
+      campaignFilterSkipped: false,
+      campaignFilterMiss: false,
+      memberCampaignIds,
+    };
   }
 
-  const anyMemberHasCampaign = members.some(
-    (m) => normalizePatreonId(m.relationships?.campaign?.data?.id) != null,
-  );
+  const anyMemberHasCampaign = memberCampaignIds.length > 0;
   if (members.length > 0 && !anyMemberHasCampaign) {
+    const soleMembership =
+      members.length === 1 ||
+      (options?.membershipRefCount === 1 && members.length <= 1);
+    if (soleMembership) {
+      return {
+        relevantMembers: members,
+        campaignFilterSkipped: true,
+        campaignFilterMiss: false,
+        campaignFilterBypass: 'single_membership_no_campaign',
+        memberCampaignIds,
+      };
+    }
     // memberships.campaign not included in API response — avoid filtering everyone out.
-    return { relevantMembers: members, campaignFilterSkipped: true, campaignFilterMiss: true };
+    return {
+      relevantMembers: members,
+      campaignFilterSkipped: true,
+      campaignFilterMiss: true,
+      memberCampaignIds,
+    };
   }
 
-  return { relevantMembers: strict, campaignFilterSkipped: false, campaignFilterMiss: true };
+  const tierMatched = members.filter((m) => memberHasMappedEntitledTier(m, included));
+  if (tierMatched.length > 0) {
+    return {
+      relevantMembers: tierMatched,
+      campaignFilterSkipped: false,
+      campaignFilterMiss: false,
+      campaignFilterBypass: 'entitled_tier_match',
+      memberCampaignIds,
+    };
+  }
+
+  return {
+    relevantMembers: strict,
+    campaignFilterSkipped: false,
+    campaignFilterMiss: true,
+    memberCampaignIds,
+  };
 }
 
 export function resolveAppTierFromIncludedMembers(
   included: PatreonIncludedResource[],
-  options?: { campaignId?: string | null; members?: PatreonIncludedResource[] },
+  options?: {
+    campaignId?: string | null;
+    members?: PatreonIncludedResource[];
+    membershipRefCount?: number;
+  },
 ): {
   appTier: AppPatreonTier | null;
   patronStatus: 'active' | 'cancelled' | 'none';
@@ -597,8 +670,15 @@ export function resolveAppTierFromIncludedMembers(
 } {
   const campaignId = normalizePatreonId(options?.campaignId ?? getPatreonCreatorCampaignId());
   const members = options?.members ?? included.filter((x) => x.type === 'member');
-  const { relevantMembers, campaignFilterSkipped, campaignFilterMiss } =
-    filterMembersForCampaign(members, campaignId);
+  const {
+    relevantMembers,
+    campaignFilterSkipped,
+    campaignFilterMiss,
+    campaignFilterBypass,
+    memberCampaignIds,
+  } = filterMembersForCampaign(members, campaignId, included, {
+    membershipRefCount: options?.membershipRefCount,
+  });
 
   const mappedTiers: AppPatreonTier[] = [];
   const memberDebug: Record<string, unknown>[] = [];
@@ -615,7 +695,7 @@ export function resolveAppTierFromIncludedMembers(
 
     memberDebug.push({
       memberId: member.id ?? null,
-      campaignId: member.relationships?.campaign?.data?.id ?? null,
+      campaignId: extractMemberCampaignId(member),
       patronStatus,
       entitledTierIds: [...entitledIds],
       entitledTitles: resources.map((r) => r.title).filter(Boolean),
@@ -639,8 +719,10 @@ export function resolveAppTierFromIncludedMembers(
     patronStatus,
     debug: {
       campaignFilter: campaignId,
+      memberCampaignIds,
       campaignFilterSkipped,
       campaignFilterMiss,
+      campaignFilterBypass: campaignFilterBypass ?? null,
       totalMemberCount: members.length,
       memberCount: relevantMembers.length,
       members: memberDebug,
@@ -661,7 +743,14 @@ export function patreonOAuthNoTierDetail(debug: Record<string, unknown>): string
 
   if (totalMemberCount === 0) return 'no_memberships';
   if (debug.campaignFilterMiss === true && debug.campaignFilterSkipped !== true) {
-    return 'campaign_mismatch';
+    const expected = normalizePatreonId(debug.campaignFilter) ?? 'none';
+    const memberCampaignIds = Array.isArray(debug.memberCampaignIds)
+      ? debug.memberCampaignIds
+          .map((id) => normalizePatreonId(id))
+          .filter((id): id is string => id != null)
+      : [];
+    const got = memberCampaignIds.length > 0 ? memberCampaignIds.join('_') : 'none';
+    return `campaign_mismatch_expected_${expected}_got_${got}`;
   }
   if (debug.campaignFilterMiss === true && debug.campaignFilterSkipped === true) {
     return 'campaign_include_missing';
@@ -739,8 +828,33 @@ export function selfTestResolveAppTierFromIdentity(): { ok: boolean; errors: str
   const wrongCampaign = resolveAppTierFromIncludedMembers(minimalIdentity.included, {
     campaignId: 'wrong',
   });
-  if (wrongCampaign.appTier !== null) {
-    errors.push(`wrong campaign should yield null, got ${wrongCampaign.appTier}`);
+  if (wrongCampaign.appTier !== 'princess') {
+    errors.push(
+      `wrong campaign with mapped tier should bypass to princess, got ${wrongCampaign.appTier}`,
+    );
+  }
+  if (wrongCampaign.debug.campaignFilterBypass !== 'entitled_tier_match') {
+    errors.push(
+      `wrong campaign with mapped tier should bypass via entitled_tier_match, got ${wrongCampaign.debug.campaignFilterBypass}`,
+    );
+  }
+
+  const soleMembershipNoCampaign = resolveAppTierFromIncludedMembers(
+    [
+      {
+        type: 'member',
+        attributes: { patron_status: 'active_patron' },
+        relationships: {
+          currently_entitled_tiers: { data: [{ id: '23433761', type: 'tier' }] },
+        },
+      },
+    ],
+    { campaignId: '999', membershipRefCount: 1 },
+  );
+  if (soleMembershipNoCampaign.appTier !== 'sweetie') {
+    errors.push(
+      `single membership no campaign: expected sweetie, got ${soleMembershipNoCampaign.appTier}`,
+    );
   }
 
   const missingCampaignInclude = resolveAppTierFromIncludedMembers(
@@ -789,12 +903,24 @@ export function resolveAppTierFromIdentityResponseSync(
   };
 
   const campaignId = normalizePatreonId(getPatreonCreatorCampaignId());
-  let result = resolveAppTierFromIncludedMembers(included, { campaignId, members });
+  const membershipRefCount =
+    typeof enrichDebug.membershipRefCount === 'number' ? enrichDebug.membershipRefCount : undefined;
+  let result = resolveAppTierFromIncludedMembers(included, {
+    campaignId,
+    members,
+    membershipRefCount,
+  });
 
-  if (campaignId && members.length > 0 && result.debug.memberCount === 0) {
+  if (
+    campaignId &&
+    members.length > 0 &&
+    result.debug.memberCount === 0 &&
+    result.debug.campaignFilterMiss === true
+  ) {
     const unfiltered = resolveAppTierFromIncludedMembers(included, {
       campaignId: null,
       members,
+      membershipRefCount,
     });
     result = {
       ...unfiltered,
@@ -802,6 +928,8 @@ export function resolveAppTierFromIdentityResponseSync(
         ...unfiltered.debug,
         ...enrichDebug,
         campaignFilterRetriedUnfiltered: true,
+        campaignFilterOriginal: campaignId,
+        campaignFilterOriginalMemberIds: result.debug.memberCampaignIds ?? [],
       },
     };
   } else {
