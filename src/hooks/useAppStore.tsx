@@ -563,9 +563,13 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       recordVideoPartialView: async (videoId, watchPercent) => {
         const userId = userIdRef.current;
         if (!userId) return;
-        const video = state.videos.find((v) => v.id === videoId);
-        if (!video) return;
-        await tryRecordVideoPartialView(videoId, watchPercent);
+        const result = await tryRecordVideoPartialView(videoId, watchPercent);
+        if (!result.ok) {
+          if (import.meta.env.DEV) {
+            console.error('[recordVideoPartialView]', result.error);
+          }
+          setLastSaveError(result.error);
+        }
       },
       awardBonusXp: (amount) => {
         if (amount <= 0) return;

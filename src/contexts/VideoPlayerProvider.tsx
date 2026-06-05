@@ -83,6 +83,8 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
   const shouldAutoplayRef = useRef(false);
   const watchTrackerRef = useRef(createVideoWatchTracker());
   const partialRecordedRef = useRef(false);
+  const sessionVideoIdRef = useRef<string | null>(null);
+  sessionVideoIdRef.current = session?.videoId ?? null;
 
   const [normalVideoPlaying, setNormalVideoPlaying] = useState(false);
 
@@ -92,7 +94,26 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
     playlistPlaybackRef.current = playlistPlayback;
   }, [playlistPlayback]);
 
+  const flushPartialForVideo = useCallback(
+    (videoId: string | null | undefined) => {
+      if (!videoId || partialRecordedRef.current) return;
+      const el = videoRef.current;
+      if (!el) return;
+      const tracker = watchTrackerRef.current;
+      tracker.onTimeUpdate(el.currentTime);
+      if (!tracker.qualifiesForPartialView(el.duration)) return;
+      partialRecordedRef.current = true;
+      void recordVideoPartialView(videoId, tracker.watchPercent(el.duration));
+    },
+    [recordVideoPartialView],
+  );
+
+  const flushPartialIfEligible = useCallback(() => {
+    flushPartialForVideo(sessionVideoIdRef.current);
+  }, [flushPartialForVideo]);
+
   const clearNormalPlayback = useCallback(() => {
+    flushPartialIfEligible();
     const el = videoRef.current;
     if (el) {
       el.pause();
@@ -107,7 +128,7 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
     setError(null);
     setShowLoopNotice(false);
     loopNoticeShownRef.current = false;
-  }, []);
+  }, [flushPartialIfEligible]);
 
   const exitPlaylistPlayback = useCallback(() => {
     setPlaylistPlayback(null);
@@ -260,6 +281,13 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
   }, [loop]);
 
   useEffect(() => {
+    const videoId = session?.videoId;
+    return () => {
+      flushPartialForVideo(videoId);
+    };
+  }, [session?.videoId, flushPartialForVideo]);
+
+  useEffect(() => {
     watchTrackerRef.current.reset();
     partialRecordedRef.current = false;
   }, [session?.videoId]);
@@ -272,10 +300,7 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
     const tracker = watchTrackerRef.current;
     const onTimeUpdate = () => {
       tracker.onTimeUpdate(el.currentTime);
-      if (partialRecordedRef.current) return;
-      if (!tracker.qualifiesForPartialView(el.duration)) return;
-      partialRecordedRef.current = true;
-      void recordVideoPartialView(videoId, tracker.watchPercent(el.duration));
+      flushPartialForVideo(videoId);
     };
     const onSeeking = () => tracker.onSeeking(el.currentTime);
     const onEnded = () => {
@@ -307,7 +332,7 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
     session?.videoId,
     url,
     awardVideoCompletion,
-    recordVideoPartialView,
+    flushPartialForVideo,
     xpToast,
     playPlaylistEntry,
   ]);

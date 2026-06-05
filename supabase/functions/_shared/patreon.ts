@@ -11,6 +11,36 @@ const EXACT_TIER_TITLES: Record<string, AppPatreonTier> = {
 
 let cachedRewardIdMap: Map<string, AppPatreonTier> | null = null;
 
+/** Normalize Patreon API / env IDs (string or number) for consistent comparison. */
+function normalizePatreonId(id: unknown): string | null {
+  if (id == null) return null;
+  if (typeof id === 'number' && Number.isFinite(id)) return String(Math.trunc(id));
+  if (typeof id === 'string') {
+    const trimmed = id.trim();
+    return trimmed || null;
+  }
+  return null;
+}
+
+function parsePatreonTierRewardIdsJson(jsonRaw: string): Record<string, unknown> | null {
+  const trimmed = jsonRaw.trim();
+  try {
+    return JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    const unwrapped =
+      (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
+      (trimmed.startsWith('"') && trimmed.endsWith('"'))
+        ? trimmed.slice(1, -1).trim()
+        : null;
+    if (!unwrapped) return null;
+    try {
+      return JSON.parse(unwrapped) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+}
+
 /** Reward/tier ID → app tier from env (preferred over title matching). */
 export function getPatreonTierRewardIdMap(): Map<string, AppPatreonTier> {
   if (cachedRewardIdMap) return cachedRewardIdMap;
@@ -18,19 +48,21 @@ export function getPatreonTierRewardIdMap(): Map<string, AppPatreonTier> {
   const idToTier = new Map<string, AppPatreonTier>();
   const jsonRaw = Deno.env.get('PATREON_TIER_REWARD_IDS')?.trim();
   if (jsonRaw) {
-    try {
-      const parsed = JSON.parse(jsonRaw) as Record<string, string>;
+    const parsed = parsePatreonTierRewardIdsJson(jsonRaw);
+    if (parsed) {
       for (const tier of APP_TIER_ORDER) {
-        const id = parsed[tier]?.trim();
+        const id = normalizePatreonId(parsed[tier]);
         if (id) idToTier.set(id, tier);
       }
-    } catch {
+    } else {
       console.warn('PATREON_TIER_REWARD_IDS is not valid JSON — ignoring.');
     }
   }
 
   for (const tier of APP_TIER_ORDER) {
-    const id = Deno.env.get(`PATREON_TIER_REWARD_ID_${tier.toUpperCase()}`)?.trim();
+    const id = normalizePatreonId(
+      Deno.env.get(`PATREON_TIER_REWARD_ID_${tier.toUpperCase()}`),
+    );
     if (id) idToTier.set(id, tier);
   }
 
@@ -39,7 +71,9 @@ export function getPatreonTierRewardIdMap(): Map<string, AppPatreonTier> {
 }
 
 export function mapPatreonTierByRewardId(rewardId: string): AppPatreonTier | null {
-  return getPatreonTierRewardIdMap().get(rewardId) ?? null;
+  const normalized = normalizePatreonId(rewardId);
+  if (!normalized) return null;
+  return getPatreonTierRewardIdMap().get(normalized) ?? null;
 }
 
 /** Exact title match only (trimmed, case-insensitive). No substring matching. */
@@ -220,24 +254,47 @@ function normalizeEntitledTierRefs(
     | null
     | undefined,
 ): { id: string; type: string }[] {
-  if (Array.isArray(entitledRaw)) return entitledRaw.filter((r) => r.id);
-  if (entitledRaw?.id) return [entitledRaw];
-  return [];
+  const refs = Array.isArray(entitledRaw)
+    ? entitledRaw
+    : entitledRaw?.id
+      ? [entitledRaw]
+      : [];
+  return refs
+    .map((ref) => {
+      const id = normalizePatreonId(ref.id);
+      return id ? { id, type: ref.type } : null;
+    })
+    .filter((ref): ref is { id: string; type: string } => ref != null);
 }
 
 function entitledTierResourcesFromIds(
   included: PatreonIncludedResource[],
   entitledIds: Set<string>,
 ): { id: string; title: string }[] {
-  return included
-    .filter(
-      (x) =>
-        (x.type === 'tier' || x.type === 'reward') &&
-        x.id &&
-        entitledIds.has(x.id) &&
-        x.attributes?.title,
-    )
-    .map((x) => ({ id: x.id!, title: x.attributes!.title! }));
+  const normalizedEntitledIds = new Set(
+    [...entitledIds]
+      .map((id) => normalizePatreonId(id))
+      .filter((id): id is string => id != null),
+  );
+  if (normalizedEntitledIds.size === 0) return [];
+
+  const foundIds = new Set<string>();
+  const fromIncluded = included
+    .map((x) => {
+      if (x.type !== 'tier' && x.type !== 'reward') return null;
+      const id = normalizePatreonId(x.id);
+      if (!id || !normalizedEntitledIds.has(id)) return null;
+      foundIds.add(id);
+      const title = typeof x.attributes?.title === 'string' ? x.attributes.title : '';
+      return { id, title };
+    })
+    .filter((resource): resource is { id: string; title: string } => resource != null);
+
+  const fromIdsOnly = [...normalizedEntitledIds]
+    .filter((id) => !foundIds.has(id))
+    .map((id) => ({ id, title: '' }));
+
+  return [...fromIncluded, ...fromIdsOnly];
 }
 
 function mapEntitledResources(resources: { id: string; title: string }[]): AppPatreonTier[] {
@@ -272,10 +329,12 @@ export function resolveAppTierFromIncludedMembers(
   patronStatus: 'active' | 'cancelled' | 'none';
   debug: Record<string, unknown>;
 } {
-  const campaignId = options?.campaignId ?? getPatreonCreatorCampaignId();
+  const campaignId = normalizePatreonId(options?.campaignId ?? getPatreonCreatorCampaignId());
   const members = included.filter((x) => x.type === 'member');
   const relevantMembers = campaignId
-    ? members.filter((m) => m.relationships?.campaign?.data?.id === campaignId)
+    ? members.filter(
+        (m) => normalizePatreonId(m.relationships?.campaign?.data?.id) === campaignId,
+      )
     : members;
 
   const mappedTiers: AppPatreonTier[] = [];
@@ -289,13 +348,15 @@ export function resolveAppTierFromIncludedMembers(
     const entitledIds = new Set(entitledRefs.map((r) => r.id));
     const resources = entitledTierResourcesFromIds(included, entitledIds);
     const memberMapped = mapEntitledResources(resources);
+    const rewardIdMap = getPatreonTierRewardIdMap();
 
     memberDebug.push({
       memberId: member.id ?? null,
       campaignId: member.relationships?.campaign?.data?.id ?? null,
       patronStatus,
       entitledTierIds: [...entitledIds],
-      entitledTitles: resources.map((r) => r.title),
+      entitledTitles: resources.map((r) => r.title).filter(Boolean),
+      rewardIdMapKeys: [...rewardIdMap.keys()],
       mappedTiers: memberMapped,
     });
 
@@ -320,6 +381,7 @@ export function resolveAppTierFromIncludedMembers(
       resolvedTier: appTier,
       resolvedStatus: patronStatus,
       rewardIdMapConfigured: getPatreonTierRewardIdMap().size > 0,
+      rewardIdMapKeys: [...getPatreonTierRewardIdMap().keys()],
     },
   };
 }
