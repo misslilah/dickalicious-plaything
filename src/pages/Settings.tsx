@@ -39,17 +39,55 @@ export function Settings() {
   useEffect(() => {
     const patreon = searchParams.get('patreon');
     if (!patreon) return;
+    const detail = searchParams.get('detail');
+    const isAdmin = session?.role === 'admin';
+
     if (patreon === 'connected') {
       setPatreonNotice('Patreon account linked successfully.');
       void refreshPatreonProfile();
+    } else if (patreon === 'no_tier') {
+      const detailMessages: Record<string, string> = {
+        no_memberships:
+          'Patreon linked, but no membership was returned. Ensure you are an active patron of this creator.',
+        not_active_patron:
+          'Patreon linked, but your patron status is not active. Check your pledge on Patreon.',
+        no_entitled_tiers:
+          'Patreon linked, but no entitled tier was found on your membership.',
+        tier_id_mismatch:
+          'Patreon linked, but your tier ID does not match server configuration (PATREON_TIER_REWARD_IDS).',
+        campaign_mismatch:
+          'Patreon linked, but your membership is for a different campaign. Check PATREON_CREATOR_CAMPAIGN_ID.',
+        campaign_include_missing:
+          'Patreon linked, but campaign data was missing from the API response (redeploy callback).',
+      };
+      const base =
+        detailMessages[detail ?? ''] ??
+        'Patreon account linked, but no matching tier was found. If you are an active patron, ask an admin to check Edge Function logs.';
+      setPatreonNotice(
+        isAdmin && detail ? `${base} (detail: ${detail})` : base,
+      );
+      void refreshPatreonProfile();
     } else if (patreon === 'not_configured') {
       setPatreonNotice('Patreon OAuth is not configured on the server yet.');
-    } else if (patreon === 'error' || patreon === 'token_error' || patreon === 'identity_error') {
-      setPatreonNotice('Could not connect Patreon. Try again or ask an admin.');
+    } else if (patreon === 'profile_update_error') {
+      setPatreonNotice(
+        isAdmin
+          ? 'Patreon authorized, but saving your profile failed. Check Edge Function logs and profiles RLS.'
+          : 'Patreon authorized, but we could not save your membership. Try again or ask an admin.',
+      );
+    } else if (
+      patreon === 'error' ||
+      patreon === 'token_error' ||
+      patreon === 'identity_error'
+    ) {
+      const detailHint =
+        isAdmin && detail ? ` (${detail})` : '';
+      setPatreonNotice(`Could not connect Patreon. Try again or ask an admin.${detailHint}`);
     }
     searchParams.delete('patreon');
+    searchParams.delete('detail');
     setSearchParams(searchParams, { replace: true });
-  }, [searchParams, setSearchParams, refreshPatreonProfile]);
+  }, [searchParams, setSearchParams, refreshPatreonProfile, session?.role]);
 
   const patreonOAuthAvailable = isPatreonOAuthConfigured();
 

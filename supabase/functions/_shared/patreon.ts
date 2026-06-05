@@ -123,18 +123,235 @@ export const corsHeaders = {
 export const PATREON_OAUTH_SCOPES =
   'identity identity[email] identity.memberships';
 
+const PATREON_API_V2 = 'https://www.patreon.com/api/oauth2/v2';
+
+/**
+ * Patreon v2 /identity query — nested includes per docs.patreon.com.
+ * Top-level `memberships` sideloads member resources; nested paths add tiers + campaign.
+ */
+export const PATREON_IDENTITY_INCLUDES =
+  'memberships,memberships.currently_entitled_tiers,memberships.campaign';
+
+export const PATREON_MEMBER_INCLUDES = 'currently_entitled_tiers,campaign';
+
+export function buildPatreonIdentityUrl(): string {
+  const params = new URLSearchParams({
+    include: PATREON_IDENTITY_INCLUDES,
+    'fields[user]': 'email',
+    'fields[member]': 'patron_status',
+    'fields[tier]': 'title',
+  });
+  return `${PATREON_API_V2}/identity?${params.toString()}`;
+}
+
+export function buildPatreonMemberUrl(memberId: string): string {
+  const params = new URLSearchParams({
+    include: PATREON_MEMBER_INCLUDES,
+    'fields[member]': 'patron_status',
+    'fields[tier]': 'title',
+  });
+  return `${PATREON_API_V2}/members/${encodeURIComponent(memberId)}?${params.toString()}`;
+}
+
+function normalizeJsonApiRefs(
+  raw: PatreonJsonApiRef[] | PatreonJsonApiRef | null | undefined,
+): PatreonJsonApiRef[] {
+  const refs = Array.isArray(raw) ? raw : raw?.id ? [raw] : [];
+  return refs
+    .map((ref) => {
+      const id = normalizePatreonId(ref.id);
+      return id ? { id, type: ref.type } : null;
+    })
+    .filter((ref): ref is PatreonJsonApiRef => ref != null);
+}
+
+function countIncludedTypes(included: PatreonIncludedResource[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const resource of included) {
+    counts[resource.type] = (counts[resource.type] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function extractMembershipRefsFromIdentity(identity: PatreonIdentityResponse): PatreonJsonApiRef[] {
+  return normalizeJsonApiRefs(identity.data?.relationships?.memberships?.data).filter(
+    (ref) => ref.type === 'member',
+  );
+}
+
+function membersFromIncluded(included: PatreonIncludedResource[]): PatreonIncludedResource[] {
+  return included.filter((x) => x.type === 'member');
+}
+
+function mergeMemberResources(
+  fromIncluded: PatreonIncludedResource[],
+  membershipRefs: PatreonJsonApiRef[],
+): PatreonIncludedResource[] {
+  const byId = new Map<string, PatreonIncludedResource>();
+  for (const member of fromIncluded) {
+    const id = normalizePatreonId(member.id);
+    if (id) byId.set(id, member);
+  }
+  for (const ref of membershipRefs) {
+    if (!byId.has(ref.id)) {
+      byId.set(ref.id, { type: 'member', id: ref.id });
+    }
+  }
+  return [...byId.values()];
+}
+
+function mergeIncludedResources(
+  base: PatreonIncludedResource[],
+  additions: PatreonIncludedResource[],
+): PatreonIncludedResource[] {
+  const seen = new Set(
+    base.map((resource) => `${resource.type}:${normalizePatreonId(resource.id) ?? ''}`),
+  );
+  const merged = [...base];
+  for (const resource of additions) {
+    const key = `${resource.type}:${normalizePatreonId(resource.id) ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(resource);
+  }
+  return merged;
+}
+
+function memberResourceNeedsFetch(
+  member: PatreonIncludedResource,
+  included: PatreonIncludedResource[],
+): boolean {
+  const id = normalizePatreonId(member.id);
+  if (!id) return false;
+
+  const fullMember = included.find(
+    (resource) => resource.type === 'member' && normalizePatreonId(resource.id) === id,
+  );
+  if (!fullMember) return true;
+
+  const hasStatus = fullMember.attributes?.patron_status != null;
+  const hasEntitled =
+    normalizeEntitledTierRefs(fullMember.relationships?.currently_entitled_tiers?.data).length > 0;
+  return !hasStatus && !hasEntitled;
+}
+
+export async function fetchPatreonMemberResource(
+  accessToken: string,
+  memberId: string,
+): Promise<{ member: PatreonIncludedResource | null; included: PatreonIncludedResource[] }> {
+  const url = buildPatreonMemberUrl(memberId);
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!res.ok) {
+    const body = await res.text();
+    console.warn('[patreon] member fetch failed', { memberId, status: res.status, body: body.slice(0, 256) });
+    return { member: null, included: [] };
+  }
+
+  const json = await res.json();
+  const member = (json.data ?? null) as PatreonIncludedResource | null;
+  const included = (json.included ?? []) as PatreonIncludedResource[];
+  return { member, included };
+}
+
+export async function enrichIdentityWithMembers(
+  identity: PatreonIdentityResponse,
+  accessToken: string,
+): Promise<{
+  members: PatreonIncludedResource[];
+  included: PatreonIncludedResource[];
+  debug: Record<string, unknown>;
+}> {
+  let included = identity.included ?? [];
+  const includedTypesCount = countIncludedTypes(included);
+  const membershipRefs = extractMembershipRefsFromIdentity(identity);
+  let members = mergeMemberResources(membersFromIncluded(included), membershipRefs);
+
+  const toFetch = new Set<string>();
+  for (const member of members) {
+    const id = normalizePatreonId(member.id);
+    if (id && memberResourceNeedsFetch(member, included)) toFetch.add(id);
+  }
+
+  if (membershipRefs.length === 1) {
+    toFetch.add(membershipRefs[0].id);
+  }
+  if (members.length === 0 && membershipRefs.length > 0) {
+    for (const ref of membershipRefs) toFetch.add(ref.id);
+  }
+
+  const fetchedMemberIds: string[] = [];
+  for (const memberId of toFetch) {
+    const { member, included: fetchedIncluded } = await fetchPatreonMemberResource(
+      accessToken,
+      memberId,
+    );
+    fetchedMemberIds.push(memberId);
+    if (!member) continue;
+
+    const normalizedId = normalizePatreonId(member.id) ?? memberId;
+    const existingIndex = members.findIndex((m) => normalizePatreonId(m.id) === normalizedId);
+    if (existingIndex >= 0) members[existingIndex] = member;
+    else members.push(member);
+
+    included = mergeIncludedResources(included, [member, ...fetchedIncluded]);
+  }
+
+  return {
+    members,
+    included,
+    debug: {
+      includedTypesCount,
+      membershipRefCount: membershipRefs.length,
+      membershipRefIds: membershipRefs.map((ref) => ref.id),
+      fetchedMemberIds,
+    },
+  };
+}
+
+/** Sanitize detail for query params (alphanumeric + underscore/dash). */
+export function patreonSafeRedirectDetail(detail: string): string {
+  return detail.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+}
+
 /** Redirect browser to Settings after Patreon OAuth errors (never gateway JSON). */
 export function patreonSettingsErrorRedirect(
   appOrigin: string,
   detail?: string,
+  status: string = 'error',
 ): Response {
   const target = new URL('/settings', appOrigin);
-  target.searchParams.set('patreon', 'error');
+  target.searchParams.set('patreon', status);
   if (detail) {
-    const safe = detail.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+    const safe = patreonSafeRedirectDetail(detail);
     if (safe) target.searchParams.set('detail', safe);
   }
   return Response.redirect(target.toString(), 302);
+}
+
+/** Redirect after OAuth with tier outcome (connected vs linked-but-no-tier). */
+export function patreonSettingsOAuthResultRedirect(
+  appOrigin: string,
+  returnPath: string,
+  outcome: 'connected' | 'no_tier',
+  detail?: string,
+): Response {
+  const path = returnPath.startsWith('/') ? returnPath : '/settings';
+  const target = new URL(path, appOrigin);
+  target.searchParams.set('patreon', outcome);
+  if (detail) {
+    const safe = patreonSafeRedirectDetail(detail);
+    if (safe) target.searchParams.set('detail', safe);
+  }
+  return Response.redirect(target.toString(), 302);
+}
+
+/** Always log tier resolution (oauth + webhook); enable PATREON_TIER_DEBUG for full JSON. */
+export function logPatreonTierResolution(
+  context: string,
+  details: Record<string, unknown>,
+): void {
+  console.log(`[patreon-tier] ${context}`, JSON.stringify(details));
+  logPatreonTierDebug(context, details);
 }
 
 /** Resolve Patreon OAuth start env; lists missing secret names for 503 responses. */
@@ -192,6 +409,8 @@ export type PatreonWebhookMemberEvent = (typeof PATREON_WEBHOOK_MEMBER_EVENTS)[n
 
 export type PatreonPatronStatus = 'active_patron' | 'declined_patron' | 'former_patron';
 
+export type PatreonJsonApiRef = { id: string; type: string };
+
 export type PatreonIncludedResource = {
   type: string;
   id?: string;
@@ -201,12 +420,29 @@ export type PatreonIncludedResource = {
     [key: string]: unknown;
   };
   relationships?: {
-    campaign?: { data?: { id?: string } | null };
+    campaign?: { data?: { id?: string; type?: string } | null };
     currently_entitled_tiers?: {
       data?: { id: string; type: string }[] | { id: string; type: string } | null;
     };
+    memberships?: {
+      data?: PatreonJsonApiRef[] | PatreonJsonApiRef | null;
+    };
     [key: string]: unknown;
   };
+};
+
+/** Patreon v2 GET /identity JSON:API body. */
+export type PatreonIdentityResponse = {
+  data?: {
+    id?: string;
+    type?: string;
+    relationships?: {
+      memberships?: {
+        data?: PatreonJsonApiRef[] | PatreonJsonApiRef | null;
+      };
+    };
+  };
+  included?: PatreonIncludedResource[];
 };
 
 /** Patreon v2 webhook POST body (member resource in data; event name in X-Patreon-Event). */
@@ -321,21 +557,48 @@ export function extractEntitledTierTitles(payload: PatreonWebhookPayload): strin
   return extractEntitledTierResources(payload).map((r) => r.title);
 }
 
+function filterMembersForCampaign(
+  members: PatreonIncludedResource[],
+  campaignId: string | null,
+): {
+  relevantMembers: PatreonIncludedResource[];
+  campaignFilterSkipped: boolean;
+  campaignFilterMiss: boolean;
+} {
+  if (!campaignId) {
+    return { relevantMembers: members, campaignFilterSkipped: false, campaignFilterMiss: false };
+  }
+
+  const strict = members.filter(
+    (m) => normalizePatreonId(m.relationships?.campaign?.data?.id) === campaignId,
+  );
+  if (strict.length > 0) {
+    return { relevantMembers: strict, campaignFilterSkipped: false, campaignFilterMiss: false };
+  }
+
+  const anyMemberHasCampaign = members.some(
+    (m) => normalizePatreonId(m.relationships?.campaign?.data?.id) != null,
+  );
+  if (members.length > 0 && !anyMemberHasCampaign) {
+    // memberships.campaign not included in API response — avoid filtering everyone out.
+    return { relevantMembers: members, campaignFilterSkipped: true, campaignFilterMiss: true };
+  }
+
+  return { relevantMembers: strict, campaignFilterSkipped: false, campaignFilterMiss: true };
+}
+
 export function resolveAppTierFromIncludedMembers(
   included: PatreonIncludedResource[],
-  options?: { campaignId?: string | null },
+  options?: { campaignId?: string | null; members?: PatreonIncludedResource[] },
 ): {
   appTier: AppPatreonTier | null;
   patronStatus: 'active' | 'cancelled' | 'none';
   debug: Record<string, unknown>;
 } {
   const campaignId = normalizePatreonId(options?.campaignId ?? getPatreonCreatorCampaignId());
-  const members = included.filter((x) => x.type === 'member');
-  const relevantMembers = campaignId
-    ? members.filter(
-        (m) => normalizePatreonId(m.relationships?.campaign?.data?.id) === campaignId,
-      )
-    : members;
+  const members = options?.members ?? included.filter((x) => x.type === 'member');
+  const { relevantMembers, campaignFilterSkipped, campaignFilterMiss } =
+    filterMembersForCampaign(members, campaignId);
 
   const mappedTiers: AppPatreonTier[] = [];
   const memberDebug: Record<string, unknown>[] = [];
@@ -376,6 +639,9 @@ export function resolveAppTierFromIncludedMembers(
     patronStatus,
     debug: {
       campaignFilter: campaignId,
+      campaignFilterSkipped,
+      campaignFilterMiss,
+      totalMemberCount: members.length,
       memberCount: relevantMembers.length,
       members: memberDebug,
       resolvedTier: appTier,
@@ -386,16 +652,183 @@ export function resolveAppTierFromIncludedMembers(
   };
 }
 
-/** Resolve tier from Patreon /identity JSON (OAuth callback). */
-export function resolveAppTierFromIdentityResponse(identity: {
-  included?: PatreonIncludedResource[];
-}): {
+/** Classify why OAuth tier resolution returned null (for redirect detail + logs). */
+export function patreonOAuthNoTierDetail(debug: Record<string, unknown>): string {
+  const members = debug.members as Record<string, unknown>[] | undefined;
+  const memberCount = typeof debug.memberCount === 'number' ? debug.memberCount : 0;
+  const totalMemberCount =
+    typeof debug.totalMemberCount === 'number' ? debug.totalMemberCount : memberCount;
+
+  if (totalMemberCount === 0) return 'no_memberships';
+  if (debug.campaignFilterMiss === true && debug.campaignFilterSkipped !== true) {
+    return 'campaign_mismatch';
+  }
+  if (debug.campaignFilterMiss === true && debug.campaignFilterSkipped === true) {
+    return 'campaign_include_missing';
+  }
+
+  const activeMembers = (members ?? []).filter((m) => m.patronStatus === 'active_patron');
+  if (activeMembers.length === 0) return 'not_active_patron';
+
+  const hasEntitled = activeMembers.some((m) => {
+    const ids = m.entitledTierIds as string[] | undefined;
+    return Array.isArray(ids) && ids.length > 0;
+  });
+  if (!hasEntitled) return 'no_entitled_tiers';
+
+  return 'tier_id_mismatch';
+}
+
+/** Minimal identity payload self-test (run via deno test or PATREON_TIER_SELF_TEST=1). */
+export function selfTestResolveAppTierFromIdentity(): { ok: boolean; errors: string[] } {
+  const errors: string[] = [];
+  const rewardEnv = Deno.env.get('PATREON_TIER_REWARD_IDS');
+  if (!rewardEnv) {
+    Deno.env.set('PATREON_TIER_REWARD_IDS', '{"sweetie":"23433761","princess":"23433777","slut":"23433795"}');
+    cachedRewardIdMap = null;
+  }
+
+  const minimalIdentity = {
+    included: [
+      {
+        type: 'member',
+        id: 'mem-1',
+        attributes: { patron_status: 'active_patron' as const },
+        relationships: {
+          campaign: { data: { id: '999', type: 'campaign' } },
+          currently_entitled_tiers: { data: [{ id: '23433777', type: 'tier' }] },
+        },
+      },
+      {
+        type: 'tier',
+        id: '23433777',
+        attributes: { title: 'Princess' },
+      },
+    ] as PatreonIncludedResource[],
+  };
+
+  const { appTier, patronStatus } = resolveAppTierFromIdentityResponseSync(minimalIdentity);
+  if (appTier !== 'princess') errors.push(`expected princess, got ${appTier}`);
+  if (patronStatus !== 'active') errors.push(`expected active, got ${patronStatus}`);
+
+  const membershipRefsOnly: PatreonIdentityResponse = {
+    data: {
+      relationships: {
+        memberships: { data: [{ id: 'mem-ref-1', type: 'member' }] },
+      },
+    },
+    included: [],
+  };
+  const refsOnly = resolveAppTierFromIdentityResponseSync(membershipRefsOnly);
+  if (refsOnly.debug.memberCount !== 1) {
+    errors.push(`membership refs only: expected memberCount 1, got ${refsOnly.debug.memberCount}`);
+  }
+  if (refsOnly.debug.membershipRefCount !== 1) {
+    errors.push(
+      `membership refs only: expected membershipRefCount 1, got ${refsOnly.debug.membershipRefCount}`,
+    );
+  }
+
+  const campaignFiltered = resolveAppTierFromIncludedMembers(minimalIdentity.included, {
+    campaignId: '999',
+  });
+  if (campaignFiltered.appTier !== 'princess') {
+    errors.push(`campaign filter: expected princess, got ${campaignFiltered.appTier}`);
+  }
+
+  const wrongCampaign = resolveAppTierFromIncludedMembers(minimalIdentity.included, {
+    campaignId: 'wrong',
+  });
+  if (wrongCampaign.appTier !== null) {
+    errors.push(`wrong campaign should yield null, got ${wrongCampaign.appTier}`);
+  }
+
+  const missingCampaignInclude = resolveAppTierFromIncludedMembers(
+    [
+      {
+        type: 'member',
+        attributes: { patron_status: 'active_patron' },
+        relationships: {
+          currently_entitled_tiers: { data: [{ id: '23433761', type: 'tier' }] },
+        },
+      },
+    ],
+    { campaignId: '999' },
+  );
+  if (missingCampaignInclude.appTier !== 'sweetie') {
+    errors.push(
+      `missing campaign include fallback: expected sweetie, got ${missingCampaignInclude.appTier}`,
+    );
+  }
+
+  return { ok: errors.length === 0, errors };
+}
+
+/** Sync tier resolution from identity JSON (self-tests and unit-style checks). */
+export function resolveAppTierFromIdentityResponseSync(
+  identity: PatreonIdentityResponse,
+  options?: {
+    members?: PatreonIncludedResource[];
+    included?: PatreonIncludedResource[];
+    enrichDebug?: Record<string, unknown>;
+  },
+): {
   appTier: AppPatreonTier | null;
   patronStatus: 'active' | 'cancelled' | 'none';
   debug: Record<string, unknown>;
 } {
-  const included = identity.included ?? [];
-  return resolveAppTierFromIncludedMembers(included);
+  const included = options?.included ?? identity.included ?? [];
+  const membershipRefs = extractMembershipRefsFromIdentity(identity);
+  const members =
+    options?.members ?? mergeMemberResources(membersFromIncluded(included), membershipRefs);
+  const enrichDebug = options?.enrichDebug ?? {
+    includedTypesCount: countIncludedTypes(included),
+    membershipRefCount: membershipRefs.length,
+    membershipRefIds: membershipRefs.map((ref) => ref.id),
+    fetchedMemberIds: [] as string[],
+  };
+
+  const campaignId = normalizePatreonId(getPatreonCreatorCampaignId());
+  let result = resolveAppTierFromIncludedMembers(included, { campaignId, members });
+
+  if (campaignId && members.length > 0 && result.debug.memberCount === 0) {
+    const unfiltered = resolveAppTierFromIncludedMembers(included, {
+      campaignId: null,
+      members,
+    });
+    result = {
+      ...unfiltered,
+      debug: {
+        ...unfiltered.debug,
+        ...enrichDebug,
+        campaignFilterRetriedUnfiltered: true,
+      },
+    };
+  } else {
+    result = { ...result, debug: { ...result.debug, ...enrichDebug } };
+  }
+
+  return result;
+}
+
+/** Resolve tier from Patreon /identity JSON (OAuth callback). Fetches member resources when needed. */
+export async function resolveAppTierFromIdentityResponse(
+  identity: PatreonIdentityResponse,
+  accessToken?: string,
+): Promise<{
+  appTier: AppPatreonTier | null;
+  patronStatus: 'active' | 'cancelled' | 'none';
+  debug: Record<string, unknown>;
+}> {
+  if (accessToken) {
+    const enriched = await enrichIdentityWithMembers(identity, accessToken);
+    return resolveAppTierFromIdentityResponseSync(identity, {
+      members: enriched.members,
+      included: enriched.included,
+      enrichDebug: enriched.debug,
+    });
+  }
+  return resolveAppTierFromIdentityResponseSync(identity);
 }
 
 export function appTierFromWebhookPayload(payload: PatreonWebhookPayload): AppPatreonTier | null {

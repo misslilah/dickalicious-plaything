@@ -1,18 +1,28 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
+  buildPatreonIdentityUrl,
   corsHeaders,
   getPatreonOAuthCallbackConfig,
-  logPatreonTierDebug,
+  logPatreonTierResolution,
+  patreonOAuthNoTierDetail,
   patreonSettingsErrorRedirect,
+  patreonSettingsOAuthResultRedirect,
   resolveAppTierFromIdentityResponse,
+  selfTestResolveAppTierFromIdentity,
 } from '../_shared/patreon.ts';
 
 const PATREON_TOKEN_URL = 'https://www.patreon.com/api/oauth2/token';
-const PATREON_API = 'https://www.patreon.com/api/oauth2/v2';
 
 Deno.serve(async (req) => {
   const appOrigin = Deno.env.get('APP_ORIGIN') ?? 'http://localhost:5173';
   const url = new URL(req.url);
+
+  if (Deno.env.get('PATREON_TIER_SELF_TEST') === '1') {
+    const result = selfTestResolveAppTierFromIdentity();
+    return new Response(JSON.stringify(result), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
 
   // Patreon OAuth redirect: GET with ?code= or ?error= (no Authorization header).
   if (req.method === 'GET') {
@@ -47,13 +57,18 @@ Deno.serve(async (req) => {
     return patreonSettingsErrorRedirect(appOrigin, 'invalid_state');
   }
 
+  if (!state.userId?.trim()) {
+    console.error('[patreon-oauth-callback] missing userId in state', state);
+    return patreonSettingsErrorRedirect(appOrigin, 'missing_user_id');
+  }
+
   const { clientId, clientSecret, redirectUri, missingSecrets } =
     getPatreonOAuthCallbackConfig();
   const supabaseUrl = Deno.env.get('SUPABASE_URL')?.trim() ?? '';
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')?.trim() ?? '';
 
   if (missingSecrets.length > 0 || !supabaseUrl || !serviceKey) {
-    return Response.redirect(`${appOrigin}/settings?patreon=not_configured`, 302);
+    return patreonSettingsErrorRedirect(appOrigin, 'not_configured', 'not_configured');
   }
 
   const tokenRes = await fetch(PATREON_TOKEN_URL, {
@@ -69,37 +84,52 @@ Deno.serve(async (req) => {
   });
 
   if (!tokenRes.ok) {
-    console.error('Patreon token exchange failed', await tokenRes.text());
-    return Response.redirect(`${appOrigin}/settings?patreon=token_error`, 302);
+    const tokenBody = await tokenRes.text();
+    console.error('[patreon-oauth-callback] token exchange failed', tokenRes.status, tokenBody);
+    return patreonSettingsErrorRedirect(appOrigin, 'token_error', 'token_error');
   }
 
   const tokenJson = await tokenRes.json();
   const accessToken = tokenJson.access_token as string;
+  if (!accessToken) {
+    console.error('[patreon-oauth-callback] token response missing access_token', tokenJson);
+    return patreonSettingsErrorRedirect(appOrigin, 'token_missing', 'token_error');
+  }
 
-  const identityRes = await fetch(
-    `${PATREON_API}/identity?include=memberships,memberships.currently_entitled_tiers&fields[user]=email&fields[tier]=title&fields[member]=patron_status`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
-  );
+  const identityUrl = buildPatreonIdentityUrl();
+  const identityRes = await fetch(identityUrl, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
 
   if (!identityRes.ok) {
-    console.error('Patreon identity failed', await identityRes.text());
-    return Response.redirect(`${appOrigin}/settings?patreon=identity_error`, 302);
+    const identityBody = await identityRes.text();
+    console.error(
+      '[patreon-oauth-callback] identity failed',
+      identityRes.status,
+      identityUrl,
+      identityBody,
+    );
+    return patreonSettingsErrorRedirect(appOrigin, 'identity_error', 'identity_error');
   }
 
   const identity = await identityRes.json();
   const patreonUserId = identity?.data?.id as string | undefined;
 
   const { appTier, patronStatus: patreonStatus, debug } =
-    resolveAppTierFromIdentityResponse(identity);
-  logPatreonTierDebug('oauth-callback', {
+    await resolveAppTierFromIdentityResponse(identity, accessToken);
+
+  logPatreonTierResolution('oauth-callback', {
     userId: state.userId,
     patreonUserId: patreonUserId ?? null,
+    appTier,
+    patreonStatus,
+    identityUrl,
     ...debug,
   });
 
   const supabase = createClient(supabaseUrl, serviceKey);
 
-  await supabase
+  const { error: profileError } = await supabase
     .from('profiles')
     .update({
       patreon_user_id: patreonUserId ?? null,
@@ -110,5 +140,25 @@ Deno.serve(async (req) => {
     .eq('id', state.userId);
 
   const returnPath = state.returnTo?.startsWith('/') ? state.returnTo : '/settings';
-  return Response.redirect(`${appOrigin}${returnPath}?patreon=connected`, 302);
+
+  if (profileError) {
+    console.error('[patreon-oauth-callback] profile update failed', {
+      userId: state.userId,
+      error: profileError,
+    });
+    return patreonSettingsErrorRedirect(appOrigin, 'profile_update_failed', 'profile_update_error');
+  }
+
+  if (!appTier) {
+    const noTierDetail = patreonOAuthNoTierDetail(debug);
+    console.warn('[patreon-oauth-callback] linked but no tier', {
+      userId: state.userId,
+      patreonUserId,
+      detail: noTierDetail,
+      ...debug,
+    });
+    return patreonSettingsOAuthResultRedirect(appOrigin, returnPath, 'no_tier', noTierDetail);
+  }
+
+  return patreonSettingsOAuthResultRedirect(appOrigin, returnPath, 'connected');
 });
