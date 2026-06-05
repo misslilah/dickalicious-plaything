@@ -93,7 +93,10 @@ import {
 import { createInitialState } from '../lib/seed';
 import { isSupabaseConfigured, SUPABASE_SETUP_HINT } from '../lib/supabase';
 import { fetchUserProgress, saveUserProgress } from '../lib/userProgressDb';
-import { tryRecordVideoCompletion } from '../lib/videoCompletionDb';
+import {
+  tryRecordVideoCompletion,
+  tryRecordVideoPartialView,
+} from '../lib/videoCompletionDb';
 import {
   fetchPurchasedVideoIds,
   purchaseVideoDb,
@@ -154,6 +157,11 @@ interface AppStoreValue {
   dismissPunishment: (id: string) => void;
   /** Awards XP once per user per video after a full watch. Returns XP granted, or 0. */
   awardVideoCompletion: (videoId: string) => Promise<number>;
+  /** Logs a partial view once per user per video per day (deduped server-side). */
+  recordVideoPartialView: (
+    videoId: string,
+    watchPercent: number | null,
+  ) => Promise<void>;
   /** Adds XP immediately (e.g. mini-game streak rewards). */
   awardBonusXp: (amount: number) => void;
   joinCategory: (categoryId: string) => Promise<MutateResult>;
@@ -541,16 +549,23 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         const userId = userIdRef.current;
         if (!userId) return 0;
         const video = state.videos.find((v) => v.id === videoId);
-        const xpReward = video?.xpReward ?? 0;
-        if (!video || xpReward <= 0) return 0;
+        if (!video) return 0;
+        const xpReward = video.xpReward ?? 0;
         const result = await tryRecordVideoCompletion(userId, videoId, xpReward);
         if (!result.ok) {
           setLastSaveError(result.error);
           return 0;
         }
-        if (!result.awarded) return 0;
+        if (!result.awarded || result.xp <= 0) return 0;
         applyUserState(addVideoXp(state, result.xp));
         return result.xp;
+      },
+      recordVideoPartialView: async (videoId, watchPercent) => {
+        const userId = userIdRef.current;
+        if (!userId) return;
+        const video = state.videos.find((v) => v.id === videoId);
+        if (!video) return;
+        await tryRecordVideoPartialView(videoId, watchPercent);
       },
       awardBonusXp: (amount) => {
         if (amount <= 0) return;

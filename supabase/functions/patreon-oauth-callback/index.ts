@@ -2,10 +2,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
   corsHeaders,
   getPatreonOAuthCallbackConfig,
-  highestTier,
-  mapPatreonTierTitle,
+  logPatreonTierDebug,
   patreonSettingsErrorRedirect,
-  type AppPatreonTier,
+  resolveAppTierFromIdentityResponse,
 } from '../_shared/patreon.ts';
 
 const PATREON_TOKEN_URL = 'https://www.patreon.com/api/oauth2/token';
@@ -78,7 +77,7 @@ Deno.serve(async (req) => {
   const accessToken = tokenJson.access_token as string;
 
   const identityRes = await fetch(
-    `${PATREON_API}/identity?include=memberships,memberships.currently_entitled_tiers&fields[user]=email&fields[tier]=title`,
+    `${PATREON_API}/identity?include=memberships,memberships.currently_entitled_tiers&fields[user]=email&fields[tier]=title&fields[member]=patron_status`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
 
@@ -90,18 +89,13 @@ Deno.serve(async (req) => {
   const identity = await identityRes.json();
   const patreonUserId = identity?.data?.id as string | undefined;
 
-  const included = (identity?.included ?? []) as { type: string; id: string; attributes?: { title?: string } }[];
-  const tierTitles = included
-    .filter((x) => x.type === 'tier')
-    .map((x) => x.attributes?.title ?? '')
-    .filter(Boolean);
-
-  const mapped = tierTitles
-    .map(mapPatreonTierTitle)
-    .filter((t): t is AppPatreonTier => t != null);
-
-  const appTier = highestTier(mapped);
-  const patreonStatus = appTier ? 'active' : 'none';
+  const { appTier, patronStatus: patreonStatus, debug } =
+    resolveAppTierFromIdentityResponse(identity);
+  logPatreonTierDebug('oauth-callback', {
+    userId: state.userId,
+    patreonUserId: patreonUserId ?? null,
+    ...debug,
+  });
 
   const supabase = createClient(supabaseUrl, serviceKey);
 

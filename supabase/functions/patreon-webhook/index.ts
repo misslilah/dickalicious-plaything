@@ -14,6 +14,7 @@ import {
   corsHeaders,
   extractPatreonUserId,
   isPatreonWebhookMemberEvent,
+  logPatreonTierDebug,
   resolveWebhookProfileUpdate,
   type PatreonWebhookPayload,
 } from '../_shared/patreon.ts';
@@ -87,6 +88,15 @@ Deno.serve(async (req) => {
 
   const update = resolveWebhookProfileUpdate(event, payload);
   const patreonUserId = extractPatreonUserId(payload);
+
+  if (update && patreonUserId) {
+    logPatreonTierDebug('webhook', {
+      event,
+      patreonUserId,
+      appTier: update.appTier,
+      patreonStatus: update.patreonStatus,
+    });
+  }
 
   if (!update || !patreonUserId) {
     return new Response(JSON.stringify({ received: true }), {

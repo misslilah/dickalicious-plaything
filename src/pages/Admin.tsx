@@ -34,9 +34,15 @@ import {
 } from '../lib/badgeImage';
 import { formatBadgeRequirementSummary } from '../lib/badgeRequirementFormat';
 import {
+  ADMIN_LIST_USERS_MIGRATION_HINT,
+  ADMIN_USER_TIER_FILTER_OPTIONS,
+  countAdminProfilesByTier,
+  displayAdminUserEmail,
   fetchAdminProfiles,
+  filterAndSortAdminProfiles,
   updateProfilePatreon,
   type AdminProfileRow,
+  type AdminUserTierFilter,
 } from '../lib/profileDb';
 import {
   AUDIO_PLAYLIST_TIER_OPTIONS,
@@ -2487,14 +2493,31 @@ function UserAdmin() {
   const [profiles, setProfiles] = useState<AdminProfileRow[]>([]);
   const [profilesLoading, setProfilesLoading] = useState(true);
   const [profilesError, setProfilesError] = useState('');
+  const [profilesEmailHint, setProfilesEmailHint] = useState('');
   const [tierMessage, setTierMessage] = useState('');
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [editTier, setEditTier] = useState<PatreonMemberTier | ''>('');
   const [editStatus, setEditStatus] = useState<PatreonStatus>('none');
+  const [tierFilter, setTierFilter] = useState<AdminUserTierFilter>('all');
+
+  const tierCounts = useMemo(() => countAdminProfilesByTier(profiles), [profiles]);
+  const displayedProfiles = useMemo(
+    () => filterAndSortAdminProfiles(profiles, tierFilter),
+    [profiles, tierFilter],
+  );
+  const tierFilterOptions = useMemo(
+    () =>
+      ADMIN_USER_TIER_FILTER_OPTIONS.map((o) => ({
+        value: o.value,
+        label: `${o.label} (${tierCounts[o.value]})`,
+      })),
+    [tierCounts],
+  );
 
   const loadProfiles = async () => {
     setProfilesLoading(true);
     setProfilesError('');
+    setProfilesEmailHint('');
     const result = await fetchAdminProfiles();
     setProfilesLoading(false);
     if (!result.ok) {
@@ -2502,6 +2525,9 @@ function UserAdmin() {
       return;
     }
     setProfiles(result.profiles);
+    if (!result.emailsFromAuth) {
+      setProfilesEmailHint(ADMIN_LIST_USERS_MIGRATION_HINT);
+    }
   };
 
   useEffect(() => {
@@ -2548,26 +2574,41 @@ function UserAdmin() {
     void loadProfiles();
   };
 
+  const selectedUser = profiles.find((p) => p.id === selectedUserId) ?? null;
+
   const list = (
     <AdminListCard
       title="Users & Patreon tiers"
-      count={profiles.length}
+      count={displayedProfiles.length}
       intro="Assign Sweetie / Princess / Slut manually until OAuth is live. Set status to Active for tier access."
       search=""
       onSearchChange={() => {}}
+      filter={
+        <ChipSelect
+          label="Filter by tier"
+          options={tierFilterOptions}
+          value={tierFilter}
+          onChange={setTierFilter}
+          scroll
+        />
+      }
     >
       {profilesLoading && <p className="muted">Loading users…</p>}
       <StatusMessage message={profilesError} variant="err" />
+      <StatusMessage message={profilesEmailHint} />
       {!profilesLoading && profiles.length === 0 && (
         <AdminEmpty title="No users" hint="Create a user below or in Supabase Auth." />
       )}
+      {!profilesLoading && profiles.length > 0 && displayedProfiles.length === 0 && (
+        <AdminEmpty title="No matches" hint="Try a different tier filter." />
+      )}
       <ul className="admin-library">
-        {profiles.map((p) => (
+        {displayedProfiles.map((p) => (
           <AdminLibraryItem
             key={p.id}
             selected={selectedUserId === p.id}
             title={p.username}
-            meta={`${p.role} · Patreon: ${p.patreonTier ?? 'none'} (${p.patreonStatus})`}
+            meta={`Email: ${displayAdminUserEmail(p)} · ${p.role} · Patreon: ${p.patreonTier ?? 'none'} (${p.patreonStatus})`}
             onEdit={() => selectUserForTier(p)}
             onDelete={() =>
               window.alert('Remove users from Supabase Dashboard → Authentication.')
@@ -2592,6 +2633,22 @@ function UserAdmin() {
           <p className="muted">Select a user from the list to assign a tier.</p>
         ) : (
           <>
+            <Field label="Username" htmlFor="user-tier-username">
+              <input
+                id="user-tier-username"
+                value={selectedUser?.username ?? ''}
+                readOnly
+                disabled
+              />
+            </Field>
+            <Field label="Email" htmlFor="user-tier-email">
+              <input
+                id="user-tier-email"
+                value={selectedUser ? displayAdminUserEmail(selectedUser) : '—'}
+                readOnly
+                disabled
+              />
+            </Field>
             <Field label="Patreon tier">
               <ChipSelect
                 label="Patreon tier"

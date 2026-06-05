@@ -173,7 +173,7 @@ export const DEFAULT_ADMIN_NAV: AdminNavSnapshot = { section: 'categories' };
 /** User Media page (`/videos`) tab: catalog vs interactive vs audio */
 export const VIDEOS_PAGE_TAB_STORAGE_KEY = 'videos-page-tab';
 
-export const MEDIA_PAGE_TABS = ['videos', 'interactive', 'audio'] as const;
+export const MEDIA_PAGE_TABS = ['videos', 'interactive', 'audio', 'watch-log'] as const;
 export type MediaPageTab = (typeof MEDIA_PAGE_TABS)[number];
 
 export function isMediaPageTab(value: string | null): value is MediaPageTab {

@@ -64,7 +64,7 @@ const VideoPlayerContext = createContext<VideoPlayerContextValue | null>(null);
 
 export function VideoPlayerProvider({ children }: { children: ReactNode }) {
   const audio = useOptionalAudioPlayer();
-  const { awardVideoCompletion } = useAppStore();
+  const { awardVideoCompletion, recordVideoPartialView } = useAppStore();
   const xpToast = useOptionalXpToast();
   const [session, setSession] = useState<NormalVideoSession | null>(null);
   const [url, setUrl] = useState<string | null>(null);
@@ -82,6 +82,7 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
   const loopNoticeShownRef = useRef(false);
   const shouldAutoplayRef = useRef(false);
   const watchTrackerRef = useRef(createVideoWatchTracker());
+  const partialRecordedRef = useRef(false);
 
   const [normalVideoPlaying, setNormalVideoPlaying] = useState(false);
 
@@ -260,6 +261,7 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     watchTrackerRef.current.reset();
+    partialRecordedRef.current = false;
   }, [session?.videoId]);
 
   useEffect(() => {
@@ -268,7 +270,13 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
     if (!el || !videoId || !url) return;
 
     const tracker = watchTrackerRef.current;
-    const onTimeUpdate = () => tracker.onTimeUpdate(el.currentTime);
+    const onTimeUpdate = () => {
+      tracker.onTimeUpdate(el.currentTime);
+      if (partialRecordedRef.current) return;
+      if (!tracker.qualifiesForPartialView(el.duration)) return;
+      partialRecordedRef.current = true;
+      void recordVideoPartialView(videoId, tracker.watchPercent(el.duration));
+    };
     const onSeeking = () => tracker.onSeeking(el.currentTime);
     const onEnded = () => {
       const playlist = playlistPlaybackRef.current;
@@ -295,7 +303,14 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
       el.removeEventListener('seeking', onSeeking);
       el.removeEventListener('ended', onEnded);
     };
-  }, [session?.videoId, url, awardVideoCompletion, xpToast, playPlaylistEntry]);
+  }, [
+    session?.videoId,
+    url,
+    awardVideoCompletion,
+    recordVideoPartialView,
+    xpToast,
+    playPlaylistEntry,
+  ]);
 
   const onVideoPlay = useCallback(() => {
     audio?.pausePlayback();

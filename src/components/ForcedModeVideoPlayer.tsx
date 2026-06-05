@@ -5,6 +5,7 @@ import { useOptionalXpToast } from '../contexts/XpToastContext';
 import { useVideoPlaybackActive } from '../contexts/VideoPlaybackContext';
 import { useAppStore } from '../hooks/useAppStore';
 import { useVideoPlaybackUrl } from '../hooks/useVideoBlobUrl';
+import { createVideoWatchTracker } from '../lib/videoWatchTracker';
 import { ForcedModeWarningModal } from './ForcedModeWarningModal';
 import type { Video } from '../types';
 
@@ -43,7 +44,7 @@ export function ForcedModeVideoPlayer({
   onSessionEnd,
 }: ForcedModeVideoPlayerProps) {
   const audio = useOptionalAudioPlayer();
-  const { awardVideoCompletion } = useAppStore();
+  const { awardVideoCompletion, recordVideoPartialView } = useAppStore();
   const xpToast = useOptionalXpToast();
   const { url, loading, error } = useVideoPlaybackUrl(video.storagePath);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -51,6 +52,8 @@ export function ForcedModeVideoPlayer({
   const allowNavigationRef = useRef(false);
   const sessionActiveRef = useRef(false);
   const playbackInitRef = useRef(false);
+  const watchTrackerRef = useRef(createVideoWatchTracker());
+  const partialRecordedRef = useRef(false);
 
   const [warningOpen, setWarningOpen] = useState(true);
   const [sessionActive, setSessionActive] = useState(false);
@@ -58,7 +61,18 @@ export function ForcedModeVideoPlayer({
 
   useVideoPlaybackActive(sessionActive);
 
+  const recordPartialIfEligible = useCallback(() => {
+    if (partialRecordedRef.current) return;
+    const el = videoRef.current;
+    if (!el) return;
+    const tracker = watchTrackerRef.current;
+    if (!tracker.qualifiesForPartialView(el.duration)) return;
+    partialRecordedRef.current = true;
+    void recordVideoPartialView(video.id, tracker.watchPercent(el.duration));
+  }, [recordVideoPartialView, video.id]);
+
   const endSession = useCallback(() => {
+    recordPartialIfEligible();
     sessionActiveRef.current = false;
     setSessionActive(false);
     setWarningOpen(false);
@@ -76,7 +90,7 @@ export function ForcedModeVideoPlayer({
     }
 
     onSessionEnd?.();
-  }, [onSessionEnd]);
+  }, [onSessionEnd, recordPartialIfEligible]);
 
   const tryEnterFullscreen = useCallback(async (target: HTMLElement) => {
     try {
@@ -162,6 +176,8 @@ export function ForcedModeVideoPlayer({
     allowNavigationRef.current = false;
     sessionActiveRef.current = false;
     playbackInitRef.current = false;
+    watchTrackerRef.current.reset();
+    partialRecordedRef.current = false;
     setWarningOpen(true);
     setSessionActive(false);
     setPlayError(null);
@@ -180,6 +196,27 @@ export function ForcedModeVideoPlayer({
       blocker.reset();
     }
   }, [blocker, endSession]);
+
+  useEffect(() => {
+    if (!sessionActive) return;
+
+    const el = videoRef.current;
+    if (!el) return;
+
+    const tracker = watchTrackerRef.current;
+    const onTimeUpdate = () => {
+      tracker.onTimeUpdate(el.currentTime);
+      if (partialRecordedRef.current) return;
+      if (!tracker.qualifiesForPartialView(el.duration)) return;
+      partialRecordedRef.current = true;
+      void recordVideoPartialView(video.id, tracker.watchPercent(el.duration));
+    };
+
+    el.addEventListener('timeupdate', onTimeUpdate);
+    return () => {
+      el.removeEventListener('timeupdate', onTimeUpdate);
+    };
+  }, [sessionActive, video.id, recordVideoPartialView]);
 
   useEffect(() => {
     if (!sessionActive) return;

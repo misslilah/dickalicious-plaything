@@ -1,8 +1,13 @@
-import { useMemo, useState } from 'react';
-import { loadMediaPageTab, saveMediaPageTab } from '../lib/adminNavPersistence';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  loadMediaPageTab,
+  saveMediaPageTab,
+  type MediaPageTab,
+} from '../lib/adminNavPersistence';
 import { Link } from 'react-router-dom';
 import { AudioPlaylistSection } from '../components/AudioPlaylistSection';
 import { VideoCategoryCard } from '../components/VideoCategoryCard';
+import { VideoWatchLogSection } from '../components/VideoWatchLogSection';
 import { useAppStore } from '../hooks/useAppStore';
 import { getVideoCategoryLockMessage, requiresTierMessage } from '../lib/tiers';
 import {
@@ -14,18 +19,22 @@ import type { Video, VideoCategory } from '../types';
 import { InteractiveVideos } from './InteractiveVideos';
 import { VideoPlaylistSection } from '../components/VideoPlaylistSection';
 
-type MediaTab = 'videos' | 'interactive' | 'audio';
-
 export function Videos() {
   const { state, session } = useAppStore();
-  const [tab, setTab] = useState<MediaTab>(() => loadMediaPageTab());
-  const setMediaTab = (next: MediaTab) => {
+  const [tab, setTab] = useState<MediaPageTab>(() => loadMediaPageTab());
+  const setMediaTab = (next: MediaPageTab) => {
     setTab(next);
     saveMediaPageTab(next);
   };
   const [search, setSearch] = useState('');
   const [lockMessage, setLockMessage] = useState<string | null>(null);
   const isAdmin = session?.role === 'admin';
+
+  useEffect(() => {
+    if (tab === 'watch-log' && !isAdmin) {
+      setMediaTab('videos');
+    }
+  }, [tab, isAdmin]);
 
   const videoAccessCtx: VideoAccessContext = useMemo(
     () => ({
@@ -125,9 +134,22 @@ export function Videos() {
         >
           Audio
         </button>
+        {isAdmin && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'watch-log'}
+            className={tab === 'watch-log' ? 'media-tab media-tab--active' : 'media-tab'}
+            onClick={() => setMediaTab('watch-log')}
+          >
+            Watch log
+          </button>
+        )}
       </div>
 
-      {tab === 'audio' ? (
+      {tab === 'watch-log' && isAdmin ? (
+        <VideoWatchLogSection />
+      ) : tab === 'audio' ? (
         <AudioPlaylistSection />
       ) : tab === 'interactive' ? (
         <InteractiveVideos embedded />
