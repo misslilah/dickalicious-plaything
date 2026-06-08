@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommunityChannel } from '../lib/communityChannels';
-import { fetchAdminDirectInbox } from '../lib/adminDirectMessages';
+import {
+  fetchAdminDirectInbox,
+  type AdminDirectMessage,
+} from '../lib/adminDirectMessages';
 import {
   COMMUNITY_UNREAD_CHANNEL_VIEWS,
   emptyUnreadCounts,
@@ -18,6 +21,7 @@ type UseCommunityChatUnreadArgs = {
   isAdmin: boolean;
   open: boolean;
   activeView: CommunityChatView;
+  adminThreadUserId?: string | null;
 };
 
 export type AdminDmToastState = {
@@ -31,6 +35,7 @@ export function useCommunityChatUnread({
   isAdmin,
   open,
   activeView,
+  adminThreadUserId = null,
 }: UseCommunityChatUnreadArgs) {
   const [unreadByView, setUnreadByView] =
     useState<Record<CommunityUnreadView, number>>(emptyUnreadCounts);
@@ -39,9 +44,11 @@ export function useCommunityChatUnread({
   const toastQueueRef = useRef<string[]>([]);
   const openRef = useRef(open);
   const activeViewRef = useRef(activeView);
+  const adminThreadUserIdRef = useRef(adminThreadUserId);
 
   openRef.current = open;
   activeViewRef.current = activeView;
+  adminThreadUserIdRef.current = adminThreadUserId;
 
   const advanceAdminDmToast = useCallback(() => {
     if (toastTimerRef.current != null) {
@@ -138,7 +145,9 @@ export function useCommunityChatUnread({
     if (isAdmin) {
       const inboxResult = await fetchAdminDirectInbox();
       if (inboxResult.ok) {
-        next['admin-inbox'] = inboxResult.messages.filter((msg) => !msg.readAt).length;
+        next['admin-contact'] = inboxResult.messages.filter(
+          (msg) => !msg.fromAdmin && !msg.readAt,
+        ).length;
       }
     }
 
@@ -151,12 +160,16 @@ export function useCommunityChatUnread({
 
   useEffect(() => {
     if (!userId || !open) return;
+
+    // Admins clear DM unread per thread when opening a member thread, not on tab open.
+    if (isAdmin && activeView === 'admin-contact') return;
+
     markCommunityViewRead(userId, activeView);
     setUnreadByView((prev) => ({
       ...prev,
       [activeView]: 0,
     }));
-  }, [activeView, open, userId]);
+  }, [activeView, isAdmin, open, userId]);
 
   useEffect(() => {
     if (!userId || !isSupabaseConfigured()) return;
@@ -196,22 +209,30 @@ export function useCommunityChatUnread({
     const handleAdminInboxInsert = (payload: { new: unknown }) => {
       const row = payload.new as {
         id?: string;
+        user_id?: string;
         from_admin?: boolean;
         read_at?: string | null;
       };
       if (!row?.id || row.from_admin) return;
       if (row.read_at) return;
-      if (isViewActive('admin-inbox')) return;
-      incrementUnread('admin-inbox');
+
+      const viewingThread =
+        openRef.current &&
+        activeViewRef.current === 'admin-contact' &&
+        adminThreadUserIdRef.current === row.user_id;
+      if (viewingThread) return;
+
+      incrementUnread('admin-contact');
     };
 
     const handleAdminInboxUpdate = (payload: { new: unknown; old: unknown }) => {
-      const nextRow = payload.new as { read_at?: string | null };
-      const prevRow = payload.old as { read_at?: string | null };
+      const nextRow = payload.new as { read_at?: string | null; from_admin?: boolean };
+      const prevRow = payload.old as { read_at?: string | null; from_admin?: boolean };
+      if (nextRow.from_admin || prevRow.from_admin) return;
       if (nextRow.read_at && !prevRow.read_at) {
         setUnreadByView((prev) => ({
           ...prev,
-          'admin-inbox': Math.max(0, prev['admin-inbox'] - 1),
+          'admin-contact': Math.max(0, prev['admin-contact'] - 1),
         }));
       }
     };
@@ -300,8 +321,12 @@ export function getUnreadCountForAdminContactTab(
   unreadByView: Record<CommunityUnreadView, number>,
   activeView: CommunityChatView,
   open: boolean,
+  isAdmin = false,
 ): number {
   if (open && activeView === 'admin-contact') return 0;
+  if (isAdmin) {
+    return unreadByView['admin-contact'] ?? 0;
+  }
   return unreadByView['admin-contact'] ?? 0;
 }
 

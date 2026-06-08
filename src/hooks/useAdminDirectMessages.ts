@@ -2,39 +2,49 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ADMIN_DM_SEND_COOLDOWN_MS,
   fetchAdminDirectInbox,
+  fetchAdminDirectThread,
   fetchOwnAdminDirectMessages,
-  markAdminDirectMessageRead,
+  markAdminDirectThreadRead,
   sendAdminDirectMessage,
+  sendAdminDirectReply,
   type AdminDirectMessage,
 } from '../lib/adminDirectMessages';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 
-export type AdminDirectMessagesMode = 'own' | 'inbox';
+export type AdminDirectMessagesMode = 'own' | 'inbox' | 'thread';
 
 type UseAdminDirectMessagesArgs = {
   mode: AdminDirectMessagesMode;
   userId: string | undefined;
   username: string | undefined;
+  threadUserId?: string;
   enabled: boolean;
-  markReadOnInbox?: boolean;
+  markReadOnThread?: boolean;
 };
 
 export function useAdminDirectMessages({
   mode,
   userId,
   username,
+  threadUserId,
   enabled,
-  markReadOnInbox = false,
+  markReadOnThread = false,
 }: UseAdminDirectMessagesArgs) {
   const [messages, setMessages] = useState<AdminDirectMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
   const lastSentAtRef = useRef(0);
-  const markedReadRef = useRef(new Set<string>());
+  const markedThreadReadRef = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!enabled || !userId) {
+      setMessages([]);
+      setLoading(false);
+      return;
+    }
+
+    if (mode === 'thread' && !threadUserId) {
       setMessages([]);
       setLoading(false);
       return;
@@ -46,7 +56,9 @@ export function useAdminDirectMessages({
     const result =
       mode === 'inbox'
         ? await fetchAdminDirectInbox()
-        : await fetchOwnAdminDirectMessages(userId);
+        : mode === 'thread'
+          ? await fetchAdminDirectThread(threadUserId!)
+          : await fetchOwnAdminDirectMessages(userId);
 
     if (result.ok) {
       setMessages(result.messages);
@@ -55,7 +67,7 @@ export function useAdminDirectMessages({
       setMessages([]);
     }
     setLoading(false);
-  }, [enabled, mode, userId]);
+  }, [enabled, mode, threadUserId, userId]);
 
   useEffect(() => {
     void refresh();
@@ -68,10 +80,14 @@ export function useAdminDirectMessages({
     if (!supabase) return;
 
     const filter =
-      mode === 'own' ? `user_id=eq.${userId}` : undefined;
+      mode === 'own'
+        ? `user_id=eq.${userId}`
+        : mode === 'thread' && threadUserId
+          ? `user_id=eq.${threadUserId}`
+          : undefined;
 
     const channelRef = supabase
-      .channel(`admin-dm:${mode}:${userId}`)
+      .channel(`admin-dm:${mode}:${userId}:${threadUserId ?? 'all'}`)
       .on(
         'postgres_changes',
         {
@@ -103,6 +119,7 @@ export function useAdminDirectMessages({
           };
 
           if (mode === 'own' && next.userId !== userId) return;
+          if (mode === 'thread' && next.userId !== threadUserId) return;
 
           setMessages((prev) => {
             if (prev.some((m) => m.id === next.id)) return prev;
@@ -110,45 +127,99 @@ export function useAdminDirectMessages({
           });
         },
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'admin_direct_messages',
+          ...(filter ? { filter } : {}),
+        },
+        (payload) => {
+          const row = payload.new as {
+            id?: string;
+            read_at?: string | null;
+          };
+          if (!row?.id) return;
+
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === row.id ? { ...m, readAt: row.read_at ?? m.readAt } : m,
+            ),
+          );
+        },
+      )
       .subscribe();
 
     return () => {
       void supabase.removeChannel(channelRef);
     };
-  }, [enabled, mode, userId]);
+  }, [enabled, mode, threadUserId, userId]);
 
   useEffect(() => {
-    if (!markReadOnInbox || mode !== 'inbox' || !enabled || loading) return;
-
-    for (const msg of messages) {
-      if (msg.readAt || markedReadRef.current.has(msg.id)) continue;
-      markedReadRef.current.add(msg.id);
-      void markAdminDirectMessageRead(msg.id).then((result) => {
-        if (result.ok) {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === msg.id
-                ? { ...m, readAt: m.readAt ?? new Date().toISOString() }
-                : m,
-            ),
-          );
-        }
-      });
+    if (
+      !markReadOnThread ||
+      mode !== 'thread' ||
+      !threadUserId ||
+      !enabled ||
+      loading
+    ) {
+      return;
     }
-  }, [enabled, loading, markReadOnInbox, messages, mode]);
+
+    if (markedThreadReadRef.current === threadUserId) return;
+    markedThreadReadRef.current = threadUserId;
+
+    void markAdminDirectThreadRead(threadUserId).then((result) => {
+      if (result.ok) {
+        const readAt = new Date().toISOString();
+        setMessages((prev) =>
+          prev.map((m) =>
+            !m.fromAdmin && !m.readAt ? { ...m, readAt } : m,
+          ),
+        );
+      }
+    });
+  }, [enabled, loading, markReadOnThread, messages, mode, threadUserId]);
+
+  useEffect(() => {
+    if (mode !== 'thread') {
+      markedThreadReadRef.current = null;
+    }
+  }, [mode, threadUserId]);
 
   const send = useCallback(
     async (body: string) => {
-      if (mode !== 'own' || !userId || !username) {
-        return { ok: false as const, error: 'You must be signed in to send a message.' };
-      }
-
       const now = Date.now();
       if (now - lastSentAtRef.current < ADMIN_DM_SEND_COOLDOWN_MS) {
         return {
           ok: false as const,
           error: 'Please wait a moment before sending again.',
         };
+      }
+
+      if (mode === 'thread') {
+        if (!threadUserId) {
+          return { ok: false as const, error: 'Select a conversation first.' };
+        }
+
+        setSending(true);
+        const result = await sendAdminDirectReply(threadUserId, body);
+        setSending(false);
+
+        if (result.ok) {
+          lastSentAtRef.current = now;
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === result.message.id)) return prev;
+            return [...prev, result.message];
+          });
+          return { ok: true as const };
+        }
+        return { ok: false as const, error: result.error };
+      }
+
+      if (mode !== 'own' || !userId || !username) {
+        return { ok: false as const, error: 'You must be signed in to send a message.' };
       }
 
       setSending(true);
@@ -165,7 +236,7 @@ export function useAdminDirectMessages({
       }
       return { ok: false as const, error: result.error };
     },
-    [mode, userId, username],
+    [mode, threadUserId, userId, username],
   );
 
   return { messages, loading, error, sending, send, refresh };

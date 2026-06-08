@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { AdminDmToast } from './AdminDmToast';
 import { useOptionalAudioPlayer } from '../contexts/AudioPlayerProvider';
@@ -7,16 +7,16 @@ import { useAdminDirectMessages } from '../hooks/useAdminDirectMessages';
 import { useCommunityChat } from '../hooks/useCommunityChat';
 import {
   getUnreadCountForAdminContactTab,
-  getUnreadCountForAdminInboxTab,
   getUnreadCountForChannelTab,
   useCommunityChatUnread,
 } from '../hooks/useCommunityChatUnread';
 import {
   ADMIN_DM_MAX_LENGTH,
   ADMIN_DM_SENDER_NAME,
+  buildAdminDmConversations,
   isAdminDirectMessageFromAdmin,
   isCommunityAdmin,
-  type AdminDirectMessage,
+  type AdminDmConversation,
 } from '../lib/adminDirectMessages';
 import {
   COMMUNITY_CHANNELS,
@@ -28,7 +28,7 @@ import { COMMUNITY_MESSAGE_MAX_LENGTH } from '../lib/communityChat';
 import { formatUnreadBadgeCount } from '../lib/communityChatUnread';
 import { getPatreonPageUrl } from '../lib/patreon';
 
-type CommunityView = CommunityChannel | 'admin-contact' | 'admin-inbox';
+type CommunityView = CommunityChannel | 'admin-contact';
 
 function formatMessageTime(iso: string): string {
   const date = new Date(iso);
@@ -42,65 +42,87 @@ function formatMessageTime(iso: string): string {
 }
 
 function isChannelView(view: CommunityView): view is CommunityChannel {
-  return view !== 'admin-contact' && view !== 'admin-inbox';
+  return view !== 'admin-contact';
 }
 
-function viewLabel(view: CommunityView): string {
-  if (view === 'admin-contact') return 'Message Dickalicious';
-  if (view === 'admin-inbox') return 'Admin Inbox';
+function viewLabel(
+  view: CommunityView,
+  isAdmin: boolean,
+  threadUsername: string | null,
+): string {
+  if (view === 'admin-contact') {
+    if (isAdmin && threadUsername) return threadUsername;
+    if (isAdmin) return 'Member messages';
+    return 'Message Dickalicious';
+  }
   return COMMUNITY_CHANNELS.find((ch) => ch.id === view)?.label ?? 'Chat';
 }
 
-function AdminInboxMessageList({
-  messages,
+function AdminConversationList({
+  conversations,
   loading,
+  onSelect,
 }: {
-  messages: AdminDirectMessage[];
+  conversations: AdminDmConversation[];
   loading: boolean;
+  onSelect: (userId: string) => void;
 }) {
   if (loading) {
-    return <p className="muted">Loading inbox…</p>;
+    return <p className="muted">Loading conversations…</p>;
   }
-  if (messages.length === 0) {
+  if (conversations.length === 0) {
     return (
       <div className="community-messages__empty">
         <span className="community-messages__empty-icon" aria-hidden="true">
-          📥
+          ✉️
         </span>
-        <p className="muted community-messages__empty-text">No admin messages yet.</p>
+        <p className="muted community-messages__empty-text">
+          No member messages yet.
+        </p>
       </div>
     );
   }
 
-  const items: ReactNode[] = [];
-  let lastUserId: string | null = null;
-
-  for (const msg of messages) {
-    if (msg.userId !== lastUserId) {
-      lastUserId = msg.userId;
-      items.push(
-        <div key={`group-${msg.userId}-${msg.id}`} className="community-admin-group">
-          <span className="community-admin-group__label">{msg.username}</span>
-        </div>,
-      );
-    }
-    items.push(
-      <article key={msg.id} className="community-message community-message--inbox">
-        <header className="community-message__meta">
-          <strong>{msg.username}</strong>
-          <time dateTime={msg.createdAt}>{formatMessageTime(msg.createdAt)}</time>
-        </header>
-        <p className="community-message__body">{msg.body}</p>
-        {!msg.readAt && (
-          <span className="community-admin-badge" aria-label="Unread">
-            New
-          </span>
-        )}
-      </article>,
-    );
-  }
-
-  return <>{items}</>;
+  return (
+    <ul className="community-admin-conversations" role="list">
+      {conversations.map((conv) => (
+        <li key={conv.userId}>
+          <button
+            type="button"
+            className={`community-admin-conversation${
+              conv.unreadCount > 0 ? ' community-admin-conversation--unread' : ''
+            }`}
+            onClick={() => onSelect(conv.userId)}
+          >
+            <span className="community-admin-conversation__main">
+              <strong className="community-admin-conversation__name">
+                {conv.username}
+              </strong>
+              <span className="community-admin-conversation__preview muted">
+                {conv.lastMessagePreview}
+              </span>
+            </span>
+            <span className="community-admin-conversation__meta">
+              <time
+                className="community-admin-conversation__time muted"
+                dateTime={conv.lastMessageAt}
+              >
+                {formatMessageTime(conv.lastMessageAt)}
+              </time>
+              {conv.unreadCount > 0 && (
+                <span
+                  className="community-admin-conversation__badge"
+                  aria-label={`${conv.unreadCount} unread`}
+                >
+                  {formatUnreadBadgeCount(conv.unreadCount)}
+                </span>
+              )}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 export function CommunityChatBubble() {
@@ -109,6 +131,7 @@ export function CommunityChatBubble() {
   const audio = useOptionalAudioPlayer();
   const [open, setOpen] = useState(false);
   const [activeView, setActiveView] = useState<CommunityView>('global');
+  const [adminThreadUserId, setAdminThreadUserId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [sendError, setSendError] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
@@ -120,7 +143,8 @@ export function CommunityChatBubble() {
   const isAdmin = isCommunityAdmin(session);
   const activeChannel = isChannelView(activeView) ? activeView : 'global';
   const isAdminContact = activeView === 'admin-contact';
-  const isAdminInbox = activeView === 'admin-inbox';
+  const isAdminThread = isAdmin && isAdminContact && adminThreadUserId != null;
+  const isAdminConversationList = isAdmin && isAdminContact && adminThreadUserId == null;
 
   const canAccess = canAccessCommunityChannel(
     activeChannel,
@@ -136,13 +160,30 @@ export function CommunityChatBubble() {
     canPost: canAccess && isChannelView(activeView) && open,
   });
 
+  const adminDmMode = isAdmin
+    ? isAdminThread
+      ? 'thread'
+      : 'inbox'
+    : 'own';
+
   const adminDm = useAdminDirectMessages({
-    mode: isAdminInbox ? 'inbox' : 'own',
+    mode: adminDmMode,
     userId: session?.userId,
     username: session?.username,
-    enabled: open && (isAdminContact || isAdminInbox),
-    markReadOnInbox: isAdminInbox && isAdmin && open,
+    threadUserId: adminThreadUserId ?? undefined,
+    enabled: open && isAdminContact,
+    markReadOnThread: isAdminThread && open,
   });
+
+  const adminConversations = useMemo(
+    () => buildAdminDmConversations(adminDm.messages),
+    [adminDm.messages],
+  );
+
+  const adminThreadUsername =
+    adminConversations.find((conv) => conv.userId === adminThreadUserId)?.username ??
+    adminDm.messages.find((msg) => !msg.fromAdmin)?.username ??
+    null;
 
   const {
     unreadByView,
@@ -154,11 +195,18 @@ export function CommunityChatBubble() {
     isAdmin,
     open,
     activeView,
+    adminThreadUserId,
   });
 
   useEffect(() => {
     setDraft('');
     setSendError('');
+  }, [activeView, adminThreadUserId]);
+
+  useEffect(() => {
+    if (activeView !== 'admin-contact') {
+      setAdminThreadUserId(null);
+    }
   }, [activeView]);
 
   useEffect(() => {
@@ -170,6 +218,7 @@ export function CommunityChatBubble() {
     messages,
     adminDm.messages,
     activeView,
+    adminThreadUserId,
     loading,
     adminDm.loading,
     open,
@@ -225,8 +274,12 @@ export function CommunityChatBubble() {
 
   const showLauncherBadge = totalUnread > 0 && !open;
   const launcherBadgeLabel = formatUnreadBadgeCount(totalUnread);
-  const adminContactUnread = getUnreadCountForAdminContactTab(unreadByView, activeView, open);
-  const adminInboxUnread = getUnreadCountForAdminInboxTab(unreadByView, activeView, open);
+  const adminContactUnread = getUnreadCountForAdminContactTab(
+    unreadByView,
+    activeView,
+    open,
+    isAdmin,
+  );
 
   const shellClassName = [
     'community-chat-widget',
@@ -240,11 +293,17 @@ export function CommunityChatBubble() {
   const panelClassName = [
     'community-chat-widget__panel',
     isAdminContact && 'community-chat-widget__panel--dm',
-    isAdminInbox && 'community-chat-widget__panel--inbox',
+    isAdminConversationList && 'community-chat-widget__panel--inbox',
     showChannelChat && !canAccess && 'community-chat-widget__panel--locked',
   ]
     .filter(Boolean)
     .join(' ');
+
+  const adminSubtitle = isAdminThread
+    ? 'Private thread with this member'
+    : isAdmin
+      ? 'Pick a member to open their thread'
+      : 'Private message to Dickalicious';
 
   return (
     <>
@@ -253,6 +312,7 @@ export function CommunityChatBubble() {
         onDismiss={dismissAdminDmToast}
         onOpenChat={() => {
           setActiveView('admin-contact');
+          setAdminThreadUserId(null);
           setOpen(true);
         }}
       />
@@ -266,19 +326,31 @@ export function CommunityChatBubble() {
         >
           <header className="community-chat-widget__header">
             <div className="community-chat-widget__title-wrap">
-              <div className="community-chat-widget__title-row">
-                <span className="community-chat-widget__title-icon" aria-hidden="true">
-                  {isAdminContact ? '✉️' : isAdminInbox ? '📥' : '💬'}
-                </span>
-                <h2 className="community-chat-widget__title">{viewLabel(activeView)}</h2>
-              </div>
-              <p className="community-chat-widget__subtitle muted">
-                {isAdminContact
-                  ? 'Private message to Dickalicious'
-                  : isAdminInbox
-                    ? 'Member direct messages'
+              {isAdminThread && (
+                <button
+                  type="button"
+                  className="community-chat-widget__back"
+                  onClick={() => setAdminThreadUserId(null)}
+                  aria-label="Back to conversations"
+                >
+                  <span aria-hidden="true">←</span>
+                </button>
+              )}
+              <div className="community-chat-widget__title-block">
+                <div className="community-chat-widget__title-row">
+                  <span className="community-chat-widget__title-icon" aria-hidden="true">
+                    {isAdminContact ? '✉️' : '💬'}
+                  </span>
+                  <h2 className="community-chat-widget__title">
+                    {viewLabel(activeView, isAdmin, adminThreadUsername)}
+                  </h2>
+                </div>
+                <p className="community-chat-widget__subtitle muted">
+                  {isAdminContact
+                    ? adminSubtitle
                     : 'Pick a channel, then chat below'}
-              </p>
+                </p>
+              </div>
             </div>
             <button
               type="button"
@@ -335,7 +407,10 @@ export function CommunityChatBubble() {
               className={`community-channels__tab community-channels__tab--admin${
                 isAdminContact ? ' community-channels__tab--active' : ''
               }`}
-              onClick={() => setActiveView('admin-contact')}
+              onClick={() => {
+                setActiveView('admin-contact');
+                setAdminThreadUserId(null);
+              }}
               aria-current={isAdminContact ? 'true' : undefined}
             >
               Dickalicious
@@ -348,30 +423,122 @@ export function CommunityChatBubble() {
                 </span>
               )}
             </button>
-            {isAdmin && (
-              <button
-                type="button"
-                className={`community-channels__tab community-channels__tab--inbox${
-                  isAdminInbox ? ' community-channels__tab--active' : ''
-                }`}
-                onClick={() => setActiveView('admin-inbox')}
-                aria-current={isAdminInbox ? 'true' : undefined}
-              >
-                Inbox
-                {adminInboxUnread > 0 && (
-                  <span
-                    className="community-channels__badge community-channels__badge--unread"
-                    aria-label={`${adminInboxUnread} unread`}
-                  >
-                    {formatUnreadBadgeCount(adminInboxUnread)}
-                  </span>
-                )}
-              </button>
-            )}
           </nav>
 
           <div className="community-chat-widget__body">
-            {isAdminContact && (
+            {isAdminContact && isAdminConversationList && (
+              <>
+                {adminDm.error && (
+                  <p className="login-error" role="alert">
+                    {adminDm.error}
+                  </p>
+                )}
+
+                <div
+                  ref={listRef}
+                  className="community-messages community-messages--widget community-messages--inbox"
+                  role="log"
+                  aria-live="polite"
+                >
+                  <AdminConversationList
+                    conversations={adminConversations}
+                    loading={adminDm.loading}
+                    onSelect={setAdminThreadUserId}
+                  />
+                </div>
+              </>
+            )}
+
+            {isAdminContact && isAdminThread && (
+              <>
+                {(adminDm.error || error) && (
+                  <p className="login-error" role="alert">
+                    {adminDm.error || error}
+                  </p>
+                )}
+
+                <div
+                  ref={listRef}
+                  className="community-messages community-messages--widget community-messages--ticket"
+                  role="log"
+                  aria-live="polite"
+                >
+                  {adminDm.loading && <p className="muted">Loading thread…</p>}
+                  {!adminDm.loading && adminDm.messages.length === 0 && (
+                    <div className="community-messages__empty">
+                      <span className="community-messages__empty-icon" aria-hidden="true">
+                        ✉️
+                      </span>
+                      <p className="muted community-messages__empty-text">
+                        No messages in this thread yet.
+                      </p>
+                    </div>
+                  )}
+                  {adminDm.messages.map((msg) => {
+                    const fromUser = !isAdminDirectMessageFromAdmin(msg);
+                    return (
+                      <article
+                        key={msg.id}
+                        className={`community-message${
+                          fromUser ? '' : ' community-message--own'
+                        }`}
+                      >
+                        <header className="community-message__meta">
+                          <strong>
+                            {fromUser ? msg.username : ADMIN_DM_SENDER_NAME}
+                          </strong>
+                          <time dateTime={msg.createdAt}>
+                            {formatMessageTime(msg.createdAt)}
+                          </time>
+                        </header>
+                        <p className="community-message__body">{msg.body}</p>
+                      </article>
+                    );
+                  })}
+                </div>
+
+                <form
+                  className="community-compose community-compose--widget"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void handleAdminSend();
+                  }}
+                >
+                  <label className="sr-only" htmlFor="widget-admin-reply-input">
+                    Reply to member
+                  </label>
+                  <textarea
+                    id="widget-admin-reply-input"
+                    className="community-compose__input"
+                    rows={2}
+                    maxLength={maxLength}
+                    placeholder="Write a reply…"
+                    value={draft}
+                    disabled={adminDm.sending}
+                    onChange={(e) => setDraft(e.target.value)}
+                  />
+                  <div className="community-compose__footer">
+                    <span className="muted community-compose__count">
+                      {draft.trim().length}/{maxLength}
+                    </span>
+                    <button
+                      type="submit"
+                      className="btn btn--primary btn--small"
+                      disabled={adminDm.sending || !draft.trim()}
+                    >
+                      {adminDm.sending ? 'Sending…' : 'Reply'}
+                    </button>
+                  </div>
+                  {sendError && (
+                    <p className="login-error" role="alert">
+                      {sendError}
+                    </p>
+                  )}
+                </form>
+              </>
+            )}
+
+            {isAdminContact && !isAdmin && (
               <>
                 {(adminDm.error || error) && (
                   <p className="login-error" role="alert">
@@ -455,28 +622,6 @@ export function CommunityChatBubble() {
                     </p>
                   )}
                 </form>
-              </>
-            )}
-
-            {isAdminInbox && isAdmin && (
-              <>
-                {adminDm.error && (
-                  <p className="login-error" role="alert">
-                    {adminDm.error}
-                  </p>
-                )}
-
-                <div
-                  ref={listRef}
-                  className="community-messages community-messages--widget community-messages--inbox"
-                  role="log"
-                  aria-live="polite"
-                >
-                  <AdminInboxMessageList
-                    messages={adminDm.messages}
-                    loading={adminDm.loading}
-                  />
-                </div>
               </>
             )}
 

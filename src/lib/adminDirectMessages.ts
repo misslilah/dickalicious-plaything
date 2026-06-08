@@ -58,6 +58,51 @@ export function isAdminDirectMessageFromAdmin(message: AdminDirectMessage): bool
   return message.fromAdmin;
 }
 
+export type AdminDmConversation = {
+  userId: string;
+  username: string;
+  lastMessageAt: string;
+  lastMessagePreview: string;
+  unreadCount: number;
+};
+
+export function buildAdminDmConversations(
+  messages: AdminDirectMessage[],
+): AdminDmConversation[] {
+  const byUser = new Map<string, AdminDmConversation>();
+
+  for (const msg of messages) {
+    let conv = byUser.get(msg.userId);
+    if (!conv) {
+      conv = {
+        userId: msg.userId,
+        username: msg.username,
+        lastMessageAt: msg.createdAt,
+        lastMessagePreview: msg.body,
+        unreadCount: 0,
+      };
+      byUser.set(msg.userId, conv);
+    }
+
+    if (!msg.fromAdmin) {
+      conv.username = msg.username;
+    }
+
+    if (msg.createdAt >= conv.lastMessageAt) {
+      conv.lastMessageAt = msg.createdAt;
+      conv.lastMessagePreview = msg.body;
+    }
+
+    if (!msg.fromAdmin && !msg.readAt) {
+      conv.unreadCount += 1;
+    }
+  }
+
+  return Array.from(byUser.values()).sort(
+    (a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime(),
+  );
+}
+
 export function normalizeAdminDmBody(raw: string): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
@@ -88,6 +133,40 @@ export async function fetchOwnAdminDirectMessages(
   if (error) {
     if (/admin_direct_messages|schema cache/i.test(error.message)) {
       return { ok: false, error: ADMIN_DM_MIGRATION_HINT };
+    }
+    return { ok: false, error: error.message };
+  }
+
+  return {
+    ok: true,
+    messages: (data ?? []).map((row) => mapRow(row as AdminDirectMessageRow)),
+  };
+}
+
+export async function fetchAdminDirectThread(
+  targetUserId: string,
+): Promise<{ ok: true; messages: AdminDirectMessage[] } | { ok: false; error: string }> {
+  if (!isSupabaseConfigured()) {
+    return { ok: false, error: 'Supabase is not configured.' };
+  }
+  const supabase = getSupabase();
+  if (!supabase) {
+    return { ok: false, error: 'Supabase is not configured.' };
+  }
+
+  const { data, error } = await supabase
+    .from('admin_direct_messages')
+    .select('id, user_id, username, body, created_at, read_at, from_admin')
+    .eq('user_id', targetUserId)
+    .order('created_at', { ascending: true })
+    .limit(ADMIN_DM_PAGE_SIZE);
+
+  if (error) {
+    if (/admin_direct_messages|schema cache/i.test(error.message)) {
+      return { ok: false, error: ADMIN_DM_MIGRATION_HINT };
+    }
+    if (/row-level security|policy/i.test(error.message)) {
+      return { ok: false, error: 'Admin inbox access required.' };
     }
     return { ok: false, error: error.message };
   }
@@ -168,6 +247,30 @@ export async function sendAdminDirectMessage(
   }
 
   return { ok: true, message: mapRow(data as AdminDirectMessageRow) };
+}
+
+export async function markAdminDirectThreadRead(
+  targetUserId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!isSupabaseConfigured()) {
+    return { ok: false, error: 'Supabase is not configured.' };
+  }
+  const supabase = getSupabase();
+  if (!supabase) {
+    return { ok: false, error: 'Supabase is not configured.' };
+  }
+
+  const { error } = await supabase
+    .from('admin_direct_messages')
+    .update({ read_at: new Date().toISOString() })
+    .eq('user_id', targetUserId)
+    .eq('from_admin', false)
+    .is('read_at', null);
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
 }
 
 export async function markAdminDirectMessageRead(

@@ -6882,6 +6882,118 @@ body.interactive-video-player--pseudo-fs {
   border: 1px solid rgba(251, 191, 36, 0.35);
 }
 
+.community-admin-conversations {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.community-admin-conversation {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(232, 121, 249, 0.18);
+  background: rgba(26, 16, 36, 0.55);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.community-admin-conversation:hover {
+  border-color: rgba(232, 121, 249, 0.35);
+  background: rgba(36, 21, 51, 0.65);
+}
+
+.community-admin-conversation--unread {
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.06);
+}
+
+.community-admin-conversation__main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.community-admin-conversation__name {
+  font-size: 0.88rem;
+}
+
+.community-admin-conversation__preview {
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-admin-conversation__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.community-admin-conversation__time {
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.community-admin-conversation__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #fff;
+  background: #e879f9;
+}
+
+.community-chat-widget__title-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.community-chat-widget__title-block {
+  min-width: 0;
+  flex: 1;
+}
+
+.community-chat-widget__back {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-top: 0.1rem;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(232, 121, 249, 0.25);
+  background: rgba(26, 16, 36, 0.6);
+  color: var(--accent);
+  cursor: pointer;
+  line-height: 1;
+  font-size: 1rem;
+}
+
 /* Community chat floating widget */
 .community-chat-widget {
   --chat-widget-w: clamp(21.25rem, 92vw, 22.5rem);
