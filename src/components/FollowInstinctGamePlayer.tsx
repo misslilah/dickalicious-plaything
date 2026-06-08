@@ -256,22 +256,27 @@ export function FollowInstinctGamePlayer({
     startRound(0);
   }, [clearAdvanceTimeout, playableRounds, startRound]);
 
-  const handlePlayAgain = useCallback(() => {
-    void (async () => {
-      if (replayBusy) return;
-      setReplayError('');
-      setReplayBusy(true);
-      const result = await startMiniGameAttempt('follow_instinct');
-      setReplayBusy(false);
-      if (!result.ok) {
-        setReplayError(result.error);
-        if (result.status) onAttemptStatusChange?.(result.status);
-        return;
-      }
-      onAttemptStatusChange?.(result.status);
-      restartSession();
-    })();
-  }, [onAttemptStatusChange, replayBusy, restartSession]);
+  const handlePlayAgain = useCallback(
+    (lost: boolean) => {
+      void (async () => {
+        if (replayBusy) return;
+        if (lost) {
+          setReplayError('');
+          setReplayBusy(true);
+          const result = await startMiniGameAttempt('follow_instinct');
+          setReplayBusy(false);
+          if (!result.ok) {
+            setReplayError(result.error);
+            if (result.status) onAttemptStatusChange?.(result.status);
+            return;
+          }
+          onAttemptStatusChange?.(result.status);
+        }
+        restartSession();
+      })();
+    },
+    [onAttemptStatusChange, replayBusy, restartSession],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -577,7 +582,7 @@ export function FollowInstinctGamePlayer({
             <button
               type="button"
               className="btn btn--primary"
-              onClick={handlePlayAgain}
+              onClick={() => handlePlayAgain(false)}
               disabled={replayBusy}
             >
               {replayBusy ? 'Starting…' : 'Play again'}

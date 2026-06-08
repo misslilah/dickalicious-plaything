@@ -162,22 +162,27 @@ export function PuzzleSessionPlayer({
     setPhase('playing');
   }, [clearTransitionTimer, resetStreakToZero]);
 
-  const handlePlayAgain = useCallback(() => {
-    void (async () => {
-      if (replayBusy) return;
-      setReplayError('');
-      setReplayBusy(true);
-      const result = await startMiniGameAttempt('puzzle');
-      setReplayBusy(false);
-      if (!result.ok) {
-        setReplayError(result.error);
-        if (result.status) onAttemptStatusChange?.(result.status);
-        return;
-      }
-      onAttemptStatusChange?.(result.status);
-      restartSession();
-    })();
-  }, [onAttemptStatusChange, replayBusy, restartSession]);
+  const handlePlayAgain = useCallback(
+    (lost: boolean) => {
+      void (async () => {
+        if (replayBusy) return;
+        if (lost) {
+          setReplayError('');
+          setReplayBusy(true);
+          const result = await startMiniGameAttempt('puzzle');
+          setReplayBusy(false);
+          if (!result.ok) {
+            setReplayError(result.error);
+            if (result.status) onAttemptStatusChange?.(result.status);
+            return;
+          }
+          onAttemptStatusChange?.(result.status);
+        }
+        restartSession();
+      })();
+    },
+    [onAttemptStatusChange, replayBusy, restartSession],
+  );
 
   if (puzzles.length === 0) {
     return (
@@ -243,7 +248,7 @@ export function PuzzleSessionPlayer({
             <button
               type="button"
               className="btn btn--primary"
-              onClick={handlePlayAgain}
+              onClick={() => handlePlayAgain(false)}
               disabled={replayBusy}
             >
               {replayBusy ? 'Starting…' : 'Play again'}

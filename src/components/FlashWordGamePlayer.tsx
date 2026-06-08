@@ -439,10 +439,10 @@ export function FlashWordGamePlayer({
     setPhase('ready');
   };
 
-  const playAgainFromResult = () => {
+  const playAgainFromResult = (lost: boolean) => {
     void (async () => {
       if (replayBusy) return;
-      if (correct === false) {
+      if (lost) {
         setReplayError('');
         setReplayBusy(true);
         const result = await startMiniGameAttempt('flash_cards');
@@ -696,7 +696,7 @@ export function FlashWordGamePlayer({
               <button
                 type="button"
                 className="btn btn--primary"
-                onClick={playAgainFromResult}
+                onClick={() => playAgainFromResult(correct === false)}
                 disabled={replayBusy}
               >
                 {replayBusy ? 'Starting…' : 'Play again'}
