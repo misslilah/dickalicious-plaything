@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { FlashWordGameModal } from '../components/FlashWordGameModal';
 import { FollowInstinctGameModal } from '../components/FollowInstinctGameModal';
+import { PuzzleGameModal } from '../components/PuzzleGameModal';
 import { MiniGameLeaderboard } from '../components/MiniGameLeaderboard';
 import { useAppStore } from '../hooks/useAppStore';
 import {
@@ -11,16 +12,23 @@ import {
   fetchFollowInstinctGameSummaries,
   type FollowInstinctGameSummary,
 } from '../lib/followInstinctGames';
+import {
+  fetchPuzzleGameSummaries,
+  PUZZLE_SESSION_STREAK_KEY,
+  type PuzzleGameSummary,
+} from '../lib/puzzleGames';
 
 type ActiveGame =
   | { type: 'flash'; id: string }
   | { type: 'instinct'; id: string }
+  | { type: 'puzzle' }
   | null;
 
 export function MiniGames() {
   const { session } = useAppStore();
   const [flashGames, setFlashGames] = useState<FlashWordGameSummary[]>([]);
   const [instinctGames, setInstinctGames] = useState<FollowInstinctGameSummary[]>([]);
+  const [puzzleGames, setPuzzleGames] = useState<PuzzleGameSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeGame, setActiveGame] = useState<ActiveGame>(null);
@@ -32,13 +40,24 @@ export function MiniGames() {
   };
 
   useEffect(() => {
+    return () => {
+      try {
+        sessionStorage.removeItem(PUZZLE_SESSION_STREAK_KEY);
+      } catch {
+        /* sessionStorage unavailable */
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     void (async () => {
       setLoading(true);
       setError('');
-      const [flashResult, instinctResult] = await Promise.all([
+      const [flashResult, instinctResult, puzzleResult] = await Promise.all([
         fetchFlashWordGameSummaries(),
         fetchFollowInstinctGameSummaries(),
+        fetchPuzzleGameSummaries(),
       ]);
       if (cancelled) return;
       setLoading(false);
@@ -47,7 +66,9 @@ export function MiniGames() {
       else setFlashGames(flashResult.games);
       if (!instinctResult.ok) errors.push(instinctResult.error);
       else setInstinctGames(instinctResult.games);
-      if (errors.length === 2) setError(errors.join(' '));
+      if (!puzzleResult.ok) errors.push(puzzleResult.error);
+      else setPuzzleGames(puzzleResult.puzzles);
+      if (errors.length === 3) setError(errors.join(' '));
       else if (errors.length === 1) setError(errors[0]);
     })();
     return () => {
@@ -55,7 +76,8 @@ export function MiniGames() {
     };
   }, []);
 
-  const hasGames = flashGames.length > 0 || instinctGames.length > 0;
+  const hasGames =
+    flashGames.length > 0 || instinctGames.length > 0 || puzzleGames.length > 0;
 
   return (
     <div className="page">
@@ -118,6 +140,22 @@ export function MiniGames() {
               </div>
             </article>
           ))}
+
+          {puzzleGames.length > 0 && (
+            <article className="mini-game-card">
+              <div className="mini-game-card__body">
+                <span className="mini-game-card__badge">Puzzle</span>
+                <h3 className="mini-game-card__title">Puzzle</h3>
+                <button
+                  type="button"
+                  className="btn btn--primary btn--block mini-game-card__play"
+                  onClick={() => setActiveGame({ type: 'puzzle' })}
+                >
+                  Play
+                </button>
+              </div>
+            </article>
+          )}
         </div>
       )}
 
@@ -157,6 +195,9 @@ export function MiniGames() {
       )}
       {activeGame?.type === 'instinct' && (
         <FollowInstinctGameModal gameId={activeGame.id} onClose={closeActiveGame} />
+      )}
+      {activeGame?.type === 'puzzle' && (
+        <PuzzleGameModal onClose={closeActiveGame} />
       )}
     </div>
   );

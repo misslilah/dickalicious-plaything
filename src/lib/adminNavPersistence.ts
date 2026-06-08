@@ -32,7 +32,7 @@ export type AdminVideosTab = (typeof ADMIN_VIDEOS_TABS)[number];
 export const ADMIN_REWARDS_TABS = ['catalog', 'badges'] as const;
 export type AdminRewardsTab = (typeof ADMIN_REWARDS_TABS)[number];
 
-export const ADMIN_MINIGAMES_TABS = ['flash-cards', 'follow-instinct'] as const;
+export const ADMIN_MINIGAMES_TABS = ['flash-cards', 'follow-instinct', 'puzzle'] as const;
 export type AdminMinigamesTab = (typeof ADMIN_MINIGAMES_TABS)[number];
 
 export type AdminNavSnapshot = {

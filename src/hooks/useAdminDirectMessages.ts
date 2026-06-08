@@ -88,6 +88,7 @@ export function useAdminDirectMessages({
             body?: string;
             created_at?: string;
             read_at?: string | null;
+            from_admin?: boolean;
           };
           if (!row?.id) return;
 
@@ -98,6 +99,7 @@ export function useAdminDirectMessages({
             body: String(row.body ?? ''),
             createdAt: String(row.created_at ?? new Date().toISOString()),
             readAt: row.read_at ?? null,
+            fromAdmin: row.from_admin === true,
           };
 
           if (mode === 'own' && next.userId !== userId) return;

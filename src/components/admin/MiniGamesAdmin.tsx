@@ -2,10 +2,12 @@ import { usePersistedSearchParam } from '../../hooks/usePersistedSearchParam';
 import { ADMIN_MINIGAMES_TABS } from '../../lib/adminNavPersistence';
 import { FlashWordGameAdmin } from './FlashWordGameAdmin';
 import { FollowInstinctGameAdmin } from './FollowInstinctGameAdmin';
+import { PuzzleGameAdmin } from './PuzzleGameAdmin';
 
 const MINI_GAMES_TABS = [
   { id: 'flash-cards' as const, label: 'Flash Cards' },
   { id: 'follow-instinct' as const, label: 'Follow your instinct' },
+  { id: 'puzzle' as const, label: 'Puzzle' },
 ] as const;
 
 export function MiniGamesAdmin() {
@@ -37,6 +39,7 @@ export function MiniGamesAdmin() {
       </div>
       {tab === 'flash-cards' && <FlashWordGameAdmin />}
       {tab === 'follow-instinct' && <FollowInstinctGameAdmin />}
+      {tab === 'puzzle' && <PuzzleGameAdmin />}
     </div>
   );
 }

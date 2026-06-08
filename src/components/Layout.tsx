@@ -7,7 +7,6 @@ import { useAppStore } from '../hooks/useAppStore';
 const baseNavItems = [
   { to: '/videos', label: 'Videos', icon: '🎬' },
   { to: '/', label: 'Home', icon: '🏠' },
-  { to: '/community', label: 'Community', icon: '💬' },
   { to: '/rewards', label: 'Rewards', icon: '🏆' },
   { to: '/punishments', label: 'Punishments', icon: '⚡' },
   { to: '/profile', label: 'Profile', icon: '👤' },
