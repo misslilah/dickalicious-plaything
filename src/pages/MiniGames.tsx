@@ -68,6 +68,15 @@ export function MiniGames() {
     }
   }, []);
 
+  const handleAttemptStatusChange = useCallback(
+    (gameType: DailyGameType, status: DailyGameAttemptStatus) => {
+      setAttemptStatuses((prev) =>
+        prev ? { ...prev, [gameType]: status } : prev,
+      );
+    },
+    [],
+  );
+
   useEffect(() => {
     return () => {
       try {
@@ -331,13 +340,28 @@ export function MiniGames() {
       )}
 
       {activeGame?.type === 'flash' && (
-        <FlashWordGameModal gameId={activeGame.id} onClose={closeActiveGame} />
+        <FlashWordGameModal
+          gameId={activeGame.id}
+          onClose={closeActiveGame}
+          onAttemptStatusChange={(status) =>
+            handleAttemptStatusChange('flash_cards', status)
+          }
+        />
       )}
       {activeGame?.type === 'instinct' && (
-        <FollowInstinctGameModal gameId={activeGame.id} onClose={closeActiveGame} />
+        <FollowInstinctGameModal
+          gameId={activeGame.id}
+          onClose={closeActiveGame}
+          onAttemptStatusChange={(status) =>
+            handleAttemptStatusChange('follow_instinct', status)
+          }
+        />
       )}
       {activeGame?.type === 'puzzle' && (
-        <PuzzleGameModal onClose={closeActiveGame} />
+        <PuzzleGameModal
+          onClose={closeActiveGame}
+          onAttemptStatusChange={(status) => handleAttemptStatusChange('puzzle', status)}
+        />
       )}
     </div>
   );

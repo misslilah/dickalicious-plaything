@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PuzzleGamePlayer } from './PuzzleGamePlayer';
 import {
+  startMiniGameAttempt,
+  type DailyGameAttemptStatus,
+} from '../lib/dailyGameAttempts';
+import {
   PUZZLE_SESSION_STREAK_KEY,
   puzzleDisplayTitle,
   type PuzzleGame,
@@ -23,17 +27,21 @@ export type PuzzleSessionQuitHandler = () => void;
 interface PuzzleSessionPlayerProps {
   puzzles: PuzzleGame[];
   onRegisterQuitHandler?: (handler: PuzzleSessionQuitHandler | null) => void;
+  onAttemptStatusChange?: (status: DailyGameAttemptStatus) => void;
 }
 
 export function PuzzleSessionPlayer({
   puzzles,
   onRegisterQuitHandler,
+  onAttemptStatusChange,
 }: PuzzleSessionPlayerProps) {
   const [puzzleIndex, setPuzzleIndex] = useState(0);
   const [streak, setStreak] = useState(0);
   const [phase, setPhase] = useState<SessionPhase>('playing');
   const [lastMoveCount, setLastMoveCount] = useState(0);
   const [streakAtRisk, setStreakAtRisk] = useState(true);
+  const [replayBusy, setReplayBusy] = useState(false);
+  const [replayError, setReplayError] = useState('');
   const streakAtRiskRef = useRef(false);
   const streakRef = useRef(streak);
   const transitionTimerRef = useRef<number | null>(null);
@@ -154,6 +162,23 @@ export function PuzzleSessionPlayer({
     setPhase('playing');
   }, [clearTransitionTimer, resetStreakToZero]);
 
+  const handlePlayAgain = useCallback(() => {
+    void (async () => {
+      if (replayBusy) return;
+      setReplayError('');
+      setReplayBusy(true);
+      const result = await startMiniGameAttempt('puzzle');
+      setReplayBusy(false);
+      if (!result.ok) {
+        setReplayError(result.error);
+        if (result.status) onAttemptStatusChange?.(result.status);
+        return;
+      }
+      onAttemptStatusChange?.(result.status);
+      restartSession();
+    })();
+  }, [onAttemptStatusChange, replayBusy, restartSession]);
+
   if (puzzles.length === 0) {
     return (
       <p className="muted">No puzzles available yet.</p>
@@ -209,9 +234,19 @@ export function PuzzleSessionPlayer({
           <p className="puzzle-session-player__final-streak">
             Final streak: <strong>{streak}</strong>
           </p>
+          {replayError && (
+            <p className="login-error" role="alert">
+              {replayError}
+            </p>
+          )}
           <div className="btn-row">
-            <button type="button" className="btn btn--primary" onClick={restartSession}>
-              Play again
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={handlePlayAgain}
+              disabled={replayBusy}
+            >
+              {replayBusy ? 'Starting…' : 'Play again'}
             </button>
           </div>
         </div>

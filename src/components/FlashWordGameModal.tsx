@@ -3,6 +3,7 @@ import {
   FlashWordGamePlayer,
   type FlashWordGameQuitHandler,
 } from './FlashWordGamePlayer';
+import type { DailyGameAttemptStatus } from '../lib/dailyGameAttempts';
 import {
   fetchFlashWordGame,
   type FlashWordGame,
@@ -11,9 +12,14 @@ import {
 interface FlashWordGameModalProps {
   gameId: string;
   onClose: () => void;
+  onAttemptStatusChange?: (status: DailyGameAttemptStatus) => void;
 }
 
-export function FlashWordGameModal({ gameId, onClose }: FlashWordGameModalProps) {
+export function FlashWordGameModal({
+  gameId,
+  onClose,
+  onAttemptStatusChange,
+}: FlashWordGameModalProps) {
   const [game, setGame] = useState<FlashWordGame | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -114,6 +120,7 @@ export function FlashWordGameModal({ gameId, onClose }: FlashWordGameModalProps)
             <FlashWordGamePlayer
               game={game}
               onRegisterQuitHandler={setQuitHandler}
+              onAttemptStatusChange={onAttemptStatusChange}
             />
           )}
         </div>

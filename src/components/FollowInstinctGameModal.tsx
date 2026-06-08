@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
+import type { DailyGameAttemptStatus } from '../lib/dailyGameAttempts';
 import {
   fetchFollowInstinctGame,
   type FollowInstinctGame,
@@ -13,9 +14,14 @@ const FollowInstinctGamePlayer = lazy(() =>
 interface FollowInstinctGameModalProps {
   gameId: string;
   onClose: () => void;
+  onAttemptStatusChange?: (status: DailyGameAttemptStatus) => void;
 }
 
-export function FollowInstinctGameModal({ gameId, onClose }: FollowInstinctGameModalProps) {
+export function FollowInstinctGameModal({
+  gameId,
+  onClose,
+  onAttemptStatusChange,
+}: FollowInstinctGameModalProps) {
   const [game, setGame] = useState<FollowInstinctGame | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -98,7 +104,10 @@ export function FollowInstinctGameModal({ gameId, onClose }: FollowInstinctGameM
           )}
           {game && (
             <Suspense fallback={<p className="muted">Loading camera game…</p>}>
-              <FollowInstinctGamePlayer game={game} />
+              <FollowInstinctGamePlayer
+                game={game}
+                onAttemptStatusChange={onAttemptStatusChange}
+              />
             </Suspense>
           )}
         </div>

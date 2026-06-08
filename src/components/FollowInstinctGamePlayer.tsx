@@ -17,6 +17,10 @@ import {
   type FollowInstinctRound,
 } from '../lib/followInstinctGames';
 import {
+  startMiniGameAttempt,
+  type DailyGameAttemptStatus,
+} from '../lib/dailyGameAttempts';
+import {
   fetchMiniGameUserBestStreak,
   upsertMiniGameBestStreak,
 } from '../lib/miniGameLeaderboardDb';
@@ -109,9 +113,13 @@ function phrasePoseFirstHint(orderType: FollowInstinctOrderType): string {
 
 interface FollowInstinctGamePlayerProps {
   game: FollowInstinctGame;
+  onAttemptStatusChange?: (status: DailyGameAttemptStatus) => void;
 }
 
-export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps) {
+export function FollowInstinctGamePlayer({
+  game,
+  onAttemptStatusChange,
+}: FollowInstinctGamePlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const landmarkerRef = useRef<FaceLandmarker | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -137,6 +145,8 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
   const sessionBestStreakRef = useRef(0);
   const persistSessionBestStreakRef = useRef<() => void>(() => {});
   const [sessionDone, setSessionDone] = useState(false);
+  const [replayBusy, setReplayBusy] = useState(false);
+  const [replayError, setReplayError] = useState('');
   const [detecting, setDetecting] = useState(false);
   const [orderRevealed, setOrderRevealed] = useState(false);
   const [typedPhrase, setTypedPhrase] = useState('');
@@ -232,6 +242,36 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
   const goToNextRound = useCallback(() => {
     startRound(roundIndex + 1);
   }, [roundIndex, startRound]);
+
+  const restartSession = useCallback(() => {
+    clearAdvanceTimeout();
+    const queue = buildSessionQueue(playableRounds);
+    sessionQueueRef.current = queue;
+    setSessionTotal(queue.length);
+    setSessionDone(false);
+    setStreak(0);
+    setSessionBestStreak(0);
+    sessionBestStreakRef.current = 0;
+    setReplayError('');
+    startRound(0);
+  }, [clearAdvanceTimeout, playableRounds, startRound]);
+
+  const handlePlayAgain = useCallback(() => {
+    void (async () => {
+      if (replayBusy) return;
+      setReplayError('');
+      setReplayBusy(true);
+      const result = await startMiniGameAttempt('follow_instinct');
+      setReplayBusy(false);
+      if (!result.ok) {
+        setReplayError(result.error);
+        if (result.status) onAttemptStatusChange?.(result.status);
+        return;
+      }
+      onAttemptStatusChange?.(result.status);
+      restartSession();
+    })();
+  }, [onAttemptStatusChange, replayBusy, restartSession]);
 
   useEffect(() => {
     let cancelled = false;
@@ -526,9 +566,23 @@ export function FollowInstinctGamePlayer({ game }: FollowInstinctGamePlayerProps
         <div className="follow-instinct-player__done">
           <p className="follow-instinct-player__done-title">Session complete</p>
           <p className="muted">
-            You finished {sessionTotal} round{sessionTotal === 1 ? '' : 's'}. Play again from Mini
-            Games.
+            You finished {sessionTotal} round{sessionTotal === 1 ? '' : 's'}.
           </p>
+          {replayError && (
+            <p className="login-error" role="alert">
+              {replayError}
+            </p>
+          )}
+          <div className="btn-row">
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={handlePlayAgain}
+              disabled={replayBusy}
+            >
+              {replayBusy ? 'Starting…' : 'Play again'}
+            </button>
+          </div>
         </div>
       ) : (
         <>

@@ -23,6 +23,10 @@ import {
   fetchMiniGameUserBestStreak,
   upsertMiniGameBestStreak,
 } from '../lib/miniGameLeaderboardDb';
+import {
+  startMiniGameAttempt,
+  type DailyGameAttemptStatus,
+} from '../lib/dailyGameAttempts';
 import { flashWordZoneStyle } from '../lib/flashWordZonePosition';
 import { useFlashWordImageLayout } from '../hooks/useFlashWordImageLayout';
 
@@ -85,11 +89,13 @@ interface FlashWordGamePlayerProps {
   game: FlashWordGame;
   /** Called on mount with quit handler; modal should invoke before closing. */
   onRegisterQuitHandler?: (handler: FlashWordGameQuitHandler | null) => void;
+  onAttemptStatusChange?: (status: DailyGameAttemptStatus) => void;
 }
 
 export function FlashWordGamePlayer({
   game,
   onRegisterQuitHandler,
+  onAttemptStatusChange,
 }: FlashWordGamePlayerProps) {
   const { awardBonusXp } = useAppStore();
   const xpToast = useOptionalXpToast();
@@ -112,6 +118,8 @@ export function FlashWordGamePlayer({
   const imageFrameRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const [imageFailed, setImageFailed] = useState(false);
+  const [replayBusy, setReplayBusy] = useState(false);
+  const [replayError, setReplayError] = useState('');
   const [distractionFlash, setDistractionFlash] = useState<{
     zoneId: string;
     word: string;
@@ -432,9 +440,24 @@ export function FlashWordGamePlayer({
   };
 
   const playAgainFromResult = () => {
-    streakAtRiskRef.current = true;
-    setRoundCommitted(true);
-    beginRound();
+    void (async () => {
+      if (replayBusy) return;
+      if (correct === false) {
+        setReplayError('');
+        setReplayBusy(true);
+        const result = await startMiniGameAttempt('flash_cards');
+        setReplayBusy(false);
+        if (!result.ok) {
+          setReplayError(result.error);
+          if (result.status) onAttemptStatusChange?.(result.status);
+          return;
+        }
+        onAttemptStatusChange?.(result.status);
+      }
+      streakAtRiskRef.current = true;
+      setRoundCommitted(true);
+      beginRound();
+    })();
   };
 
   const displayedBestStreak = Math.max(sessionBestStreak, allTimeBestStreak);
@@ -664,13 +687,19 @@ export function FlashWordGamePlayer({
             >
               {correct ? 'Correct!' : `Wrong — it was "${flashedWord}".`}
             </p>
+            {replayError && (
+              <p className="login-error" role="alert">
+                {replayError}
+              </p>
+            )}
             <div className="btn-row">
               <button
                 type="button"
                 className="btn btn--primary"
                 onClick={playAgainFromResult}
+                disabled={replayBusy}
               >
-                Play again
+                {replayBusy ? 'Starting…' : 'Play again'}
               </button>
               <button
                 type="button"

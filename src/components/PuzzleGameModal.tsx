@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import type { DailyGameAttemptStatus } from '../lib/dailyGameAttempts';
 import type { PuzzleSessionQuitHandler } from './PuzzleSessionPlayer';
 import { fetchActivePuzzleGames, type PuzzleGame } from '../lib/puzzleGames';
 
@@ -10,9 +11,13 @@ const PuzzleSessionPlayerLazy = lazy(() =>
 
 interface PuzzleGameModalProps {
   onClose: () => void;
+  onAttemptStatusChange?: (status: DailyGameAttemptStatus) => void;
 }
 
-export function PuzzleGameModal({ onClose }: PuzzleGameModalProps) {
+export function PuzzleGameModal({
+  onClose,
+  onAttemptStatusChange,
+}: PuzzleGameModalProps) {
   const [puzzles, setPuzzles] = useState<PuzzleGame[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -105,6 +110,7 @@ export function PuzzleGameModal({ onClose }: PuzzleGameModalProps) {
               <PuzzleSessionPlayerLazy
                 puzzles={puzzles}
                 onRegisterQuitHandler={setQuitHandler}
+                onAttemptStatusChange={onAttemptStatusChange}
               />
             </Suspense>
           )}
