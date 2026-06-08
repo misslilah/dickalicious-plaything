@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommunityChannel } from '../lib/communityChannels';
-import {
-  fetchAdminDirectInbox,
-  type AdminDirectMessage,
-} from '../lib/adminDirectMessages';
+import { fetchAdminDirectInbox } from '../lib/adminDirectMessages';
 import {
   COMMUNITY_UNREAD_CHANNEL_VIEWS,
   emptyUnreadCounts,
