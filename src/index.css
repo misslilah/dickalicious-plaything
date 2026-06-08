@@ -4648,9 +4648,20 @@ a.task-list-row {
   font-size: 0.85rem;
 }
 
+.mini-game-card__attempt-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
 .mini-game-card__meta {
   margin: 0;
   font-size: 0.75rem;
+}
+
+.mini-game-card__meta--hint {
+  font-size: 0.7rem;
+  opacity: 0.85;
 }
 
 .mini-game-card__play {
