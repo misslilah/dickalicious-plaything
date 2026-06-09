@@ -78,15 +78,15 @@ export async function purchaseTierShopVideoDb(
   }
 
   const pointsRemaining = payload.points_remaining;
-  const videoId = payload.video_id;
+  const returnedVideoId = payload.video_id;
   const videoTitle = payload.video_title;
 
   if (typeof pointsRemaining !== 'number') {
     return { ok: false, error: 'Purchase succeeded but balance was not returned.' };
   }
-  if (typeof videoId !== 'string' || typeof videoTitle !== 'string') {
+  if (typeof returnedVideoId !== 'string' || typeof videoTitle !== 'string') {
     return { ok: false, error: 'Purchase succeeded but video details were not returned.' };
   }
 
-  return { ok: true, pointsRemaining, videoId, videoTitle };
+  return { ok: true, pointsRemaining, videoId: returnedVideoId, videoTitle };
 }
