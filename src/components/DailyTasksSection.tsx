@@ -1,13 +1,17 @@
 import type { CSSProperties } from 'react';
 import { TaskCard } from './TaskCard';
 import { useAppStore } from '../hooks/useAppStore';
-import { completionStats, getTodayPlan } from '../lib/gameLogic';
+import { completionStats, getResetHour, getTodayPlan } from '../lib/gameLogic';
 import { formatDisplayDate, todayKey } from '../lib/dates';
-import { getResetHour } from '../lib/gameLogic';
 
 export function DailyTasksSection() {
-  const { state, completeTask, uncompleteTask, markTaskStarted, closeDay } =
-    useAppStore();
+  const {
+    state,
+    completeTask,
+    uncompleteTask,
+    markTaskStarted,
+    closeDay,
+  } = useAppStore();
   const plan = getTodayPlan(state);
   const stats = completionStats(plan);
   const dateKey = todayKey(getResetHour(state));

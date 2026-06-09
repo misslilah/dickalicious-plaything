@@ -1,0 +1,3 @@
+# Throne webhook POST has no Supabase JWT — verify THRONE_WEBHOOK_SECRET in handler.
+# Deploy: supabase functions deploy throne-webhook --no-verify-jwt
+verify_jwt = false

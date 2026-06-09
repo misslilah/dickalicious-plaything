@@ -278,6 +278,92 @@ export interface VideoPlaylistItem {
 }
 
 /** Video metadata; file in Supabase Storage at `storagePath`. */
+export type TrainingProofStatus = 'pending' | 'approved' | 'rejected';
+
+export interface TrainingTask {
+  id: string;
+  title: string;
+  description: string;
+  sortOrder: number;
+  videoPath?: string | null;
+  requiredPhrase?: string;
+  requiredPhraseRepeatCount?: number;
+  timerSeconds?: number;
+  openUrl?: string;
+  /** When true, completion requires Throne gift webhook or admin confirmation. */
+  thronePayment?: boolean;
+  requiresProofPhoto: boolean;
+  isActive: boolean;
+  /** When set, task is personal training for this user only. */
+  assignedUserId?: string | null;
+}
+
+export type ThronePaymentPendingStatus =
+  | 'waiting'
+  | 'completed'
+  | 'cancelled'
+  | 'expired';
+
+export interface ThronePaymentPending {
+  id: string;
+  userId: string;
+  taskId: string;
+  status: ThronePaymentPendingStatus;
+  createdAt: string;
+  expiresAt: string;
+  completedAt: string | null;
+  giftEventId: string | null;
+}
+
+export interface ThroneGiftEvent {
+  id: string;
+  receivedAt: string;
+  eventType: string;
+  gifterName: string | null;
+  itemName: string | null;
+  amountCents: number | null;
+  currency: string | null;
+  matchedUserId: string | null;
+  matchedTaskId: string | null;
+  payload?: Record<string, unknown> | null;
+}
+
+/** Active Slut-tier member for admin Training → Sluts tab. */
+export interface SlutTrainingMember {
+  id: string;
+  username: string;
+  blackmailEnabled: boolean;
+  pendingProofCount: number;
+}
+
+export interface TrainingTaskCompletion {
+  id: string;
+  userId: string;
+  taskId: string;
+  completedAt: string;
+  proofPhotoPath?: string | null;
+  proofStatus?: TrainingProofStatus | null;
+  verifiedAt?: string | null;
+  verifiedBy?: string | null;
+}
+
+export interface TrainingBlackmailProfile {
+  enabled: boolean;
+  consentedAt: string | null;
+}
+
+/** Admin view of a proof submission pending verification. */
+export interface TrainingProofSubmission {
+  completionId: string;
+  userId: string;
+  username: string;
+  taskId: string;
+  taskTitle: string;
+  completedAt: string;
+  proofPhotoPath: string;
+  proofStatus: TrainingProofStatus;
+}
+
 export interface Video {
   id: string;
   categoryId: string;

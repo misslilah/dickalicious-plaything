@@ -20,6 +20,7 @@ import {
   type TaskUserStage,
 } from '../lib/levels';
 import { getCategoryTaskStatus } from '../lib/gameLogic';
+import { dailyTaskCompletionBlockedMessage, dailyTaskCompletionRemainingLabel } from '../lib/dailyTaskCompletions';
 import type { Task, TaskFrequency, TaskScope } from '../types';
 import { isCategoryScopeTask, TASK_SCOPE_OPTIONS } from '../lib/taskScope';
 import {
@@ -50,8 +51,21 @@ export function CategoryDetail() {
     deleteTask,
     joinCategory,
     leaveCategory,
+    dailyTaskCompletionStatus,
   } = useAppStore();
   const isAdmin = session?.role === 'admin';
+  const atDailyTaskLimit =
+    !isAdmin &&
+    dailyTaskCompletionStatus != null &&
+    !dailyTaskCompletionStatus.unlimited &&
+    !dailyTaskCompletionStatus.canComplete;
+  const dailyTaskLimitMessage = dailyTaskCompletionStatus
+    ? dailyTaskCompletionBlockedMessage(dailyTaskCompletionStatus)
+    : 'Category task limit reached (3/3). Come back tomorrow.';
+  const categoryLimitLabel =
+    !isAdmin && dailyTaskCompletionStatus
+      ? dailyTaskCompletionRemainingLabel(dailyTaskCompletionStatus)
+      : null;
 
   const category = state.categories.find((c) => c.id === categoryId);
   const isMember =
@@ -306,6 +320,9 @@ export function CategoryDetail() {
               </p>
             </div>
           )}
+          {categoryLimitLabel && isMember && (
+            <p className="muted">{categoryLimitLabel}</p>
+          )}
         </div>
       </header>
 
@@ -369,6 +386,14 @@ export function CategoryDetail() {
         </section>
       )}
 
+      {atDailyTaskLimit && isMember && !categoryLocked && (
+        <section className="card">
+          <p className="login-error" role="alert">
+            {dailyTaskLimitMessage}
+          </p>
+        </section>
+      )}
+
       {isMember && !categoryLocked ? (
         grouped.length === 0 ? (
           <section className="card">
@@ -388,6 +413,8 @@ export function CategoryDetail() {
                       task={task}
                       categoryId={category.id}
                       status={getCategoryTaskStatus(state, task.id)}
+                      dailyLimitBlocked={atDailyTaskLimit}
+                      dailyLimitMessage={dailyTaskLimitMessage}
                     />
                     {(task.malusPointsOnFail ?? 0) > 0 && (
                       <p className="muted task-malus-hint">

@@ -11,6 +11,7 @@ export const ADMIN_VIDEOS_TAB_PARAM = 'videosTab';
 export const ADMIN_VIDEOS_TAB_SHORT_PARAM = 'tab';
 export const ADMIN_REWARDS_TAB_PARAM = 'rewardsTab';
 export const ADMIN_MINIGAMES_TAB_PARAM = 'minigamesTab';
+export const ADMIN_TRAINING_TAB_PARAM = 'trainingTab';
 
 export const ADMIN_SECTIONS = [
   'categories',
@@ -22,6 +23,7 @@ export const ADMIN_SECTIONS = [
   'gifbank',
   'audio',
   'minigames',
+  'training',
 ] as const;
 
 export type AdminSectionId = (typeof ADMIN_SECTIONS)[number];
@@ -35,11 +37,15 @@ export type AdminRewardsTab = (typeof ADMIN_REWARDS_TABS)[number];
 export const ADMIN_MINIGAMES_TABS = ['flash-cards', 'follow-instinct', 'puzzle'] as const;
 export type AdminMinigamesTab = (typeof ADMIN_MINIGAMES_TABS)[number];
 
+export const ADMIN_TRAINING_TABS = ['tasks', 'sluts', 'proofs', 'throne'] as const;
+export type AdminTrainingTab = (typeof ADMIN_TRAINING_TABS)[number];
+
 export type AdminNavSnapshot = {
   section: AdminSectionId;
   videosTab?: AdminVideosTab;
   rewardsTab?: AdminRewardsTab;
   minigamesTab?: AdminMinigamesTab;
+  trainingTab?: AdminTrainingTab;
 };
 
 const ADMIN_NAV_PARAM_KEYS = [
@@ -49,6 +55,7 @@ const ADMIN_NAV_PARAM_KEYS = [
   ADMIN_VIDEOS_TAB_SHORT_PARAM,
   ADMIN_REWARDS_TAB_PARAM,
   ADMIN_MINIGAMES_TAB_PARAM,
+  ADMIN_TRAINING_TAB_PARAM,
 ] as const;
 
 function includes<T extends string>(allowed: readonly T[], value: string | null): value is T {
@@ -76,6 +83,10 @@ export function isAdminMinigamesTab(value: string | null): value is AdminMinigam
   return includes(ADMIN_MINIGAMES_TABS, value);
 }
 
+export function isAdminTrainingTab(value: string | null): value is AdminTrainingTab {
+  return includes(ADMIN_TRAINING_TABS, value);
+}
+
 export function parseAdminNavFromSearchParams(
   params: URLSearchParams,
 ): AdminNavSnapshot {
@@ -93,7 +104,10 @@ export function parseAdminNavFromSearchParams(
   const minigamesTabRaw = params.get(ADMIN_MINIGAMES_TAB_PARAM);
   const minigamesTab = isAdminMinigamesTab(minigamesTabRaw) ? minigamesTabRaw : undefined;
 
-  return { section, videosTab, rewardsTab, minigamesTab };
+  const trainingTabRaw = params.get(ADMIN_TRAINING_TAB_PARAM);
+  const trainingTab = isAdminTrainingTab(trainingTabRaw) ? trainingTabRaw : undefined;
+
+  return { section, videosTab, rewardsTab, minigamesTab, trainingTab };
 }
 
 export function adminNavToSearchParams(nav: AdminNavSnapshot): URLSearchParams {
@@ -113,6 +127,9 @@ export function adminNavToSearchParams(nav: AdminNavSnapshot): URLSearchParams {
   if (nav.minigamesTab && nav.minigamesTab !== 'flash-cards') {
     params.set(ADMIN_MINIGAMES_TAB_PARAM, nav.minigamesTab);
   }
+  if (nav.trainingTab && nav.trainingTab !== 'tasks') {
+    params.set(ADMIN_TRAINING_TAB_PARAM, nav.trainingTab);
+  }
   return params;
 }
 
@@ -131,6 +148,9 @@ function parseStoredAdminNav(raw: string): AdminNavSnapshot | null {
         : undefined,
       minigamesTab: isAdminMinigamesTab(parsed.minigamesTab ?? null)
         ? parsed.minigamesTab
+        : undefined,
+      trainingTab: isAdminTrainingTab(parsed.trainingTab ?? null)
+        ? parsed.trainingTab
         : undefined,
     };
   } catch {

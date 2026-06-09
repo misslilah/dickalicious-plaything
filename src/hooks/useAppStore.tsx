@@ -73,6 +73,7 @@ import {
   syncCategoryProgressDb,
 } from '../lib/categoryMembersDb';
 import { canJoinCategory } from '../lib/categoryProgression';
+import { todayKey } from '../lib/dates';
 import {
   acceptPunishment,
   addVideoXp,
@@ -82,6 +83,7 @@ import {
   completeTask,
   dismissPunishment,
   ensureDailyPlan,
+  getResetHour,
   markTaskStarted,
   processDayRollover,
   purchaseReward,
@@ -95,11 +97,17 @@ import {
 } from '../lib/punishmentCooldown';
 import { completePunishmentDb } from '../lib/punishmentCooldownDb';
 import {
+  type DailyTaskCompletionStatus,
+  fetchDailyTaskCompletionStatus,
+  recordTaskCompletionDb,
+} from '../lib/dailyTaskCompletions';
+import {
   readBubblesEnabledFromStorage,
   writeBubblesEnabledToStorage,
 } from '../lib/appSettings';
 import { createInitialState } from '../lib/seed';
 import { isSupabaseConfigured, SUPABASE_SETUP_HINT } from '../lib/supabase';
+import { countsTowardDailyCompletionLimit } from '../lib/taskScope';
 import { fetchUserProgress, saveUserProgress } from '../lib/userProgressDb';
 import {
   tryRecordVideoCompletion,
@@ -150,7 +158,9 @@ interface AppStoreValue {
     password: string,
     role: UserRole,
   ) => Promise<MutateResult>;
-  completeTask: (taskId: string) => void;
+  dailyTaskCompletionStatus: DailyTaskCompletionStatus | null;
+  refreshDailyTaskCompletionStatus: () => Promise<void>;
+  completeTask: (taskId: string) => Promise<MutateResult>;
   recordBadgeTaskTime: (taskId: string, seconds: number) => void;
   /** Hidden counter: soap bubble popped (logged-in users only). */
   recordSoapBubblePop: () => void;
@@ -249,7 +259,20 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [dataLoading, setDataLoading] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
   const [lastSaveError, setLastSaveError] = useState<string | null>(null);
+  const [dailyTaskCompletionStatus, setDailyTaskCompletionStatus] =
+    useState<DailyTaskCompletionStatus | null>(null);
   const userIdRef = useRef<string | null>(null);
+
+  const refreshDailyTaskCompletionStatus = useCallback(async () => {
+    if (!userIdRef.current || !isSupabaseConfigured()) {
+      setDailyTaskCompletionStatus(null);
+      return;
+    }
+    const result = await fetchDailyTaskCompletionStatus();
+    if (result.ok) {
+      setDailyTaskCompletionStatus(result.status);
+    }
+  }, []);
 
   const persistUserProgress = useCallback(async (next: AppState) => {
     const userId = userIdRef.current;
@@ -353,6 +376,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       merged = ensureDailyPlan(merged, undefined, userId);
       setState(merged);
       void persistUserProgress(merged);
+      void refreshDailyTaskCompletionStatus();
     } catch (err) {
       setDataError(
         err instanceof Error ? err.message : 'Failed to load app data from Supabase.',
@@ -360,7 +384,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     } finally {
       setDataLoading(false);
     }
-  }, [persistUserProgress]);
+  }, [persistUserProgress, refreshDailyTaskCompletionStatus]);
 
   useEffect(() => {
     void (async () => {
@@ -388,6 +412,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       if (!authSession) {
         userIdRef.current = null;
         setSession(null);
+        setDailyTaskCompletionStatus(null);
         setState(createInitialState());
         return;
       }
@@ -493,11 +518,35 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         if (denied) return denied;
         return createUser(username, password, role);
       },
-      completeTask: (taskId) => {
+      dailyTaskCompletionStatus,
+      refreshDailyTaskCompletionStatus,
+      completeTask: async (taskId) => {
         const task = state.tasks.find((t) => t.id === taskId);
+        const date = todayKey(getResetHour(state));
+        const plan = state.dailyPlans[date];
+        const entry = plan?.tasks.find((t) => t.taskId === taskId);
+        if (entry?.completed) return { ok: true };
+
+        const userId = userIdRef.current;
+        const isAdmin = session?.role === 'admin';
+        const countsTowardLimit =
+          task != null && countsTowardDailyCompletionLimit(task);
+
+        if (userId && isSupabaseConfigured() && !isAdmin && countsTowardLimit) {
+          const recordResult = await recordTaskCompletionDb(taskId);
+          if (!recordResult.ok) {
+            if (recordResult.status) {
+              setDailyTaskCompletionStatus(recordResult.status);
+            }
+            return { ok: false, error: recordResult.error };
+          }
+          setDailyTaskCompletionStatus(recordResult.status);
+        } else if (userId && isSupabaseConfigured() && isAdmin) {
+          void refreshDailyTaskCompletionStatus();
+        }
+
         const next = completeTask(state, taskId, session?.userId ?? null);
         applyUserState(next);
-        const userId = userIdRef.current;
         const categoryId = task?.categoryId;
         if (
           userId &&
@@ -521,6 +570,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         if (userId) {
           void runBadgeUnlockOnComplete(userId, next, taskId);
         }
+        return { ok: true };
       },
       recordBadgeTaskTime: (taskId, seconds) => {
         const userId = userIdRef.current;
@@ -1140,6 +1190,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       runBadgeUnlockOnTime,
       runBadgeUnlockOnBubblePop,
       requireAdmin,
+      dailyTaskCompletionStatus,
+      refreshDailyTaskCompletionStatus,
     ],
   );
 

@@ -94,11 +94,13 @@ export function TaskFocusPage() {
     else blocker.reset();
   }, [blocker]);
 
-  const handleFinished = useCallback(() => {
-    if (!taskId) return;
+  const handleFinished = useCallback(async () => {
+    if (!taskId) return { ok: false as const, error: 'Task not found.' };
+    const result = await completeTask(taskId);
+    if (!result.ok) return result;
     allowNavigationRef.current = true;
-    completeTask(taskId);
     navigate(`/category/${categoryId}`, { replace: true });
+    return { ok: true as const };
   }, [taskId, completeTask, navigate, categoryId]);
 
   if (!category || !task || !validTask) {

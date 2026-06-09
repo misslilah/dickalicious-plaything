@@ -1,8 +1,10 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { AudioPlayerBar } from './AudioPlayerBar';
 import { AudioPlaylistPreviewModal } from './AudioPlaylistPreviewModal';
+import { ThroneGiftToast } from './ThroneGiftToast';
 import { useAudioPlayer } from '../contexts/AudioPlayerProvider';
 import { useAppStore } from '../hooks/useAppStore';
+import { useThroneGiftRealtime } from '../hooks/useThroneGiftRealtime';
 
 const baseNavItems = [
   { to: '/videos', label: 'Videos', icon: '🎬' },
@@ -19,6 +21,7 @@ const adminNavItem = { to: '/admin', label: 'Admin', icon: '🛠️' };
 
 export function Layout() {
   const { session } = useAppStore();
+  const { toast, dismissToast } = useThroneGiftRealtime(session?.userId);
   const { currentTrack } = useAudioPlayer();
   const { pathname } = useLocation();
   const isAdminRoute = pathname.startsWith('/admin');
@@ -52,6 +55,7 @@ export function Layout() {
       </main>
       <AudioPlayerBar />
       <AudioPlaylistPreviewModal />
+      <ThroneGiftToast toast={toast} userId={session?.userId} onDismiss={dismissToast} />
       <nav className="bottom-nav" aria-label="Main navigation">
         {navItems.map((item) => (
           <NavLink

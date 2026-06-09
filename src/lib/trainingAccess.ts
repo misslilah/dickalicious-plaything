@@ -11,4 +11,10 @@ export function canAccessTraining(
 }
 
 export const TRAINING_CERTIFICATION_TEXT =
-  'Je certifie léguer l\'entiereté de mon entrainement à ma maitresse ainsi que tout ce qui sera nécessaire pour mon apprentissage';
+  'I certify that I entrust my entire training to my Mistress, including everything required for my development.';
+
+export const BLACKMAIL_CERTIFICATION_TEXT =
+  'I certify that I grant my Mistress access to my photos and consent to all usage of those images within our dynamic.';
+
+export const BLACKMAIL_CERTIFICATION_FINE_PRINT =
+  'This is fictional roleplay content.';

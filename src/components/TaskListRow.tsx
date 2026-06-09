@@ -20,6 +20,8 @@ interface TaskListRowProps {
   categoryId: string;
   status: CategoryTaskStatus;
   disabled?: boolean;
+  dailyLimitBlocked?: boolean;
+  dailyLimitMessage?: string;
 }
 
 export function TaskListRow({
@@ -27,8 +29,25 @@ export function TaskListRow({
   categoryId,
   status,
   disabled = false,
+  dailyLimitBlocked = false,
+  dailyLimitMessage,
 }: TaskListRowProps) {
   const to = `/category/${categoryId}/task/${task.id}`;
+
+  if (dailyLimitBlocked && status !== 'done') {
+    return (
+      <button
+        type="button"
+        className={`task-list-row task-list-row--${status} task-list-row--disabled`}
+        onClick={() => {
+          if (dailyLimitMessage) window.alert(dailyLimitMessage);
+        }}
+        aria-label={`${task.title} — category task limit reached`}
+      >
+        <TaskListRowContent task={task} status={status} />
+      </button>
+    );
+  }
 
   if (disabled) {
     return (

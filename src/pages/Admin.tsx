@@ -109,6 +109,7 @@ import {
   updateAudioPlaylistsOrder,
 } from '../lib/audioPlaylist';
 import { MiniGamesAdmin } from '../components/admin/MiniGamesAdmin';
+import { TrainingAdmin } from '../components/admin/TrainingAdmin';
 import { InteractiveVideoAdmin } from '../components/admin/InteractiveVideoAdmin';
 import { UploadProgressBar } from '../components/UploadProgressBar';
 
@@ -167,6 +168,12 @@ const ADMIN_SECTIONS = [
     icon: '🎮',
     hint: 'Game settings',
   },
+  {
+    id: 'training' as const,
+    label: 'Training',
+    icon: '📚',
+    hint: 'Tasks & proof photos',
+  },
 ];
 
 const CATEGORY_COLORS = [
@@ -196,7 +203,7 @@ export function Admin() {
       <header className="page-header">
         <h2>Admin</h2>
         <p className="muted">
-          Manage categories, tasks, rewards, punishments, videos, audio playlist, mini games, and users.
+          Manage categories, tasks, rewards, punishments, videos, audio playlist, mini games, training, and users.
         </p>
       </header>
 
@@ -239,6 +246,7 @@ export function Admin() {
           {section === 'gifbank' && <GifBankAdmin />}
           {section === 'audio' && <AudioPlaylistAdmin />}
           {section === 'minigames' && <MiniGamesAdmin />}
+          {section === 'training' && <TrainingAdmin />}
         </div>
       </div>
 

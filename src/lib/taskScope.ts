@@ -55,3 +55,8 @@ export function isHomePlanTask(task: Task, userId: string | null): boolean {
   if (scope === 'custom' && userId && task.assignedUserId === userId) return true;
   return false;
 }
+
+/** Whether completing this task counts toward the 3/day category completion cap. */
+export function countsTowardDailyCompletionLimit(task: Task): boolean {
+  return (task.taskScope ?? 'category') === 'category';
+}

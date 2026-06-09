@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Task } from '../types';
 import { useTaskCompletion } from '../hooks/useTaskCompletion';
 import { useAppStore } from '../hooks/useAppStore';
+import { dailyTaskCompletionBlockedMessage } from '../lib/dailyTaskCompletions';
+import { countsTowardDailyCompletionLimit } from '../lib/taskScope';
 import { getPhraseRepeatCount } from '../lib/phraseChallenge';
 import {
   markLinkedMediaComplete,
@@ -13,13 +15,15 @@ import { clearDuration } from '../lib/taskDuration';
 import { PhraseChallengeModal } from './PhraseChallengeModal';
 import { TaskLinkedMediaModal } from './TaskLinkedMediaModal';
 
+type TaskCompleteResult = { ok: true } | { ok: false; error: string };
+
 interface TaskCompletionGateProps {
   task: Task;
   completed: boolean;
   disabled?: boolean;
   variant?: 'list' | 'focus';
   onStart?: () => void;
-  onComplete: () => void;
+  onComplete: () => TaskCompleteResult | Promise<TaskCompleteResult>;
   onUncomplete?: () => void;
   children: ReactNode;
 }
@@ -34,11 +38,27 @@ export function TaskCompletionGate({
   onUncomplete,
   children,
 }: TaskCompletionGateProps) {
-  const { applyTaskMalus, recordBadgeTaskTime } = useAppStore();
+  const {
+    applyTaskMalus,
+    recordBadgeTaskTime,
+    dailyTaskCompletionStatus,
+    session,
+  } = useAppStore();
   const [showPhraseModal, setShowPhraseModal] = useState(false);
   const [showMediaModal, setShowMediaModal] = useState(false);
   const [phraseFailNotice, setPhraseFailNotice] = useState<string | null>(null);
   const [mediaFailNotice, setMediaFailNotice] = useState<string | null>(null);
+  const [completionError, setCompletionError] = useState<string | null>(null);
+  const [completing, setCompleting] = useState(false);
+  const isAdmin = session?.role === 'admin';
+  const enforceDailyLimit = countsTowardDailyCompletionLimit(task);
+  const atDailyLimit =
+    enforceDailyLimit &&
+    !completed &&
+    !isAdmin &&
+    dailyTaskCompletionStatus != null &&
+    !dailyTaskCompletionStatus.unlimited &&
+    !dailyTaskCompletionStatus.canComplete;
   const focusMode = variant === 'focus';
   const timerCreditedRef = useRef(false);
   const durationCreditedRef = useRef(false);
@@ -79,7 +99,21 @@ export function TaskCompletionGate({
   useEffect(() => {
     timerCreditedRef.current = false;
     durationCreditedRef.current = false;
+    setCompletionError(null);
   }, [task.id]);
+
+  const runComplete = async () => {
+    if (completed || disabled || completing || atDailyLimit) return;
+    setCompletionError(null);
+    setCompleting(true);
+    const result = await Promise.resolve(onComplete());
+    setCompleting(false);
+    if (!result.ok) {
+      setCompletionError(result.error);
+      return;
+    }
+    finishRequirements();
+  };
 
   useEffect(() => {
     if (
@@ -178,19 +212,25 @@ export function TaskCompletionGate({
       setPhraseFailNotice(null);
       return;
     }
+    if (atDailyLimit) {
+      setCompletionError(
+        dailyTaskCompletionStatus
+          ? dailyTaskCompletionBlockedMessage(dailyTaskCompletionStatus)
+          : 'Category task limit reached (3/3). Come back tomorrow.',
+      );
+      return;
+    }
     if (hasPhrase && !phraseDone && !phraseChallengeFailed) {
       openPhraseChallenge();
       return;
     }
-    if (!canComplete || disabled) return;
-    finishRequirements();
-    onComplete();
+    if (!canComplete || disabled || completing) return;
+    void runComplete();
   };
 
   const handleFinished = () => {
-    if (completed || disabled || !canComplete) return;
-    finishRequirements();
-    onComplete();
+    if (completed || disabled || !canComplete || completing || atDailyLimit) return;
+    void runComplete();
   };
 
   const handlePhrasePassed = () => {
@@ -231,7 +271,10 @@ export function TaskCompletionGate({
   };
 
   const checkboxDisabled =
-    disabled || (!completed && hasRequirements && !canComplete);
+    disabled ||
+    completing ||
+    atDailyLimit ||
+    (!completed && hasRequirements && !canComplete);
 
   const requirementHints: string[] = [];
   if (!completed && hasRequirements) {
@@ -252,6 +295,15 @@ export function TaskCompletionGate({
 
   const gateContent = (
     <>
+      {(completionError || atDailyLimit) && !completed && (
+        <p className="task-card__phrase-fail" role="alert">
+          {completionError ??
+            (dailyTaskCompletionStatus
+              ? dailyTaskCompletionBlockedMessage(dailyTaskCompletionStatus)
+              : 'Category task limit reached (3/3). Come back tomorrow.')}
+        </p>
+      )}
+
       {(phraseFailNotice || phraseChallengeFailed) && !completed && (
         <p className="task-card__phrase-fail" role="alert">
           {phraseFailNotice ??
@@ -383,13 +435,20 @@ export function TaskCompletionGate({
 
       {focusMode && !completed && !disabled && (
         <div className="task-focus__actions">
-          {canComplete ? (
+          {atDailyLimit ? (
+            <p className="task-focus__lock login-error" role="alert">
+              {dailyTaskCompletionStatus
+                ? dailyTaskCompletionBlockedMessage(dailyTaskCompletionStatus)
+                : 'Category task limit reached (3/3). Come back tomorrow.'}
+            </p>
+          ) : canComplete ? (
             <button
               type="button"
               className="btn btn--primary btn--block"
               onClick={handleFinished}
+              disabled={completing}
             >
-              Finished
+              {completing ? 'Saving…' : 'Finished'}
             </button>
           ) : (
             <p className="task-focus__lock muted">
