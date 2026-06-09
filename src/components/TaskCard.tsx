@@ -1,6 +1,6 @@
 import { getStageLabel } from '../lib/levels';
 import type { Category, Task } from '../types';
-import { TaskCompletionGate } from './TaskCompletionGate';
+import { TaskCompletionGate, type TaskCompleteResult } from './TaskCompletionGate';
 import { getPhraseRepeatCount } from '../lib/phraseChallenge';
 import { getTaskLinkedMediaType } from '../lib/taskLinkedMedia';
 import { taskHasRequirements } from '../lib/taskRequirements';
@@ -106,17 +106,14 @@ export function TaskCard({
   showXp = true,
   disabled = false,
 }: TaskCardProps) {
-  const handleComplete = onComplete
-    ? async () => {
-        await Promise.resolve(onComplete());
-        return { ok: true as const };
-      }
-    : onToggle
+  const handleComplete =
+    onComplete ??
+    (onToggle
       ? () => {
           onToggle();
           return { ok: true as const };
         }
-      : undefined;
+      : undefined);
   const handleUncomplete = onUncomplete ?? onToggle;
   const interactive = Boolean(handleComplete);
   const gated = interactive && taskHasRequirements(task);
