@@ -14,7 +14,6 @@ import {
   trainingTaskAsTaskAdapter,
   trainingTaskNeedsProof,
 } from '../lib/trainingDb';
-import { formatCountdown } from '../lib/taskTimers';
 import {
   getTrainingVideoUrl,
   TRAINING_PROOF_IMAGE_ACCEPT,
@@ -248,7 +247,7 @@ export function TrainingTaskCard({
                 <span className="training-task-card__req-done">Timer complete</span>
               ) : (
                 <span className="training-task-card__timer" aria-live="polite">
-                  {formatCountdown(countdown)}
+                  {countdown}
                 </span>
               )}
             </div>

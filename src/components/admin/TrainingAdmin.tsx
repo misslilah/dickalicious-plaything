@@ -827,6 +827,7 @@ function TrainingTaskFormFields({
             Stored in private training-videos bucket. Max 500 MB.
           </p>
           {draft.videoPath && <p className="muted">Current: {draft.videoPath}</p>}
+          {videoFile && <p className="muted">Selected: {videoFile.name}</p>}
           <input
             id="tt-video"
             type="file"

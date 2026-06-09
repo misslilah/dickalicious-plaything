@@ -12,7 +12,7 @@ interface TaskCardProps {
   completed?: boolean;
   onToggle?: () => void;
   onStart?: () => void;
-  onComplete?: () => void;
+  onComplete?: () => TaskCompleteResult | Promise<TaskCompleteResult>;
   onUncomplete?: () => void;
   showXp?: boolean;
   disabled?: boolean;
@@ -106,7 +106,17 @@ export function TaskCard({
   showXp = true,
   disabled = false,
 }: TaskCardProps) {
-  const handleComplete = onComplete ?? onToggle;
+  const handleComplete = onComplete
+    ? async () => {
+        await Promise.resolve(onComplete());
+        return { ok: true as const };
+      }
+    : onToggle
+      ? () => {
+          onToggle();
+          return { ok: true as const };
+        }
+      : undefined;
   const handleUncomplete = onUncomplete ?? onToggle;
   const interactive = Boolean(handleComplete);
   const gated = interactive && taskHasRequirements(task);

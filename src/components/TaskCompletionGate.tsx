@@ -15,7 +15,7 @@ import { clearDuration } from '../lib/taskDuration';
 import { PhraseChallengeModal } from './PhraseChallengeModal';
 import { TaskLinkedMediaModal } from './TaskLinkedMediaModal';
 
-type TaskCompleteResult = { ok: true } | { ok: false; error: string };
+export type TaskCompleteResult = { ok: true } | { ok: false; error: string };
 
 interface TaskCompletionGateProps {
   task: Task;
