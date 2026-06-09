@@ -21,6 +21,7 @@ import { CategoryDetail } from './pages/CategoryDetail';
 import { TaskFocusPage } from './pages/TaskFocusPage';
 import { Dashboard } from './pages/Dashboard';
 import { Videos } from './pages/Videos';
+import { Training } from './pages/Training';
 import { VideoCategoryDetail } from './pages/VideoCategoryDetail';
 import { Login } from './pages/Login';
 import { Punishments } from './pages/Punishments';
@@ -72,6 +73,7 @@ const router = createBrowserRouter([
                 element: <TaskFocusPage />,
               },
               { path: 'videos', element: <Videos /> },
+              { path: 'training', element: <Training /> },
               { path: 'videos/playlist/:playlistId', element: <VideoPlaylistPlay /> },
               { path: 'videos/interactive', element: <InteractiveVideos /> },
               {
