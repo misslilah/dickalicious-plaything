@@ -36,7 +36,7 @@ export function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-const WISHLIST_CACHE_TTL_MS = 10 * 60 * 1000;
+const WISHLIST_CACHE_TTL_MS = 45 * 60 * 1000;
 
 type WishlistCacheEntry = {
   username: string;
@@ -47,7 +47,7 @@ type WishlistCacheEntry = {
 const wishlistCache = new Map<string, WishlistCacheEntry>();
 
 export const THRONE_RATE_LIMIT_MESSAGE =
-  'Throne rate limit — wait a minute and click Refresh, or use manual EUR entry.';
+  'Throne rate limit — wait a minute and click Refresh, or add gifts manually to the catalog.';
 
 /** Parse throne.com/u/name, full URL, u/name, or bare username. */
 export function parseThroneUsername(raw: string | null | undefined): string | null {

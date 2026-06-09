@@ -1,6 +1,11 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/throne.ts';
 import {
+  createServiceSupabase,
+  fetchCatalogGiftsFromDb,
+  upsertScrapedGiftsToCatalog,
+} from '../_shared/throneGiftCatalogDb.ts';
+import {
   fetchThroneWishlistGifts,
   jsonResponse,
   parseThroneUsername,
@@ -87,7 +92,7 @@ Deno.serve(async (req) => {
         error:
           'Throne username required. The client should send { "username": "your-name" } from VITE_THRONE_URL, or set THRONE_USERNAME / THRONE_PROFILE_URL in Edge Function secrets.',
         hint: 'Example: https://throne.com/u/your-name → username "your-name".',
-        fallback: 'Enter Throne gift amount and Open URL manually in the punishment form.',
+        fallback: 'Add gifts manually to the catalog in Manage punishments.',
       },
       400,
     );
@@ -97,31 +102,60 @@ Deno.serve(async (req) => {
     return jsonResponse({ ok: false, error: 'Invalid Throne username.' }, 400);
   }
 
+  const serviceSupabase = createServiceSupabase();
+
   try {
     const result = await fetchThroneWishlistGifts(username, {
       forceRefresh: body.forceRefresh === true,
     });
+
+    if (serviceSupabase) {
+      await upsertScrapedGiftsToCatalog(serviceSupabase, result.gifts);
+    }
+
+    const catalogGifts = serviceSupabase
+      ? await fetchCatalogGiftsFromDb(serviceSupabase)
+      : result.gifts.map((gift) => ({
+          id: gift.id,
+          title: gift.title,
+          priceCents: gift.priceCents,
+          currency: gift.currency,
+          url: gift.url,
+          throneGiftId: gift.id,
+          imageUrl: gift.imageUrl,
+        }));
+
     return jsonResponse({
       ok: true,
       username: result.username,
-      gifts: result.gifts,
+      gifts: catalogGifts.length > 0 ? catalogGifts : result.gifts,
       fetchedAt: result.fetchedAt,
       cached: result.cached,
       source: 'throne_public_profile',
       warning:
-        'Unofficial scrape of Throne public profile data — may break if Throne changes their site. Webhook matching still uses gift amount (cents).',
+        'Unofficial scrape of Throne public profile data — may break if Throne changes their site. Saved catalog gifts remain available when scraping fails.',
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('[throne-fetch-gifts] scrape failed:', message);
     const isRateLimit =
       message === THRONE_RATE_LIMIT_MESSAGE || /\b429\b|rate limit/i.test(message);
+
+    const cachedGifts =
+      serviceSupabase != null
+        ? await fetchCatalogGiftsFromDb(serviceSupabase)
+        : [];
+
     return jsonResponse(
       {
         ok: false,
         error: isRateLimit ? THRONE_RATE_LIMIT_MESSAGE : message,
         username,
-        fallback: 'Enter Throne gift amount and Open URL manually in the punishment form.',
+        cachedGifts,
+        fallback:
+          cachedGifts.length > 0
+            ? 'Your saved catalog gifts are still available — pick one below or add manually.'
+            : 'Add gifts manually to the catalog in Manage punishments (quick-add tiers below).',
       },
       isRateLimit ? 429 : 502,
     );

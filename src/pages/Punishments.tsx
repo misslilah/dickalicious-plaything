@@ -28,9 +28,12 @@ import { getSupabase } from '../lib/supabase';
 import { fetchUserThronePunishmentPending } from '../lib/throneDb';
 import { getThroneUsername } from '../lib/throne';
 import {
-  fetchThroneGifts,
+  addGiftToCatalog,
+  fetchCatalogFromDb,
   formatThroneGiftOptionLabel,
-  getCachedThroneGifts,
+  refreshFromThrone,
+  THRONE_QUICK_TIER_PRESETS,
+  THRONE_RATE_LIMIT_MESSAGE,
   type ThroneGiftCatalogItem,
 } from '../lib/throneGifts';
 import type {
@@ -608,8 +611,24 @@ function PunishmentsManage({
   const [selectedThroneGiftId, setSelectedThroneGiftId] = useState('');
   const [throneGifts, setThroneGifts] = useState<ThroneGiftCatalogItem[]>([]);
   const [throneGiftsLoading, setThroneGiftsLoading] = useState(false);
+  const [throneGiftsRefreshing, setThroneGiftsRefreshing] = useState(false);
   const [throneGiftsError, setThroneGiftsError] = useState<string | null>(null);
   const [throneGiftsWarning, setThroneGiftsWarning] = useState<string | null>(null);
+  const [manualGiftTitle, setManualGiftTitle] = useState('');
+  const [manualGiftEur, setManualGiftEur] = useState('');
+  const [manualGiftUrl, setManualGiftUrl] = useState('');
+  const [manualGiftSaving, setManualGiftSaving] = useState(false);
+  const [quickTierDrafts, setQuickTierDrafts] = useState<
+    Record<number, { title: string; url: string }>
+  >(() =>
+    Object.fromEntries(
+      THRONE_QUICK_TIER_PRESETS.map((tier) => [
+        tier.priceCents,
+        { title: tier.label, url: '' },
+      ]),
+    ),
+  );
+  const [quickTierSaving, setQuickTierSaving] = useState(false);
   const [timerMinutes, setTimerMinutes] = useState('');
   const [timerSecondsPart, setTimerSecondsPart] = useState('');
   const [message, setMessage] = useState('');
@@ -625,61 +644,145 @@ function PunishmentsManage({
 
   const throneUsername = getThroneUsername();
 
-  const loadThroneGifts = useCallback(
-    async (forceRefresh = false) => {
-      if (!forceRefresh) {
-        const cached = getCachedThroneGifts(throneUsername);
-        if (cached) {
-          setThroneGifts(cached.gifts);
-          setThroneGiftsError(null);
-          setThroneGiftsWarning(
-            cached.cached
-              ? 'Showing cached Throne gifts — click Refresh to fetch the latest list.'
-              : cached.warning ?? null,
-          );
-          return;
-        }
+  const matchCatalogSelection = useCallback(
+    (template: PunishmentTemplate, gifts: ThroneGiftCatalogItem[]): string => {
+      if (template.throneGiftId) {
+        const byThroneId = gifts.find((g) => g.throneGiftId === template.throneGiftId);
+        if (byThroneId) return byThroneId.id;
       }
+      if (template.throneAmountCents != null && template.openUrl?.trim()) {
+        const byAmountUrl = gifts.find(
+          (g) =>
+            g.priceCents === template.throneAmountCents &&
+            g.url.trim() === template.openUrl!.trim(),
+        );
+        if (byAmountUrl) return byAmountUrl.id;
+      }
+      return '';
+    },
+    [],
+  );
 
-      setThroneGiftsLoading(true);
+  const loadCatalogFromDb = useCallback(async () => {
+    setThroneGiftsLoading(true);
+    setThroneGiftsError(null);
+    const result = await fetchCatalogFromDb();
+    setThroneGiftsLoading(false);
+    if (!result.ok) {
+      setThroneGifts([]);
+      setThroneGiftsError(result.error);
+      return [];
+    }
+    setThroneGifts(result.gifts);
+    if (result.gifts.length === 0) {
+      setThroneGiftsWarning(
+        'No gifts in catalog yet — add the three tiers below or click Refresh from Throne.',
+      );
+    }
+    return result.gifts;
+  }, []);
+
+  const refreshThroneCatalog = useCallback(
+    async (forceRefresh = true) => {
+      setThroneGiftsRefreshing(true);
       setThroneGiftsError(null);
       setThroneGiftsWarning(null);
-      const result = await fetchThroneGifts(throneUsername, { forceRefresh });
-      setThroneGiftsLoading(false);
+      const result = await refreshFromThrone(throneUsername, { forceRefresh });
+      setThroneGiftsRefreshing(false);
       if (!result.ok) {
-        setThroneGifts([]);
-        setThroneGiftsError(`Failed to load gifts: ${result.error}`);
-        if (result.fallback) setThroneGiftsWarning(result.fallback);
+        if (result.cachedGifts?.length) {
+          setThroneGifts(result.cachedGifts);
+          setThroneGiftsError(
+            result.error === THRONE_RATE_LIMIT_MESSAGE
+              ? `${result.error} Saved catalog gifts are shown below.`
+              : `Refresh failed: ${result.error}`,
+          );
+          setThroneGiftsWarning(
+            result.fallback ??
+              'Pick a saved catalog gift below or add one manually.',
+          );
+        } else {
+          setThroneGiftsError(`Refresh failed: ${result.error}`);
+          if (result.fallback) setThroneGiftsWarning(result.fallback);
+        }
         return;
       }
       setThroneGifts(result.gifts);
-      if (result.warning) setThroneGiftsWarning(result.warning);
+      setThroneGiftsWarning(
+        result.cached
+          ? 'Showing cached Throne scrape — click Refresh again later for a fresh list.'
+          : (result.warning ?? 'Catalog updated from Throne.'),
+      );
     },
     [throneUsername],
   );
 
-  useEffect(() => {
-    if (!tplDraft.thronePayment) return;
-    const cached = getCachedThroneGifts(throneUsername);
-    if (cached) {
-      setThroneGifts(cached.gifts);
-      setThroneGiftsError(null);
-      setThroneGiftsWarning(
-        'Showing cached Throne gifts — click Refresh to fetch the latest list.',
-      );
-    } else {
-      setThroneGifts([]);
-      setThroneGiftsError(null);
-      setThroneGiftsWarning(
-        'Click Refresh gifts from Throne to load your wishlist (or enter amount/URL manually).',
-      );
+  const saveManualGiftToCatalog = async () => {
+    setManualGiftSaving(true);
+    setThroneGiftsError(null);
+    const priceCents = parseThroneAmountEurToCents(manualGiftEur);
+    if (!priceCents) {
+      setThroneGiftsError('Enter a valid EUR price for the gift.');
+      setManualGiftSaving(false);
+      return;
     }
-  }, [tplDraft.thronePayment, throneUsername]);
+    const result = await addGiftToCatalog({
+      title: manualGiftTitle,
+      priceCents,
+      url: manualGiftUrl,
+    });
+    setManualGiftSaving(false);
+    if (!result.ok) {
+      setThroneGiftsError(result.error);
+      return;
+    }
+    setThroneGifts((prev) =>
+      [...prev, result.gift].sort(
+        (a, b) => a.priceCents - b.priceCents || a.title.localeCompare(b.title),
+      ),
+    );
+    setManualGiftTitle('');
+    setManualGiftEur('');
+    setManualGiftUrl('');
+    setThroneGiftsWarning('Gift saved to catalog.');
+  };
+
+  const saveQuickTierGifts = async () => {
+    setQuickTierSaving(true);
+    setThroneGiftsError(null);
+    const toSave = THRONE_QUICK_TIER_PRESETS.filter((tier) => {
+      const draft = quickTierDrafts[tier.priceCents];
+      return draft?.url.trim();
+    });
+    if (toSave.length === 0) {
+      setThroneGiftsError('Enter at least one Throne gift URL for the quick-add tiers.');
+      setQuickTierSaving(false);
+      return;
+    }
+    for (const tier of toSave) {
+      const draft = quickTierDrafts[tier.priceCents];
+      const result = await addGiftToCatalog({
+        title: draft.title.trim() || tier.label,
+        priceCents: tier.priceCents,
+        url: draft.url.trim(),
+        sortOrder: tier.sortOrder,
+      });
+      if (!result.ok) {
+        setThroneGiftsError(result.error);
+        setQuickTierSaving(false);
+        return;
+      }
+    }
+    setQuickTierSaving(false);
+    const gifts = await loadCatalogFromDb();
+    setSelectedThroneGiftId(matchCatalogSelection(tplDraft, gifts));
+    setThroneGiftsWarning('Quick-add tiers saved to catalog.');
+  };
 
   const syncTemplateDraft = (template: PunishmentTemplate) => {
     setTplDraft(template);
     setPhrasesText(phrasesToText(template.requiredPhrases));
-    setSelectedThroneGiftId(template.throneGiftId ?? '');
+    setSelectedThroneGiftId(matchCatalogSelection(template, throneGifts));
     setThroneAmountEur(
       template.throneAmountCents != null
         ? formatThroneAmountEur(template.throneAmountCents)
@@ -695,6 +798,23 @@ function PunishmentsManage({
     }
   };
 
+  useEffect(() => {
+    if (!tplDraft.thronePayment) return;
+    void loadCatalogFromDb();
+  }, [tplDraft.thronePayment, loadCatalogFromDb]);
+
+  useEffect(() => {
+    if (!tplDraft.thronePayment || throneGifts.length === 0) return;
+    setSelectedThroneGiftId(matchCatalogSelection(tplDraft, throneGifts));
+  }, [
+    tplDraft.thronePayment,
+    tplDraft.throneGiftId,
+    tplDraft.throneAmountCents,
+    tplDraft.openUrl,
+    throneGifts,
+    matchCatalogSelection,
+  ]);
+
   const applyThroneGiftSelection = (giftId: string) => {
     setSelectedThroneGiftId(giftId);
     if (!giftId) return;
@@ -705,7 +825,7 @@ function PunishmentsManage({
       ...draft,
       openUrl: gift.url,
       throneAmountCents: gift.priceCents,
-      throneGiftId: gift.id,
+      throneGiftId: gift.throneGiftId?.trim() || null,
       title: draft.title.trim() ? draft.title : gift.title,
     }));
   };
@@ -830,7 +950,9 @@ function PunishmentsManage({
       throneAmountCents: thronePayment ? throneAmountCents : null,
       throneGiftId:
         thronePayment && selectedThroneGiftId.trim()
-          ? selectedThroneGiftId.trim()
+          ? (throneGifts.find((g) => g.id === selectedThroneGiftId.trim())?.throneGiftId?.trim() ||
+              tplDraft.throneGiftId?.trim() ||
+              null)
           : tplDraft.throneGiftId?.trim() || null,
     };
     const result = tplDraft.id
@@ -1112,13 +1234,13 @@ function PunishmentsManage({
             {tplDraft.thronePayment && (
               <p className="muted">
                 Recommended tiers: €5 → 1 malus, €25 → 10 malus, €125 → 50 malus.
-                Pick a gift below or enter amount/URL manually if fetch fails.
+                Pick a saved catalog gift below — no scraping required.
               </p>
             )}
           </div>
           {tplDraft.thronePayment && (
             <div className="field">
-              <label htmlFor="ptpl-throne-gift">Select Throne gift</label>
+              <label htmlFor="ptpl-throne-gift">Select Throne gift (catalog)</label>
               <div className="field-row">
                 <select
                   id="ptpl-throne-gift"
@@ -1128,10 +1250,10 @@ function PunishmentsManage({
                 >
                   <option value="">
                     {throneGiftsLoading
-                      ? 'Loading gifts from Throne…'
+                      ? 'Loading gift catalog…'
                       : throneGifts.length > 0
-                        ? 'Choose a gift…'
-                        : 'No gifts loaded — refresh or enter manually'}
+                        ? 'Choose a catalog gift…'
+                        : 'No catalog gifts yet — add below or refresh from Throne'}
                   </option>
                   {throneGifts.map((gift) => (
                     <option key={gift.id} value={gift.id}>
@@ -1142,21 +1264,21 @@ function PunishmentsManage({
                 <button
                   type="button"
                   className="btn btn--ghost btn--small"
-                  disabled={throneGiftsLoading}
-                  onClick={() => void loadThroneGifts(true)}
+                  disabled={throneGiftsRefreshing}
+                  onClick={() => void refreshThroneCatalog(true)}
                 >
-                  {throneGiftsLoading ? 'Refreshing…' : 'Refresh gifts from Throne'}
+                  {throneGiftsRefreshing ? 'Refreshing…' : 'Refresh from Throne'}
                 </button>
               </div>
               {throneUsername ? (
                 <p className="muted">
-                  Throne profile: throne.com/u/{throneUsername}
+                  Throne profile: throne.com/u/{throneUsername}. Refresh is optional — catalog
+                  gifts always work.
                 </p>
               ) : (
                 <p className="muted">
-                  Set VITE_THRONE_URL=https://throne.com/u/your-username in .env (and
-                  Vercel) to auto-load gifts, or set THRONE_USERNAME in Supabase Edge
-                  Function secrets.
+                  Set VITE_THRONE_URL=https://throne.com/u/your-username to refresh from Throne,
+                  or add gifts manually to the catalog below.
                 </p>
               )}
               {throneGiftsError && (
@@ -1169,6 +1291,90 @@ function PunishmentsManage({
                   {throneGiftsWarning}
                 </p>
               )}
+            </div>
+          )}
+          {tplDraft.thronePayment && throneGifts.length === 0 && !throneGiftsLoading && (
+            <div className="field">
+              <span>Quick-add recommended tiers (one-time setup)</span>
+              <p className="muted">
+                Paste each Throne gift link from your wishlist. Amounts are preset to €5, €25,
+                and €125.
+              </p>
+              {THRONE_QUICK_TIER_PRESETS.map((tier) => (
+                <div key={tier.priceCents} className="field-row" style={{ marginBottom: '0.5rem' }}>
+                  <input
+                    aria-label={`${tier.label} title`}
+                    placeholder={tier.label}
+                    value={quickTierDrafts[tier.priceCents]?.title ?? tier.label}
+                    onChange={(e) =>
+                      setQuickTierDrafts((prev) => ({
+                        ...prev,
+                        [tier.priceCents]: {
+                          title: e.target.value,
+                          url: prev[tier.priceCents]?.url ?? '',
+                        },
+                      }))
+                    }
+                  />
+                  <input
+                    aria-label={`${tier.label} Throne URL`}
+                    type="url"
+                    placeholder={`Throne URL for ${tier.label}`}
+                    value={quickTierDrafts[tier.priceCents]?.url ?? ''}
+                    onChange={(e) =>
+                      setQuickTierDrafts((prev) => ({
+                        ...prev,
+                        [tier.priceCents]: {
+                          title: prev[tier.priceCents]?.title ?? tier.label,
+                          url: e.target.value,
+                        },
+                      }))
+                    }
+                  />
+                </div>
+              ))}
+              <button
+                type="button"
+                className="btn btn--ghost btn--small"
+                disabled={quickTierSaving}
+                onClick={() => void saveQuickTierGifts()}
+              >
+                {quickTierSaving ? 'Saving…' : 'Save tiers to catalog'}
+              </button>
+            </div>
+          )}
+          {tplDraft.thronePayment && (
+            <div className="field">
+              <span>Add gift manually to catalog</span>
+              <div className="field-row">
+                <input
+                  placeholder="Gift title"
+                  value={manualGiftTitle}
+                  onChange={(e) => setManualGiftTitle(e.target.value)}
+                />
+                <input
+                  type="number"
+                  min={0.01}
+                  step={0.01}
+                  placeholder="EUR price"
+                  value={manualGiftEur}
+                  onChange={(e) => setManualGiftEur(e.target.value)}
+                />
+              </div>
+              <input
+                type="url"
+                placeholder="https://throne.com/u/…/item/…"
+                value={manualGiftUrl}
+                onChange={(e) => setManualGiftUrl(e.target.value)}
+              />
+              <button
+                type="button"
+                className="btn btn--ghost btn--small"
+                disabled={manualGiftSaving}
+                onClick={() => void saveManualGiftToCatalog()}
+              >
+                {manualGiftSaving ? 'Saving…' : 'Add gift to catalog'}
+              </button>
             </div>
           )}
           {tplDraft.thronePayment && (
