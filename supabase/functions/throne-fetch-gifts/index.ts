@@ -5,6 +5,7 @@ import {
   jsonResponse,
   parseThroneUsername,
   resolveThroneUsername,
+  THRONE_RATE_LIMIT_MESSAGE,
 } from '../_shared/throneWishlist.ts';
 
 async function requireAdmin(
@@ -71,7 +72,7 @@ Deno.serve(async (req) => {
   const adminCheck = await requireAdmin(req);
   if (!adminCheck.ok) return adminCheck.response;
 
-  let body: { username?: string | null } = {};
+  let body: { username?: string | null; forceRefresh?: boolean } = {};
   try {
     body = await req.json();
   } catch {
@@ -97,12 +98,15 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const result = await fetchThroneWishlistGifts(username);
+    const result = await fetchThroneWishlistGifts(username, {
+      forceRefresh: body.forceRefresh === true,
+    });
     return jsonResponse({
       ok: true,
       username: result.username,
       gifts: result.gifts,
-      fetchedAt: new Date().toISOString(),
+      fetchedAt: result.fetchedAt,
+      cached: result.cached,
       source: 'throne_public_profile',
       warning:
         'Unofficial scrape of Throne public profile data — may break if Throne changes their site. Webhook matching still uses gift amount (cents).',
@@ -110,14 +114,16 @@ Deno.serve(async (req) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('[throne-fetch-gifts] scrape failed:', message);
+    const isRateLimit =
+      message === THRONE_RATE_LIMIT_MESSAGE || /\b429\b|rate limit/i.test(message);
     return jsonResponse(
       {
         ok: false,
-        error: message,
+        error: isRateLimit ? THRONE_RATE_LIMIT_MESSAGE : message,
         username,
         fallback: 'Enter Throne gift amount and Open URL manually in the punishment form.',
       },
-      502,
+      isRateLimit ? 429 : 502,
     );
   }
 });

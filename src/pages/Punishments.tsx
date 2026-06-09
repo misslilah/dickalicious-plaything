@@ -30,6 +30,7 @@ import { getThroneUsername } from '../lib/throne';
 import {
   fetchThroneGifts,
   formatThroneGiftOptionLabel,
+  getCachedThroneGifts,
   type ThroneGiftCatalogItem,
 } from '../lib/throneGifts';
 import type {
@@ -624,26 +625,56 @@ function PunishmentsManage({
 
   const throneUsername = getThroneUsername();
 
-  const loadThroneGifts = useCallback(async () => {
-    setThroneGiftsLoading(true);
-    setThroneGiftsError(null);
-    setThroneGiftsWarning(null);
-    const result = await fetchThroneGifts(throneUsername);
-    setThroneGiftsLoading(false);
-    if (!result.ok) {
-      setThroneGifts([]);
-      setThroneGiftsError(`Failed to load gifts: ${result.error}`);
-      if (result.fallback) setThroneGiftsWarning(result.fallback);
-      return;
-    }
-    setThroneGifts(result.gifts);
-    if (result.warning) setThroneGiftsWarning(result.warning);
-  }, [throneUsername]);
+  const loadThroneGifts = useCallback(
+    async (forceRefresh = false) => {
+      if (!forceRefresh) {
+        const cached = getCachedThroneGifts(throneUsername);
+        if (cached) {
+          setThroneGifts(cached.gifts);
+          setThroneGiftsError(null);
+          setThroneGiftsWarning(
+            cached.cached
+              ? 'Showing cached Throne gifts — click Refresh to fetch the latest list.'
+              : cached.warning ?? null,
+          );
+          return;
+        }
+      }
+
+      setThroneGiftsLoading(true);
+      setThroneGiftsError(null);
+      setThroneGiftsWarning(null);
+      const result = await fetchThroneGifts(throneUsername, { forceRefresh });
+      setThroneGiftsLoading(false);
+      if (!result.ok) {
+        setThroneGifts([]);
+        setThroneGiftsError(`Failed to load gifts: ${result.error}`);
+        if (result.fallback) setThroneGiftsWarning(result.fallback);
+        return;
+      }
+      setThroneGifts(result.gifts);
+      if (result.warning) setThroneGiftsWarning(result.warning);
+    },
+    [throneUsername],
+  );
 
   useEffect(() => {
     if (!tplDraft.thronePayment) return;
-    void loadThroneGifts();
-  }, [tplDraft.thronePayment, loadThroneGifts]);
+    const cached = getCachedThroneGifts(throneUsername);
+    if (cached) {
+      setThroneGifts(cached.gifts);
+      setThroneGiftsError(null);
+      setThroneGiftsWarning(
+        'Showing cached Throne gifts — click Refresh to fetch the latest list.',
+      );
+    } else {
+      setThroneGifts([]);
+      setThroneGiftsError(null);
+      setThroneGiftsWarning(
+        'Click Refresh gifts from Throne to load your wishlist (or enter amount/URL manually).',
+      );
+    }
+  }, [tplDraft.thronePayment, throneUsername]);
 
   const syncTemplateDraft = (template: PunishmentTemplate) => {
     setTplDraft(template);
@@ -1112,7 +1143,7 @@ function PunishmentsManage({
                   type="button"
                   className="btn btn--ghost btn--small"
                   disabled={throneGiftsLoading}
-                  onClick={() => void loadThroneGifts()}
+                  onClick={() => void loadThroneGifts(true)}
                 >
                   {throneGiftsLoading ? 'Refreshing…' : 'Refresh gifts from Throne'}
                 </button>

@@ -16,9 +16,53 @@ export type FetchThroneGiftsResult =
       username: string;
       gifts: ThroneGiftCatalogItem[];
       fetchedAt: string;
+      cached?: boolean;
       warning?: string;
     }
   | { ok: false; error: string; fallback?: string };
+
+const CLIENT_CACHE_TTL_MS = 10 * 60 * 1000;
+
+type ClientCacheEntry = {
+  result: Extract<FetchThroneGiftsResult, { ok: true }>;
+  fetchedAt: number;
+};
+
+const clientCache = new Map<string, ClientCacheEntry>();
+
+export const THRONE_RATE_LIMIT_MESSAGE =
+  'Throne rate limit — wait a minute and click Refresh, or use manual EUR entry.';
+
+/** Return in-memory cached gifts for this session (no network). */
+export function getCachedThroneGifts(
+  username: string | null | undefined,
+): Extract<FetchThroneGiftsResult, { ok: true }> | null {
+  if (!username) return null;
+  const key = username.toLowerCase();
+  const entry = clientCache.get(key);
+  if (!entry || Date.now() - entry.fetchedAt > CLIENT_CACHE_TTL_MS) {
+    if (entry) clientCache.delete(key);
+    return null;
+  }
+  return entry.result;
+}
+
+function storeCachedThroneGifts(
+  username: string,
+  result: Extract<FetchThroneGiftsResult, { ok: true }>,
+): void {
+  clientCache.set(username.toLowerCase(), {
+    result,
+    fetchedAt: Date.now(),
+  });
+}
+
+function friendlyThroneError(message: string): string {
+  if (/\b429\b|rate limit/i.test(message)) {
+    return THRONE_RATE_LIMIT_MESSAGE;
+  }
+  return message;
+}
 
 function formatGiftPrice(gift: ThroneGiftCatalogItem): string {
   const amount = (gift.priceCents / 100).toFixed(2);
@@ -69,6 +113,7 @@ const NO_USERNAME_ERROR =
 /** Admin-only: fetch live wishlist gifts via throne-fetch-gifts edge function. */
 export async function fetchThroneGifts(
   username?: string | null,
+  options?: { forceRefresh?: boolean },
 ): Promise<FetchThroneGiftsResult> {
   const supabase = getSupabase();
   if (!supabase) {
@@ -84,9 +129,19 @@ export async function fetchThroneGifts(
     };
   }
 
+  if (!options?.forceRefresh) {
+    const cached = getCachedThroneGifts(resolvedUsername);
+    if (cached) return cached;
+  }
+
   const { data, error, response } = await supabase.functions.invoke(
     'throne-fetch-gifts',
-    { body: { username: resolvedUsername } },
+    {
+      body: {
+        username: resolvedUsername,
+        forceRefresh: options?.forceRefresh === true,
+      },
+    },
   );
 
   if (error) {
@@ -97,7 +152,7 @@ export async function fetchThroneGifts(
     const parsed = await readEdgeFunctionError(response, generic);
     return {
       ok: false,
-      error: parsed.error,
+      error: friendlyThroneError(parsed.error),
       fallback:
         parsed.fallback ?? 'Enter gift amount and Open URL manually.',
     };
@@ -111,6 +166,7 @@ export async function fetchThroneGifts(
         username?: string;
         gifts?: ThroneGiftCatalogItem[];
         fetchedAt?: string;
+        cached?: boolean;
         warning?: string;
       }
     | null;
@@ -118,16 +174,19 @@ export async function fetchThroneGifts(
   if (!payload?.ok) {
     return {
       ok: false,
-      error: payload?.error || 'Could not fetch Throne gifts.',
+      error: friendlyThroneError(payload?.error || 'Could not fetch Throne gifts.'),
       fallback: payload?.fallback,
     };
   }
 
-  return {
+  const success: Extract<FetchThroneGiftsResult, { ok: true }> = {
     ok: true,
     username: payload.username ?? resolvedUsername,
     gifts: payload.gifts ?? [],
     fetchedAt: payload.fetchedAt ?? new Date().toISOString(),
+    cached: payload.cached,
     warning: payload.warning,
   };
+  storeCachedThroneGifts(success.username, success);
+  return success;
 }
