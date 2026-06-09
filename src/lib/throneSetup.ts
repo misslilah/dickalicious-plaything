@@ -22,6 +22,6 @@ export const THRONE_WEBHOOK_SETUP_STEPS = [
   'In Throne: Settings → Alerts & Integrations → Webhook Integration (if shown). Paste the webhook URL below.',
   'Add the same secret as Authorization: Bearer <secret> or X-Throne-Webhook-Secret header (per Throne dashboard).',
   'Create a training task with "Throne payment task" enabled and set Open URL to the Throne gift/item link.',
-  'Run migration 074_throne_realtime_and_rls.sql in Supabase SQL Editor (enables Realtime toasts).',
+  'Run migrations 074_throne_realtime_and_rls.sql and 075_throne_payment_pending_profiles_fkey.sql in Supabase SQL Editor.',
   'If Throne has no webhook field in your account, use Admin → Training → Throne to confirm pending payments manually.',
 ] as const;

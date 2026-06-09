@@ -9,16 +9,17 @@ export type ThroneGiftToast = {
 };
 
 function formatGiftMessage(event: ThroneGiftEvent): string {
-  const gifter = event.gifterName?.trim() || 'Someone';
+  const gifter = event.gifterName?.trim();
   const item = event.itemName?.trim();
   const type = event.eventType?.trim().toLowerCase();
 
-  if (type && type !== 'gift' && !item) {
-    return `Throne webhook: ${type}`;
+  if (item) {
+    if (gifter) return `${gifter} purchased ${item}`;
+    return `Someone sent a gift: ${item}`;
   }
-  if (item) return `${gifter} sent: ${item}`;
   if (type && type !== 'gift') return `Throne webhook (${type})`;
-  return `${gifter} sent a Throne gift!`;
+  if (gifter) return `${gifter} sent a Throne gift!`;
+  return 'Someone sent a Throne gift!';
 }
 
 /** Subscribe to throne_gift_events inserts for on-site toasts. */

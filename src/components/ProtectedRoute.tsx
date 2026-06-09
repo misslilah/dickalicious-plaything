@@ -4,6 +4,7 @@ import { LockCardOverlay } from './LockCardOverlay';
 import { AudioPlaylistBubble } from './AudioPlaylistBubble';
 import { CommunityChatBubble } from './CommunityChatBubble';
 import { PatreonBubble } from './PatreonBubble';
+import { ThroneBubble } from './ThroneBubble';
 import { useAppStore } from '../hooks/useAppStore';
 
 export function ProtectedRoute() {
@@ -65,6 +66,7 @@ export function ProtectedRoute() {
       <LockCardOverlay />
       <AudioPlaylistBubble />
       <CommunityChatBubble />
+      <ThroneBubble />
       <PatreonBubble />
       <Outlet />
     </>

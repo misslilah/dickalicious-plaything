@@ -878,17 +878,19 @@ function TrainingThroneAdmin() {
       fetchRecentThroneGiftEvents(8),
     ]);
     setLoading(false);
-    if (!pendingResult.ok) {
-      setError(pendingResult.error);
+
+    const warnings: string[] = [];
+    if (!pendingResult.ok) warnings.push(pendingResult.error);
+    if (!eventsResult.ok) warnings.push(eventsResult.error);
+
+    if (!pendingResult.ok && !eventsResult.ok) {
+      setError(warnings.join(' '));
       return;
     }
-    if (!eventsResult.ok) {
-      setError(eventsResult.error);
-      return;
-    }
-    setError(null);
-    setPending(pendingResult.pending);
-    setEvents(eventsResult.events);
+
+    setError(warnings.length > 0 ? warnings.join(' ') : null);
+    if (pendingResult.ok) setPending(pendingResult.pending);
+    if (eventsResult.ok) setEvents(eventsResult.events);
   }, []);
 
   useEffect(() => {
@@ -937,7 +939,10 @@ function TrainingThroneAdmin() {
           function. If your Throne account has no webhook field, confirm payments manually below.
         </p>
         <ol className="throne-setup-steps">
-          <li>Run migrations <code>073</code> and <code>074_throne_realtime_and_rls.sql</code> in Supabase SQL Editor.</li>
+          <li>
+            Run migrations <code>073</code>, <code>074</code>, and{' '}
+            <code>075_throne_payment_pending_profiles_fkey.sql</code> in Supabase SQL Editor.
+          </li>
           <li>
             Set <code>THRONE_WEBHOOK_SECRET</code> in Supabase → Edge Functions → Secrets.
           </li>

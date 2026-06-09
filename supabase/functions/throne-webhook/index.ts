@@ -1,19 +1,18 @@
 /**
  * Throne gift webhook receiver.
  *
- * Configure in Throne dashboard → Alerts & Integrations → Webhook (if available),
- * or relay manually from admin / automation bridge.
+ * Configure in Throne dashboard → Settings → Integrations → Webhooks.
  *
- * Auth: THRONE_WEBHOOK_SECRET via Authorization: Bearer, X-Throne-Webhook-Secret,
- * X-Throne-Signature, or ?token= query param.
+ * Auth: THRONE_WEBHOOK_SECRET via ?token=, Authorization: Bearer,
+ * X-Throne-Webhook-Secret (literal), or X-Throne-Signature (HMAC-SHA256 body).
  *
  * Deploy: supabase functions deploy throne-webhook --no-verify-jwt
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
   corsHeaders,
-  extractWebhookSecret,
   parseThroneWebhookPayload,
+  verifyThroneWebhookAuth,
 } from '../_shared/throne.ts';
 
 const jsonHeaders = { 'Content-Type': 'application/json', ...corsHeaders };
@@ -38,6 +37,7 @@ Deno.serve(async (req) => {
       service: 'throne-webhook',
       secretConfigured: Boolean(webhookSecret),
       supabaseConfigured: Boolean(supabaseUrl && serviceKey),
+      verifyJwtDisabled: true,
       hint: 'Deploy with --no-verify-jwt. Throne must POST JSON to this URL.',
     });
   }
@@ -46,25 +46,31 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Method not allowed' }, 405);
   }
 
-  const providedSecret = extractWebhookSecret(req, url);
-  if (webhookSecret) {
-    if (!providedSecret || providedSecret !== webhookSecret) {
-      console.warn('throne-webhook rejected: invalid secret', {
-        hasProvidedSecret: Boolean(providedSecret),
-        viaQueryToken: Boolean(url.searchParams.get('token')),
-        viaAuthHeader: Boolean(req.headers.get('authorization')),
-      });
-      return jsonResponse({ error: 'Invalid webhook secret' }, 401);
-    }
-  } else {
+  const rawBody = await req.text();
+  const authResult = await verifyThroneWebhookAuth(req, url, rawBody, webhookSecret);
+
+  if (!authResult.ok) {
+    console.warn('throne-webhook rejected: invalid auth', {
+      reason: authResult.reason,
+      hasQueryToken: Boolean(url.searchParams.get('token')),
+      hasAuthHeader: Boolean(req.headers.get('authorization')),
+      hasWebhookSecretHeader: Boolean(req.headers.get('x-throne-webhook-secret')),
+      hasSignatureHeader: Boolean(req.headers.get('x-throne-signature')),
+      bodyLength: rawBody.length,
+    });
+    return jsonResponse({ error: 'Invalid webhook secret' }, 401);
+  }
+
+  if (authResult.method === 'dev_no_secret') {
     console.warn('THRONE_WEBHOOK_SECRET not set — skipping verification (dev only).');
+  } else {
+    console.log('throne-webhook auth ok', { method: authResult.method });
   }
 
   if (!supabaseUrl || !serviceKey) {
     return jsonResponse({ error: 'Supabase not configured' }, 503);
   }
 
-  const rawBody = await req.text();
   let payload: unknown;
   if (!rawBody.trim()) {
     payload = { _empty: true, _note: 'Empty webhook body (Throne test ping?)' };
@@ -81,9 +87,11 @@ Deno.serve(async (req) => {
 
   const parsed = parseThroneWebhookPayload(payload);
   console.log('throne-webhook received', {
+    authMethod: authResult.method,
     eventType: parsed.eventType,
     gifterName: parsed.gifterName,
     itemName: parsed.itemName,
+    bodyLength: rawBody.length,
   });
 
   const supabase = createClient(supabaseUrl, serviceKey);
@@ -116,6 +124,8 @@ Deno.serve(async (req) => {
       500,
     );
   }
+
+  console.log('throne-webhook stored event', { eventId: eventRow.id });
 
   const { data: matchResult, error: matchError } = await supabase.rpc(
     'match_throne_gift_to_pending',

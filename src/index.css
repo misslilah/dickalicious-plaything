@@ -4638,6 +4638,75 @@ a.task-list-row {
   margin-top: 1rem;
 }
 
+/* —— Throne wishlist bubble (stacked above Patreon) —— */
+
+.throne-bubble {
+  --throne-stack-above-patreon: 3.25rem;
+  position: fixed;
+  right: max(var(--pad-inline), env(safe-area-inset-right, 0px));
+  bottom: calc(var(--safe-bottom) + 0.85rem + var(--throne-stack-above-patreon));
+  z-index: 150;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background: rgba(26, 16, 36, 0.88);
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  color: #fbbf24;
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  backdrop-filter: blur(10px);
+  text-decoration: none;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease;
+}
+
+.throne-bubble--with-nav {
+  bottom: calc(var(--nav-h) + var(--safe-bottom) + 0.75rem + var(--throne-stack-above-patreon));
+}
+
+.throne-bubble--with-player {
+  bottom: calc(
+    var(--nav-h) + 3.75rem + var(--safe-bottom) + 0.75rem + var(--throne-stack-above-patreon)
+  );
+}
+
+.throne-bubble__icon {
+  font-size: 1.05rem;
+  line-height: 1;
+  display: block;
+}
+
+.throne-bubble:hover {
+  border-color: rgba(251, 191, 36, 0.55);
+  background: rgba(36, 21, 51, 0.94);
+  box-shadow:
+    0 4px 16px rgba(251, 191, 36, 0.18),
+    0 2px 12px rgba(0, 0, 0, 0.4);
+  transform: translateY(-2px);
+}
+
+.throne-bubble:focus-visible {
+  outline: 2px solid rgba(251, 191, 36, 0.75);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .throne-bubble {
+    transition: none;
+  }
+
+  .throne-bubble:hover {
+    transform: none;
+  }
+}
+
 /* —— Patreon support bubble —— */
 
 .patreon-bubble {
@@ -7052,36 +7121,59 @@ body.interactive-video-player--pseudo-fs {
   word-break: break-all;
 }
 
+/* —— Throne gift toast (bottom-left, above community chat) —— */
+
 .throne-gift-toast {
   position: fixed;
-  bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 1200;
+  left: max(var(--pad-inline), env(safe-area-inset-left, 0px));
+  bottom: calc(var(--safe-bottom) + 4.85rem);
+  z-index: 157;
   display: flex;
   align-items: center;
   gap: 0.65rem;
-  max-width: min(92vw, 420px);
-  padding: 0.75rem 1rem;
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  background: #1a1428;
-  border: 1px solid rgba(168, 85, 247, 0.35);
+  width: min(18rem, calc(100vw - 2 * var(--pad-inline)));
+  padding: 0.7rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid rgba(168, 85, 247, 0.45);
+  background:
+    linear-gradient(165deg, rgba(42, 21, 56, 0.97) 0%, rgba(13, 8, 18, 0.98) 55%);
+  color: var(--text);
+  box-shadow:
+    0 4px 20px rgba(168, 85, 247, 0.18),
+    0 4px 16px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(10px);
+  animation: throne-gift-toast-in 0.3s ease-out;
+}
+
+.throne-gift-toast--with-nav {
+  bottom: calc(var(--nav-h) + var(--safe-bottom) + 4.75rem);
+}
+
+.throne-gift-toast--with-player {
+  bottom: calc(var(--nav-h) + 3.75rem + var(--safe-bottom) + 4.75rem);
 }
 
 .throne-gift-toast--verified {
-  border-color: rgba(74, 222, 128, 0.4);
+  border-color: rgba(74, 222, 128, 0.45);
+  box-shadow:
+    0 4px 20px rgba(74, 222, 128, 0.15),
+    0 4px 16px rgba(0, 0, 0, 0.42);
+}
+
+.throne-gift-toast--exiting {
+  animation: throne-gift-toast-out 0.28s ease-in forwards;
 }
 
 .throne-gift-toast__icon {
-  font-size: 1.25rem;
+  font-size: 1.15rem;
   flex-shrink: 0;
 }
 
 .throne-gift-toast__message {
   margin: 0;
   flex: 1;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
+  line-height: 1.35;
 }
 
 .throne-gift-toast__close {
@@ -7093,6 +7185,44 @@ body.interactive-video-player--pseudo-fs {
   cursor: pointer;
   opacity: 0.7;
   padding: 0 0.15rem;
+  flex-shrink: 0;
+}
+
+.throne-gift-toast__close:hover {
+  opacity: 1;
+}
+
+@keyframes throne-gift-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-0.75rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes throne-gift-toast-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-0.75rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .throne-gift-toast {
+    animation: none;
+  }
+
+  .throne-gift-toast--exiting {
+    animation: none;
+    opacity: 0;
+  }
 }
 
 .training-proof-admin-list {

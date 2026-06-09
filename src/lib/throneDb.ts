@@ -163,7 +163,7 @@ export async function fetchWaitingThronePayments(): Promise<
 
   const { data, error } = await supabase
     .from('throne_payment_pending')
-    .select('*, profiles(username), training_tasks(title)')
+    .select('*')
     .eq('status', 'waiting')
     .order('created_at', { ascending: true });
 
@@ -173,22 +173,32 @@ export async function fetchWaitingThronePayments(): Promise<
     return { ok: false, error: error.message };
   }
 
-  type Row = DbPending & {
-    profiles: { username: string } | { username: string }[] | null;
-    training_tasks: { title: string } | { title: string }[] | null;
-  };
+  const rows = (data ?? []) as DbPending[];
+  if (rows.length === 0) return { ok: true, pending: [] };
 
-  const pending = ((data ?? []) as Row[]).map((row) => {
-    const profile = row.profiles;
-    const task = row.training_tasks;
-    const username = Array.isArray(profile) ? profile[0]?.username : profile?.username;
-    const taskTitle = Array.isArray(task) ? task[0]?.title : task?.title;
-    return {
-      ...mapPending(row),
-      username: username ?? undefined,
-      taskTitle: taskTitle ?? undefined,
-    };
-  });
+  const userIds = [...new Set(rows.map((row) => row.user_id))];
+  const taskIds = [...new Set(rows.map((row) => row.task_id))];
+
+  const [profilesResult, tasksResult] = await Promise.all([
+    supabase.from('profiles').select('id, username').in('id', userIds),
+    supabase.from('training_tasks').select('id, title').in('id', taskIds),
+  ]);
+
+  const usernameById = new Map(
+    (profilesResult.data ?? []).map((profile: { id: string; username: string }) => [
+      profile.id,
+      profile.username,
+    ]),
+  );
+  const titleById = new Map(
+    (tasksResult.data ?? []).map((task: { id: string; title: string }) => [task.id, task.title]),
+  );
+
+  const pending = rows.map((row) => ({
+    ...mapPending(row),
+    username: usernameById.get(row.user_id),
+    taskTitle: titleById.get(row.task_id),
+  }));
 
   return { ok: true, pending };
 }

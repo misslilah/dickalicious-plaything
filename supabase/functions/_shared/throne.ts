@@ -90,6 +90,112 @@ export function parseThroneWebhookPayload(body: unknown): ParsedThroneGift {
   return { eventType, gifterName, itemName, amountCents, currency };
 }
 
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
+function normalizeSignature(value: string): string {
+  const trimmed = value.trim();
+  const prefixed = trimmed.match(/^(?:sha256|hmac-sha256|v1)\s*=\s*([0-9a-f]+)$/i);
+  if (prefixed) return prefixed[1].toLowerCase();
+  const commaParts = trimmed.split(',').map((part) => part.trim());
+  for (const part of commaParts) {
+    const match = part.match(/^(?:v1|sha256|signature)\s*=\s*([0-9a-f]+)$/i);
+    if (match) return match[1].toLowerCase();
+  }
+  return trimmed.toLowerCase();
+}
+
+async function hmacSha256Hex(secret: string, payload: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    new TextEncoder().encode(payload),
+  );
+  return [...new Uint8Array(signature)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+/** Verify X-Throne-Signature when Throne sends HMAC instead of the raw secret. */
+export async function verifyThroneSignature(
+  rawBody: string,
+  webhookSecret: string,
+  signatureHeader: string,
+): Promise<boolean> {
+  const provided = normalizeSignature(signatureHeader);
+  if (!provided) return false;
+
+  const digest = await hmacSha256Hex(webhookSecret, rawBody);
+  if (timingSafeEqual(provided, digest)) return true;
+
+  // Some providers sign an empty body on test pings.
+  if (!rawBody.trim()) {
+    const emptyDigest = await hmacSha256Hex(webhookSecret, '');
+    if (timingSafeEqual(provided, emptyDigest)) return true;
+  }
+
+  return false;
+}
+
+export type ThroneWebhookAuthResult =
+  | { ok: true; method: string }
+  | { ok: false; reason: string };
+
+/**
+ * Accept ?token=, Bearer, X-Throne-Webhook-Secret (literal secret),
+ * or X-Throne-Signature (HMAC-SHA256 of raw body).
+ */
+export async function verifyThroneWebhookAuth(
+  req: Request,
+  url: URL,
+  rawBody: string,
+  webhookSecret: string | undefined,
+): Promise<ThroneWebhookAuthResult> {
+  if (!webhookSecret) {
+    return { ok: true, method: 'dev_no_secret' };
+  }
+
+  const token = url.searchParams.get('token')?.trim();
+  if (token && timingSafeEqual(token, webhookSecret)) {
+    return { ok: true, method: 'query_token' };
+  }
+
+  const auth = req.headers.get('authorization');
+  if (auth?.toLowerCase().startsWith('bearer ')) {
+    const bearer = auth.slice(7).trim();
+    if (bearer && timingSafeEqual(bearer, webhookSecret)) {
+      return { ok: true, method: 'bearer' };
+    }
+  }
+
+  const headerSecret = req.headers.get('x-throne-webhook-secret')?.trim();
+  if (headerSecret && timingSafeEqual(headerSecret, webhookSecret)) {
+    return { ok: true, method: 'x-throne-webhook-secret' };
+  }
+
+  const signature = req.headers.get('x-throne-signature')?.trim();
+  if (signature) {
+    const valid = await verifyThroneSignature(rawBody, webhookSecret, signature);
+    if (valid) return { ok: true, method: 'x-throne-signature' };
+  }
+
+  return { ok: false, reason: 'invalid_secret' };
+}
+
+/** @deprecated Use verifyThroneWebhookAuth — kept for backwards compatibility. */
 export function extractWebhookSecret(req: Request, url: URL): string | null {
   const auth = req.headers.get('authorization');
   if (auth?.toLowerCase().startsWith('bearer ')) {
