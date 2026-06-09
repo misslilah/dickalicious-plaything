@@ -76,6 +76,7 @@ import { canJoinCategory } from '../lib/categoryProgression';
 import {
   acceptPunishment,
   addVideoXp,
+  applyPunishmentCompletionFromServer,
   applyTaskMalus,
   closeDay,
   completeTask,
@@ -87,6 +88,12 @@ import {
   resolvePunishmentDifficulty,
   uncompleteTask,
 } from '../lib/gameLogic';
+import {
+  formatPunishmentCooldown,
+  getLocalPunishmentCooldownAvailableAt,
+  getPunishmentCooldownRemainingMs,
+} from '../lib/punishmentCooldown';
+import { completePunishmentDb } from '../lib/punishmentCooldownDb';
 import {
   readBubblesEnabledFromStorage,
   writeBubblesEnabledToStorage,
@@ -100,6 +107,7 @@ import {
 } from '../lib/videoCompletionDb';
 import {
   fetchPurchasedVideoIds,
+  purchaseTierShopVideoDb,
   purchaseVideoDb,
 } from '../lib/videoPurchaseDb';
 import {
@@ -153,7 +161,15 @@ interface AppStoreValue {
   purchaseVideo: (
     videoId: string,
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
-  acceptPunishment: (templateId: string) => void;
+  purchaseTierShopVideo: (
+    videoId: string,
+  ) => Promise<
+    | { ok: true; videoId: string; videoTitle: string }
+    | { ok: false; error: string }
+  >;
+  acceptPunishment: (
+    templateId: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   applyTaskMalus: (taskId: string) => void;
   dismissPunishment: (id: string) => void;
   /** Awards XP once per user per video after a full watch. Returns XP granted, or 0. */
@@ -542,8 +558,62 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         applyUserState(next);
         return { ok: true };
       },
-      acceptPunishment: (templateId) =>
-        applyUserState(acceptPunishment(state, templateId)),
+      purchaseTierShopVideo: async (videoId) => {
+        const userId = userIdRef.current;
+        if (!userId) return { ok: false, error: 'Not signed in.' };
+        const result = await purchaseTierShopVideoDb(videoId);
+        if (!result.ok) return result;
+        const next: AppState = {
+          ...state,
+          progress: {
+            ...state.progress,
+            points: result.pointsRemaining,
+          },
+          purchasedVideoIds: state.purchasedVideoIds.includes(result.videoId)
+            ? state.purchasedVideoIds
+            : [...state.purchasedVideoIds, result.videoId],
+        };
+        applyUserState(next);
+        return {
+          ok: true,
+          videoId: result.videoId,
+          videoTitle: result.videoTitle,
+        };
+      },
+      acceptPunishment: async (templateId) => {
+        const userId = userIdRef.current;
+        const localRemaining = getPunishmentCooldownRemainingMs(
+          getLocalPunishmentCooldownAvailableAt(state.punishments, templateId),
+        );
+        if (localRemaining > 0) {
+          return {
+            ok: false,
+            error: `You can do this punishment again in ${formatPunishmentCooldown(localRemaining).replace(/^Available in /, '')}.`,
+          };
+        }
+
+        if (userId) {
+          const result = await completePunishmentDb(templateId);
+          if (!result.ok) {
+            setLastSaveError(result.error);
+            return { ok: false, error: result.error };
+          }
+          const next = applyPunishmentCompletionFromServer(
+            state,
+            result.punishment,
+            result.malusPoints,
+          );
+          setState(next);
+          return { ok: true };
+        }
+
+        const next = acceptPunishment(state, templateId);
+        if (next === state) {
+          return { ok: false, error: 'Could not complete punishment.' };
+        }
+        applyUserState(next);
+        return { ok: true };
+      },
       applyTaskMalus: (taskId) => applyUserState(applyTaskMalus(state, taskId)),
       dismissPunishment: (id) => applyUserState(dismissPunishment(state, id)),
       awardVideoCompletion: async (videoId) => {

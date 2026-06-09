@@ -4,6 +4,7 @@ import { CategoryImagePicker } from '../components/CategoryImagePicker';
 import { PunishmentCategoryCard } from '../components/PunishmentCategoryCard';
 import { PunishmentCompletionModal } from '../components/PunishmentCompletionModal';
 import { useAppStore } from '../hooks/useAppStore';
+import { usePunishmentCooldowns } from '../hooks/usePunishmentCooldowns';
 import { isCategoryImagePreview } from '../lib/categoryImage';
 import {
   categoryDifficulty,
@@ -59,16 +60,20 @@ function emptyTemplateDraft(categoryId: string): PunishmentTemplate {
 function PunishmentListRow({
   template,
   malus,
+  cooldownLabel,
   onAccept,
 }: {
   template: PunishmentTemplate;
   malus: number;
+  cooldownLabel: string | null;
   onAccept: () => void;
 }) {
   const requirementBadges: string[] = [];
   if ((template.timerSeconds ?? 0) > 0) requirementBadges.push('Timer');
   if (template.openUrl?.trim()) requirementBadges.push('Open site');
   if ((template.requiredPhrases?.length ?? 0) > 0) requirementBadges.push('Phrase');
+  const onCooldown = cooldownLabel != null;
+  const disabled = malus <= 0 || onCooldown;
 
   return (
     <div className="task-list-row punishment-list-row">
@@ -84,16 +89,20 @@ function PunishmentListRow({
           {requirementBadges.length > 0 && (
             <span className="muted"> · {requirementBadges.join(' · ')}</span>
           )}
+          {onCooldown && (
+            <span className="muted punishment-cooldown"> · {cooldownLabel}</span>
+          )}
         </div>
       </div>
       <div className="task-list-row__aside">
         <button
           type="button"
           className="btn btn--primary btn--small"
-          disabled={malus <= 0}
+          disabled={disabled}
           onClick={onAccept}
+          title={onCooldown ? cooldownLabel ?? undefined : undefined}
         >
-          Accept
+          {onCooldown ? 'On cooldown' : 'Accept'}
         </button>
       </div>
     </div>
@@ -120,6 +129,7 @@ export function Punishments() {
   const [manageMode, setManageMode] = useState(manageFromUrl && isAdmin);
   const [completingTemplate, setCompletingTemplate] =
     useState<PunishmentTemplate | null>(null);
+  const [completionError, setCompletionError] = useState<string | null>(null);
 
   useEffect(() => {
     if (manageFromUrl && isAdmin) setManageMode(true);
@@ -203,13 +213,31 @@ export function Punishments() {
     punishmentsByDifficultyAndCategory,
   ]);
 
+  const cooldownTemplateIds = useMemo(
+    () => selectedTemplates.map((template) => template.id),
+    [selectedTemplates],
+  );
+  const { getCooldownLabel, isOnCooldown, markTemplateCompleted } =
+    usePunishmentCooldowns(
+      cooldownTemplateIds,
+      state.punishments,
+      session != null,
+    );
+
   const handleAcceptClick = (template: PunishmentTemplate) => {
-    if (malus <= 0) return;
+    if (malus <= 0 || isOnCooldown(template.id)) return;
+    setCompletionError(null);
     setCompletingTemplate(template);
   };
 
-  const handleCompletionDone = (templateId: string) => {
-    acceptPunishment(templateId);
+  const handleCompletionDone = async (templateId: string) => {
+    const result = await acceptPunishment(templateId);
+    if (!result.ok) {
+      setCompletionError(result.error);
+      return;
+    }
+    markTemplateCompleted(templateId);
+    setCompletionError(null);
     setCompletingTemplate(null);
   };
 
@@ -383,6 +411,7 @@ export function Punishments() {
                   <PunishmentListRow
                     template={tpl}
                     malus={malus}
+                    cooldownLabel={getCooldownLabel(tpl.id)}
                     onAccept={() => handleAcceptClick(tpl)}
                   />
                 </li>
@@ -411,11 +440,20 @@ export function Punishments() {
         </section>
       )}
 
+      {completionError && (
+        <p className="login-error punishment-completion-error" role="alert">
+          {completionError}
+        </p>
+      )}
+
       <PunishmentCompletionModal
         template={completingTemplate}
         open={completingTemplate != null}
         malus={malus}
-        onClose={() => setCompletingTemplate(null)}
+        onClose={() => {
+          setCompletionError(null);
+          setCompletingTemplate(null);
+        }}
         onComplete={handleCompletionDone}
       />
     </div>

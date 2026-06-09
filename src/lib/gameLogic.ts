@@ -442,6 +442,7 @@ export function acceptPunishment(
   const relieved = template.malusPointsRelieved;
   const newMalus = Math.max(0, state.progress.malusPoints - relieved);
   const date = todayKey(getResetHour(state));
+  const completedAt = new Date().toISOString();
 
   const entry: Punishment = {
     id: generateId(),
@@ -450,7 +451,9 @@ export function acceptPunishment(
     trigger: { type: 'malus_relief' },
     pointsLost: 0,
     active: false,
-    assignedAt: new Date().toISOString(),
+    assignedAt: completedAt,
+    completedAt,
+    templateId,
     date,
   };
 
@@ -458,6 +461,18 @@ export function acceptPunishment(
     ...state,
     progress: { ...state.progress, malusPoints: newMalus },
     punishments: [...state.punishments, entry],
+  };
+}
+
+export function applyPunishmentCompletionFromServer(
+  state: AppState,
+  punishment: Punishment,
+  malusPoints: number,
+): AppState {
+  return {
+    ...state,
+    progress: { ...state.progress, malusPoints },
+    punishments: [...state.punishments, punishment],
   };
 }
 

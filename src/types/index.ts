@@ -208,6 +208,10 @@ export interface Punishment {
   active: boolean;
   assignedAt: string;
   date: string;
+  /** Catalog template this completion came from (malus relief flow). */
+  templateId?: string;
+  /** When the user finished the punishment requirements. */
+  completedAt?: string;
 }
 
 /** Per-user JSON in user_progress.settings (and localStorage fallback for guests). */

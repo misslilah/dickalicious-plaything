@@ -11,6 +11,10 @@ import {
   videoRequiredTier,
   type VideoAccessContext,
 } from '../lib/videoAccess';
+import {
+  getTierShopEligibleVideos,
+  TIER_VIDEO_SHOP_OPTIONS,
+} from '../lib/videoTierShop';
 import type { Reward, Video } from '../types';
 
 type RewardsTab = 'badges' | 'shop';
@@ -47,12 +51,19 @@ function ShopPurchaseToast({
 }
 
 export function Rewards() {
-  const { state, session, purchaseReward, purchaseVideo, reorderBadges } =
-    useAppStore();
+  const {
+    state,
+    session,
+    purchaseReward,
+    purchaseVideo,
+    purchaseTierShopVideo,
+    reorderBadges,
+  } = useAppStore();
   const { progress, unlockedRewardIds, unlockedBadgeIds } = state;
   const [tab, setTab] = useState<RewardsTab>('badges');
   const [toast, setToast] = useState<string | null>(null);
   const [buyingVideoId, setBuyingVideoId] = useState<string | null>(null);
+  const [buyingTierVideoId, setBuyingTierVideoId] = useState<string | null>(null);
   const [badgeReorderBusy, setBadgeReorderBusy] = useState(false);
   const [badgeReorderError, setBadgeReorderError] = useState('');
 
@@ -100,6 +111,20 @@ export function Rewards() {
 
   const shop = state.rewards.filter(isShopReward);
 
+  const tierShopOptions = useMemo(
+    () =>
+      TIER_VIDEO_SHOP_OPTIONS.map((option) => ({
+        ...option,
+        eligibleVideos: getTierShopEligibleVideos(
+          option.tier,
+          state.videos,
+          state.videoCategories,
+          videoAccessCtx,
+        ),
+      })),
+    [state.videos, state.videoCategories, videoAccessCtx],
+  );
+
   const shopVideos = useMemo(() => {
     return state.videos
       .filter((v) => isVideoShopPurchasable(v))
@@ -121,6 +146,18 @@ export function Rewards() {
     setBuyingVideoId(null);
     if (result.ok) {
       setToast(`Unlocked “${video.title}”. Watch it in Videos.`);
+    } else {
+      setToast(result.error);
+    }
+  };
+
+  const handleBuyTierShopVideo = async (video: Video, cost: number) => {
+    if (cost <= 0) return;
+    setBuyingTierVideoId(video.id);
+    const result = await purchaseTierShopVideo(video.id);
+    setBuyingTierVideoId(null);
+    if (result.ok) {
+      setToast(`Unlocked “${result.videoTitle}”. Watch it in Videos.`);
     } else {
       setToast(result.error);
     }
@@ -228,14 +265,75 @@ export function Rewards() {
           <section className="card">
             <h3 className="section-title">Videos</h3>
             <p className="muted">
-              Unlock individual tier-locked videos with your task points.
+              Pick a tier-locked video to unlock with your task points. Each purchase
+              unlocks one video.
             </p>
-            {shopVideos.length === 0 ? (
+            {tierShopOptions.map((option) => (
+              <div key={option.tier} className="tier-shop-section">
+                <header className="tier-shop-section__header">
+                  <h4 className="tier-shop-section__title">
+                    {option.label}
+                    {' · '}
+                    <TierBadge tier={option.tier} accessStyle />
+                  </h4>
+                  <p className="muted">{option.description}</p>
+                  <p className="muted tier-shop-section__price">
+                    {option.cost} points per video
+                  </p>
+                </header>
+                {option.eligibleVideos.length === 0 ? (
+                  <p className="muted tier-shop-section__empty">
+                    No videos left in this tier.
+                  </p>
+                ) : (
+                  <ul className="tier-shop-grid">
+                    {option.eligibleVideos.map((video) => {
+                      const category = state.videoCategories.find(
+                        (c) => c.id === video.categoryId,
+                      );
+                      const canBuy = progress.points >= option.cost;
+                      const required = videoRequiredTier(video, category);
+                      return (
+                        <li key={video.id} className="tier-shop-card">
+                          <span className="tier-shop-card__icon" aria-hidden>
+                            🎬
+                          </span>
+                          <div className="tier-shop-card__body">
+                            <strong className="tier-shop-card__title">
+                              {video.title}
+                            </strong>
+                            <p className="muted tier-shop-card__meta">
+                              {categoryName(video)}
+                              {' · '}
+                              <TierBadge tier={required} accessStyle />
+                            </p>
+                            <span className="cost">{option.cost} pts</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn--small"
+                            disabled={!canBuy || buyingTierVideoId === video.id}
+                            onClick={() =>
+                              void handleBuyTierShopVideo(video, option.cost)
+                            }
+                          >
+                            {buyingTierVideoId === video.id ? 'Buying…' : 'Buy'}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </section>
+
+          {shopVideos.length > 0 && (
+            <section className="card">
+              <h3 className="section-title">Individual videos</h3>
               <p className="muted">
-                No videos for sale right now, or you already have access to every
-                listed unlock.
+                Pick a specific video when the admin has set an individual shop price.
               </p>
-            ) : (
               <ul className="reward-list">
                 {shopVideos.map((video) => {
                   const category = state.videoCategories.find(
@@ -268,15 +366,16 @@ export function Rewards() {
                   );
                 })}
               </ul>
-            )}
-            {state.purchasedVideoIds.length > 0 && (
-              <p className="muted shop-owned-hint">
-                You own {state.purchasedVideoIds.length} individually unlocked{' '}
-                {state.purchasedVideoIds.length === 1 ? 'video' : 'videos'}.{' '}
-                <Link to="/videos">Open Videos</Link>
-              </p>
-            )}
-          </section>
+            </section>
+          )}
+
+          {state.purchasedVideoIds.length > 0 && (
+            <p className="muted shop-owned-hint">
+              You own {state.purchasedVideoIds.length} individually unlocked{' '}
+              {state.purchasedVideoIds.length === 1 ? 'video' : 'videos'}.{' '}
+              <Link to="/videos">Open Videos</Link>
+            </p>
+          )}
         </>
       )}
 
