@@ -58,7 +58,7 @@ export function Training() {
   const thronePendingByTaskId = useMemo(() => {
     const map = new Map<string, ThronePaymentPending>();
     for (const p of thronePending) {
-      if (p.status === 'waiting') {
+      if (p.status === 'waiting' && p.taskId) {
         map.set(p.taskId, p);
       }
     }

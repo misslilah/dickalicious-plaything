@@ -322,6 +322,14 @@ export interface ThronePaymentPending {
   expiresAt: string;
   completedAt: string | null;
   giftEventId: string | null;
+  /** Populated on admin list fetches (profile join). */
+  username?: string;
+  /** Populated on admin list fetches (training task join). */
+  taskTitle?: string;
+  /** Populated on admin list fetches (punishment template join). */
+  punishmentTitle?: string;
+  /** Populated on admin list fetches (punishment template join). */
+  throneAmountCents?: number | null;
 }
 
 export interface ThroneGiftEvent {

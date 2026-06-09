@@ -223,12 +223,7 @@ export async function cancelThronePaymentPending(
 export async function fetchWaitingThronePayments(): Promise<
   | {
       ok: true;
-      pending: (ThronePaymentPending & {
-        username?: string;
-        taskTitle?: string;
-        punishmentTitle?: string;
-        throneAmountCents?: number | null;
-      })[];
+      pending: ThronePaymentPending[];
     }
   | { ok: false; error: string }
 > {

@@ -864,9 +864,7 @@ function TrainingThroneAdmin() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [pending, setPending] = useState<
-    (ThronePaymentPending & { username?: string; taskTitle?: string })[]
-  >([]);
+  const [pending, setPending] = useState<ThronePaymentPending[]>([]);
   const [events, setEvents] = useState<ThroneGiftEvent[]>([]);
   const [actingId, setActingId] = useState<string | null>(null);
   const webhookUrl = getThroneWebhookUrl();
