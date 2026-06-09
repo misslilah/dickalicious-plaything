@@ -96,6 +96,10 @@ type DbPunishmentTemplate = {
   difficulty: PunishmentDifficulty | null;
   malus_points_relieved: number;
   punishment_category_id: string | null;
+  required_phrases: string[] | null;
+  required_phrase_repeat_count: number | null;
+  timer_seconds: number | null;
+  open_url: string | null;
 };
 
 type DbVideoCategory = {
@@ -206,12 +210,18 @@ function mapPunishmentCategory(row: DbPunishmentCategory): PunishmentCategory {
   };
 }
 
+function normalizeRequiredPhrases(raw: string[] | null | undefined): string[] {
+  if (!raw?.length) return [];
+  return raw.map((p) => p.trim()).filter(Boolean);
+}
+
 function mapPunishmentTemplate(row: DbPunishmentTemplate): PunishmentTemplate {
   const triggerType = row.trigger_type;
   const trigger: PunishmentTrigger =
     triggerType === 'malus_relief'
       ? { type: 'malus_relief' }
       : ({ type: triggerType } as PunishmentTrigger);
+  const requiredPhrases = normalizeRequiredPhrases(row.required_phrases);
   return {
     id: row.id,
     title: row.title,
@@ -221,6 +231,12 @@ function mapPunishmentTemplate(row: DbPunishmentTemplate): PunishmentTemplate {
     difficulty: row.difficulty ?? undefined,
     malusPointsRelieved: row.malus_points_relieved ?? row.points_lost ?? 0,
     pointsLost: row.points_lost,
+    requiredPhrases: requiredPhrases.length > 0 ? requiredPhrases : undefined,
+    requiredPhraseRepeatCount: requiredPhrases.length
+      ? Math.max(1, row.required_phrase_repeat_count ?? 1)
+      : undefined,
+    timerSeconds: row.timer_seconds ?? undefined,
+    openUrl: row.open_url?.trim() || undefined,
   };
 }
 
@@ -533,15 +549,30 @@ export async function upsertPunishmentTemplate(
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
 
+  const requiredPhrases = normalizeRequiredPhrases(template.requiredPhrases);
+  const openUrl = template.openUrl?.trim() || null;
+  if (openUrl && !/^https?:\/\//i.test(openUrl)) {
+    return { ok: false, error: 'Open URL must start with http:// or https://.' };
+  }
+
   const row = {
     id: template.id || undefined,
     title: template.title,
     description: template.description,
     trigger_type: template.trigger.type,
     points_lost: template.pointsLost ?? 0,
-    difficulty: template.difficulty ?? null,
+    difficulty: template.difficulty ?? 'medium',
     malus_points_relieved: template.malusPointsRelieved ?? 0,
-    punishment_category_id: template.categoryId ?? null,
+    punishment_category_id: template.categoryId || null,
+    required_phrases: requiredPhrases,
+    required_phrase_repeat_count: requiredPhrases.length
+      ? Math.max(1, template.requiredPhraseRepeatCount ?? 1)
+      : 1,
+    timer_seconds:
+      template.timerSeconds != null && template.timerSeconds > 0
+        ? template.timerSeconds
+        : null,
+    open_url: openUrl,
   };
 
   const { data, error } = template.id

@@ -188,6 +188,14 @@ export interface PunishmentTemplate {
   malusPointsRelieved: number;
   /** Legacy field; kept for DB compat, not used in malus flow. */
   pointsLost?: number;
+  /** Exact phrase(s) the user must type to complete (each phrase typed repeat count times). */
+  requiredPhrases?: string[];
+  /** How many times each phrase must be typed correctly (default 1). */
+  requiredPhraseRepeatCount?: number;
+  /** Countdown timer before the punishment can be completed. */
+  timerSeconds?: number;
+  /** URL the user must open before completing. */
+  openUrl?: string;
 }
 
 /** Runtime punishment assigned to the user (not the admin catalog). */

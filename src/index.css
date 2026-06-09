@@ -264,6 +264,30 @@ select {
   color: var(--accent-2);
 }
 
+.punishment-category-subsection {
+  margin-bottom: 1rem;
+}
+
+.punishment-category-subsection:last-child {
+  margin-bottom: 0;
+}
+
+.punishment-category-heading {
+  margin: 0.75rem 0 0.35rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.punishment-category-subsection:first-of-type .punishment-category-heading {
+  margin-top: 0;
+}
+
+.punishment-category-empty {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+}
+
 .punishment-category-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
@@ -286,6 +310,14 @@ select {
   margin: 0 0 0.75rem;
   border-radius: var(--radius);
   overflow: hidden;
+}
+
+.punishment-list-row {
+  cursor: default;
+}
+
+.punishment-list-row .task-list-row__aside {
+  justify-content: center;
 }
 
 .punishment-selected-hint {

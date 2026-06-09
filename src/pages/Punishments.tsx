@@ -1,20 +1,45 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CategoryImagePicker } from '../components/CategoryImagePicker';
+import { PunishmentCategoryCard } from '../components/PunishmentCategoryCard';
+import { PunishmentCompletionModal } from '../components/PunishmentCompletionModal';
 import { useAppStore } from '../hooks/useAppStore';
 import { isCategoryImagePreview } from '../lib/categoryImage';
 import {
+  categoryDifficulty,
   groupCategoriesByDifficulty,
   groupPunishmentsByCategory,
+  groupPunishmentsByDifficultyAndCategory,
   PUNISHMENT_DIFFICULTY_LABELS,
   PUNISHMENT_DIFFICULTY_ORDER,
   templatesForCategory,
 } from '../lib/gameLogic';
+import {
+  isValidOpenUrl,
+  parsePhrasesFromText,
+  phrasesToText,
+  punishmentHasRequirements,
+} from '../lib/punishmentRequirements';
 import type {
   PunishmentCategory,
   PunishmentDifficulty,
   PunishmentTemplate,
 } from '../types';
+
+const UNCategorized_PREFIX = '__uncategorized__';
+
+function uncategorizedCategoryId(difficulty: PunishmentDifficulty): string {
+  return `${UNCategorized_PREFIX}:${difficulty}`;
+}
+
+function parseUncategorizedDifficulty(
+  categoryId: string,
+): PunishmentDifficulty | null {
+  if (!categoryId.startsWith(`${UNCategorized_PREFIX}:`)) return null;
+  const tier = categoryId.split(':')[1];
+  if (tier === 'easy' || tier === 'medium' || tier === 'hard') return tier;
+  return null;
+}
 
 function emptyCategoryDraft(): PunishmentCategory {
   return { id: '', name: '', description: '', sortOrder: 0, difficulty: 'medium' };
@@ -31,60 +56,54 @@ function emptyTemplateDraft(categoryId: string): PunishmentTemplate {
   };
 }
 
-function PunishmentCategoryHero({ category }: { category: PunishmentCategory }) {
-  return (
-    <div className="punishment-category-hero category-card__image-wrap">
-      {category.imageUrl ? (
-        <img src={category.imageUrl} alt="" className="category-card__image" />
-      ) : (
-        <div className="category-card__placeholder" aria-hidden>
-          <span className="category-card__icon">⚡</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PunishmentCategoryCard({
-  category,
-  selected,
-  punishmentCount,
-  onSelect,
+function PunishmentListRow({
+  template,
+  malus,
+  onAccept,
 }: {
-  category: PunishmentCategory;
-  selected: boolean;
-  punishmentCount: number;
-  onSelect: () => void;
+  template: PunishmentTemplate;
+  malus: number;
+  onAccept: () => void;
 }) {
+  const requirementBadges: string[] = [];
+  if ((template.timerSeconds ?? 0) > 0) requirementBadges.push('Timer');
+  if (template.openUrl?.trim()) requirementBadges.push('Open site');
+  if ((template.requiredPhrases?.length ?? 0) > 0) requirementBadges.push('Phrase');
+
   return (
-    <button
-      type="button"
-      className={`category-card punishment-category-card${selected ? ' punishment-category-card--selected' : ''}`}
-      aria-pressed={selected}
-      onClick={onSelect}
-    >
-      <div className="category-card__image-wrap">
-        {category.imageUrl ? (
-          <img src={category.imageUrl} alt="" className="category-card__image" />
-        ) : (
-          <div className="category-card__placeholder" aria-hidden>
-            <span className="category-card__icon">⚡</span>
-          </div>
+    <div className="task-list-row punishment-list-row">
+      <div className="task-list-row__main">
+        <h3 className="task-list-row__title">{template.title}</h3>
+        {template.description && (
+          <p className="task-list-row__desc">{template.description}</p>
         )}
+        <div className="task-list-row__meta">
+          <span className="punishment-points">
+            Clears up to {template.malusPointsRelieved} malus
+          </span>
+          {requirementBadges.length > 0 && (
+            <span className="muted"> · {requirementBadges.join(' · ')}</span>
+          )}
+        </div>
       </div>
-      <div className="category-card__body">
-        <span className="category-card__name">{category.name}</span>
-        <span className="category-card__meta muted">
-          {punishmentCount} {punishmentCount === 1 ? 'punishment' : 'punishments'}
-        </span>
+      <div className="task-list-row__aside">
+        <button
+          type="button"
+          className="btn btn--primary btn--small"
+          disabled={malus <= 0}
+          onClick={onAccept}
+        >
+          Accept
+        </button>
       </div>
-    </button>
+    </div>
   );
 }
 
 export function Punishments() {
   const [searchParams, setSearchParams] = useSearchParams();
   const manageFromUrl = searchParams.get('manage') === '1';
+  const selectedCategoryId = searchParams.get('category');
   const {
     state,
     session,
@@ -99,6 +118,8 @@ export function Punishments() {
 
   const isAdmin = session?.role === 'admin';
   const [manageMode, setManageMode] = useState(manageFromUrl && isAdmin);
+  const [completingTemplate, setCompletingTemplate] =
+    useState<PunishmentTemplate | null>(null);
 
   useEffect(() => {
     if (manageFromUrl && isAdmin) setManageMode(true);
@@ -106,64 +127,91 @@ export function Punishments() {
 
   const setManage = (on: boolean) => {
     setManageMode(on);
+    const next = new URLSearchParams(searchParams);
     if (on) {
-      setSearchParams({ manage: '1' }, { replace: true });
+      next.set('manage', '1');
+      next.delete('category');
     } else {
-      setSearchParams({}, { replace: true });
+      next.delete('manage');
     }
+    setSearchParams(next, { replace: true });
+  };
+
+  const selectCategory = (categoryId: string | null) => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('manage');
+    if (categoryId) {
+      next.set('category', categoryId);
+    } else {
+      next.delete('category');
+    }
+    setSearchParams(next, { replace: true });
   };
 
   const malus = state.progress.malusPoints;
   const reliefTemplates = state.punishmentTemplates.filter(
     (t) => t.trigger.type === 'malus_relief' || t.malusPointsRelieved > 0,
   );
-  const categoriesByDifficulty = useMemo(
-    () => groupCategoriesByDifficulty(state.punishmentCategories),
-    [state.punishmentCategories],
+  const punishmentsByDifficultyAndCategory = useMemo(
+    () =>
+      groupPunishmentsByDifficultyAndCategory(
+        reliefTemplates,
+        state.punishmentCategories,
+        { includeEmptyCategories: true },
+      ),
+    [reliefTemplates, state.punishmentCategories],
   );
+  const hasPunishments = reliefTemplates.length > 0;
   const hasCategories = state.punishmentCategories.length > 0;
+  const showPunishmentLibrary = hasCategories || hasPunishments;
+  const hiddenTemplateCount = state.punishmentTemplates.length - reliefTemplates.length;
   const history = state.punishments
     .filter((p) => p.trigger.type === 'malus_relief')
     .slice(-10)
     .reverse();
 
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!hasCategories) {
-      setSelectedCategoryId(null);
-      return;
+  const selectedCategory = useMemo(() => {
+    if (!selectedCategoryId) return null;
+    const uncategorizedTier = parseUncategorizedDifficulty(selectedCategoryId);
+    if (uncategorizedTier) {
+      return {
+        id: selectedCategoryId,
+        name: 'Other',
+        description: 'Punishments not assigned to a category in this tier.',
+        sortOrder: 9999,
+        difficulty: uncategorizedTier,
+      } satisfies PunishmentCategory;
     }
-    if (
-      !selectedCategoryId ||
-      !state.punishmentCategories.some((c) => c.id === selectedCategoryId)
-    ) {
-      const first =
-        PUNISHMENT_DIFFICULTY_ORDER.map((d) => categoriesByDifficulty[d][0]).find(
-          Boolean,
-        ) ?? state.punishmentCategories[0];
-      setSelectedCategoryId(first?.id ?? null);
+    return state.punishmentCategories.find((c) => c.id === selectedCategoryId) ?? null;
+  }, [selectedCategoryId, state.punishmentCategories]);
+
+  const selectedTemplates = useMemo(() => {
+    if (!selectedCategoryId) return [];
+    const uncategorizedTier = parseUncategorizedDifficulty(selectedCategoryId);
+    if (uncategorizedTier) {
+      return punishmentsByDifficultyAndCategory[uncategorizedTier].uncategorized;
     }
-  }, [hasCategories, selectedCategoryId, state.punishmentCategories, categoriesByDifficulty]);
+    return templatesForCategory(
+      reliefTemplates,
+      state.punishmentCategories,
+      selectedCategoryId,
+    );
+  }, [
+    selectedCategoryId,
+    reliefTemplates,
+    state.punishmentCategories,
+    punishmentsByDifficultyAndCategory,
+  ]);
 
-  const selectedCategory = state.punishmentCategories.find(
-    (c) => c.id === selectedCategoryId,
-  );
-  const selectedTemplates = useMemo(
-    () =>
-      selectedCategoryId
-        ? templatesForCategory(
-            reliefTemplates,
-            state.punishmentCategories,
-            selectedCategoryId,
-          )
-        : [],
-    [reliefTemplates, state.punishmentCategories, selectedCategoryId],
-  );
+  const handleAcceptClick = (template: PunishmentTemplate) => {
+    if (malus <= 0) return;
+    setCompletingTemplate(template);
+  };
 
-  const countInCategory = (categoryId: string) =>
-    templatesForCategory(reliefTemplates, state.punishmentCategories, categoryId)
-      .length;
+  const handleCompletionDone = (templateId: string) => {
+    acceptPunishment(templateId);
+    setCompletingTemplate(null);
+  };
 
   if (manageMode && isAdmin) {
     return (
@@ -187,8 +235,8 @@ export function Punishments() {
           <div>
             <h2>Punishments</h2>
             <p className="muted">
-              Incomplete started or daily tasks add malus at day end. Pick a category,
-              then accept a punishment to reduce your malus balance.
+              Incomplete started or daily tasks add malus at day end. Choose a
+              category, then accept a punishment to reduce your malus balance.
             </p>
           </div>
           {isAdmin && (
@@ -214,10 +262,10 @@ export function Punishments() {
         )}
       </section>
 
-      {!hasCategories && (
+      {!showPunishmentLibrary && (
         <section className="card">
           <p className="muted">
-            No punishment categories yet.
+            No punishments available yet.
             {isAdmin ? (
               <>
                 {' '}
@@ -226,74 +274,122 @@ export function Punishments() {
                   className="btn btn--ghost btn--small"
                   onClick={() => setManage(true)}
                 >
-                  Add categories
+                  Add punishments
                 </button>
               </>
             ) : (
-              ' Ask an admin to add categories and punishments.'
+              ' Ask an admin to add punishments.'
             )}
           </p>
+          {isAdmin && hiddenTemplateCount > 0 && (
+            <p className="muted punishment-hidden-hint">
+              {hiddenTemplateCount} punishment template
+              {hiddenTemplateCount === 1 ? ' is' : 's are'} hidden because{' '}
+              {hiddenTemplateCount === 1 ? 'it is' : 'they are'} not set up for malus
+              relief. Edit them in Admin or Manage and set a malus relief value.
+            </p>
+          )}
         </section>
       )}
 
-      {hasCategories && (
-        <div className="punishment-tiers">
+      {showPunishmentLibrary && !selectedCategory && (
+        <>
           {PUNISHMENT_DIFFICULTY_ORDER.map((difficulty) => {
-            const cats = categoriesByDifficulty[difficulty];
-            if (cats.length === 0) return null;
+            const tier = punishmentsByDifficultyAndCategory[difficulty];
+            const hasTierContent =
+              tier.categories.length > 0 || tier.uncategorized.length > 0;
+            if (!hasTierContent) return null;
             return (
-              <section key={difficulty} className="punishment-difficulty-section">
-                <h3 className="punishment-difficulty-heading">
+              <section key={difficulty} className="card category-tier">
+                <h3 className="section-title">
                   {PUNISHMENT_DIFFICULTY_LABELS[difficulty]}
                 </h3>
-                <div className="punishment-category-grid">
-                  {cats.map((category) => (
+                <div className="category-grid">
+                  {tier.categories.map(({ category }) => (
                     <PunishmentCategoryCard
                       key={category.id}
                       category={category}
-                      selected={selectedCategoryId === category.id}
-                      punishmentCount={countInCategory(category.id)}
-                      onSelect={() => setSelectedCategoryId(category.id)}
+                      onSelect={() => selectCategory(category.id)}
                     />
                   ))}
+                  {tier.uncategorized.length > 0 && (
+                    <PunishmentCategoryCard
+                      category={{
+                        id: uncategorizedCategoryId(difficulty),
+                        name: 'Other',
+                        description: 'Punishments without a category',
+                        sortOrder: 9999,
+                        difficulty,
+                      }}
+                      onSelect={() =>
+                        selectCategory(uncategorizedCategoryId(difficulty))
+                      }
+                    />
+                  )}
                 </div>
               </section>
             );
           })}
-        </div>
+          {hasPunishments && malus <= 0 && (
+            <p className="muted punishment-selected-hint">
+              You need malus points before you can accept a punishment.
+            </p>
+          )}
+          {isAdmin && hiddenTemplateCount > 0 && (
+            <p className="muted punishment-hidden-hint">
+              {hiddenTemplateCount} punishment template
+              {hiddenTemplateCount === 1 ? ' is' : 's are'} hidden because{' '}
+              {hiddenTemplateCount === 1 ? 'it is' : 'they are'} not set up for malus
+              relief. Edit them in Admin or Manage and set a malus relief value.
+            </p>
+          )}
+        </>
       )}
 
-      {selectedCategory && (
+      {showPunishmentLibrary && selectedCategory && (
         <section className="card punishment-selected-panel">
+          <div className="page-header__row">
+            <button
+              type="button"
+              className="btn btn--ghost btn--small"
+              onClick={() => selectCategory(null)}
+            >
+              ← All categories
+            </button>
+          </div>
+          {isCategoryImagePreview(selectedCategory.imageUrl) && (
+            <div className="punishment-category-hero">
+              <img
+                src={selectedCategory.imageUrl}
+                alt=""
+                className="category-card__image"
+              />
+            </div>
+          )}
           <h3 className="section-title">{selectedCategory.name}</h3>
-          <PunishmentCategoryHero category={selectedCategory} />
           {selectedCategory.description && (
-            <p className="muted punishment-category-desc">{selectedCategory.description}</p>
+            <p className="punishment-category-desc muted">
+              {selectedCategory.description}
+            </p>
           )}
           {selectedTemplates.length === 0 ? (
-            <p className="muted">No punishments in this category yet.</p>
+            <p className="muted punishment-category-empty">
+              No punishments in this category yet.
+            </p>
           ) : (
-            <ul className="punishment-list">
+            <ul className="task-list">
               {selectedTemplates.map((tpl) => (
-                <li key={tpl.id} className="punishment-item punishment-item--template">
-                  <h4>{tpl.title}</h4>
-                  <p>{tpl.description}</p>
-                  <p className="punishment-points">
-                    Clears up to {tpl.malusPointsRelieved} malus
-                  </p>
-                  <button
-                    type="button"
-                    className="btn btn--primary btn--small"
-                    disabled={malus <= 0}
-                    onClick={() => acceptPunishment(tpl.id)}
-                  >
-                    Accept punishment
-                  </button>
+                <li key={tpl.id}>
+                  <PunishmentListRow
+                    template={tpl}
+                    malus={malus}
+                    onAccept={() => handleAcceptClick(tpl)}
+                  />
                 </li>
               ))}
             </ul>
           )}
-          {malus <= 0 && selectedTemplates.length > 0 && (
+          {selectedTemplates.length > 0 && malus <= 0 && (
             <p className="muted punishment-selected-hint">
               You need malus points before you can accept a punishment.
             </p>
@@ -314,6 +410,14 @@ export function Punishments() {
           </ul>
         </section>
       )}
+
+      <PunishmentCompletionModal
+        template={completingTemplate}
+        open={completingTemplate != null}
+        malus={malus}
+        onClose={() => setCompletingTemplate(null)}
+        onComplete={handleCompletionDone}
+      />
     </div>
   );
 }
@@ -374,6 +478,9 @@ function PunishmentsManage({
   const [tplDraft, setTplDraft] = useState<PunishmentTemplate>(() =>
     emptyTemplateDraft(''),
   );
+  const [phrasesText, setPhrasesText] = useState('');
+  const [timerMinutes, setTimerMinutes] = useState('');
+  const [timerSecondsPart, setTimerSecondsPart] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [imageMessage, setImageMessage] = useState('');
@@ -384,6 +491,19 @@ function PunishmentsManage({
 
   const manageCategory =
     state.punishmentCategories.find((c) => c.id === manageCategoryId) ?? null;
+
+  const syncTemplateDraft = (template: PunishmentTemplate) => {
+    setTplDraft(template);
+    setPhrasesText(phrasesToText(template.requiredPhrases));
+    const totalSeconds = template.timerSeconds ?? 0;
+    if (totalSeconds > 0) {
+      setTimerMinutes(String(Math.floor(totalSeconds / 60)));
+      setTimerSecondsPart(String(totalSeconds % 60));
+    } else {
+      setTimerMinutes('');
+      setTimerSecondsPart('');
+    }
+  };
 
   useEffect(() => {
     if (manageCategoryId && manageCategory) {
@@ -422,9 +542,18 @@ function PunishmentsManage({
       setError(result.error);
       return;
     }
+    const savedId = result.id ?? catDraft.id;
     setCatDraft(emptyCategoryDraft());
     setImageMessage('');
-    setMessage('Category saved.');
+    if (savedId) {
+      setManageCategoryId(savedId);
+      syncTemplateDraft(emptyTemplateDraft(savedId));
+    }
+    setMessage(
+      savedId
+        ? 'Category saved. Add punishments in the section below.'
+        : 'Category saved.',
+    );
   };
 
   const removeCategory = async (id: string) => {
@@ -453,6 +582,17 @@ function PunishmentsManage({
       setError('Select a category first.');
       return;
     }
+    const openUrl = tplDraft.openUrl?.trim();
+    if (openUrl && !isValidOpenUrl(openUrl)) {
+      setError('Open URL must start with http:// or https://.');
+      return;
+    }
+    const requiredPhrases = parsePhrasesFromText(phrasesText);
+    const mins = Number(timerMinutes) || 0;
+    const secs = Number(timerSecondsPart) || 0;
+    const timerTotal = mins * 60 + secs;
+    const category =
+      state.punishmentCategories.find((c) => c.id === categoryId) ?? null;
     const payload: PunishmentTemplate = {
       ...tplDraft,
       id: tplDraft.id || '',
@@ -460,6 +600,15 @@ function PunishmentsManage({
       categoryId,
       trigger: { type: 'malus_relief' },
       malusPointsRelieved: tplDraft.malusPointsRelieved || 1,
+      difficulty:
+        tplDraft.difficulty ?? (category ? categoryDifficulty(category) : 'medium'),
+      requiredPhrases: requiredPhrases.length > 0 ? requiredPhrases : undefined,
+      requiredPhraseRepeatCount:
+        requiredPhrases.length > 0
+          ? Math.max(1, tplDraft.requiredPhraseRepeatCount ?? 1)
+          : undefined,
+      timerSeconds: timerTotal > 0 ? timerTotal : undefined,
+      openUrl: openUrl || undefined,
     };
     const result = tplDraft.id
       ? await updatePunishmentTemplate(payload)
@@ -468,7 +617,7 @@ function PunishmentsManage({
       setError(result.error);
       return;
     }
-    setTplDraft(emptyTemplateDraft(categoryId));
+    syncTemplateDraft(emptyTemplateDraft(categoryId));
     setMessage('Punishment saved.');
   };
 
@@ -480,7 +629,7 @@ function PunishmentsManage({
       return;
     }
     if (tplDraft.id === id) {
-      setTplDraft(emptyTemplateDraft(manageCategoryId ?? ''));
+      syncTemplateDraft(emptyTemplateDraft(manageCategoryId ?? ''));
     }
     setMessage('Punishment deleted.');
   };
@@ -489,7 +638,19 @@ function PunishmentsManage({
     setManageCategoryId(c.id);
     setCatDraft(c);
     setImageMessage('');
-    setTplDraft(emptyTemplateDraft(c.id));
+    syncTemplateDraft(emptyTemplateDraft(c.id));
+  };
+
+  const requirementSummary = (t: PunishmentTemplate): string => {
+    const parts: string[] = [];
+    if ((t.timerSeconds ?? 0) > 0) parts.push(`timer ${t.timerSeconds}s`);
+    if (t.openUrl?.trim()) parts.push('URL');
+    if ((t.requiredPhrases?.length ?? 0) > 0) {
+      parts.push(
+        `${t.requiredPhrases!.length} phrase${t.requiredPhrases!.length === 1 ? '' : 's'}`,
+      );
+    }
+    return parts.length > 0 ? ` · ${parts.join(', ')}` : '';
   };
 
   return (
@@ -625,31 +786,41 @@ function PunishmentsManage({
                     {PUNISHMENT_DIFFICULTY_LABELS[difficulty]}
                   </h4>
                   <ul className="admin-library">
-                    {cats.map((c) => (
-                      <li key={c.id} className="admin-library-item">
-                        <button
-                          type="button"
-                          className={`admin-library-item__main${manageCategoryId === c.id ? ' admin-library-item__main--active' : ''}`}
-                          onClick={() => selectCategoryForManage(c)}
-                        >
-                          <strong>{c.name}</strong>
-                          <span className="muted">
-                            order {c.sortOrder}
-                            {c.imageUrl ? ' · image' : ''}
-                            {c.description ? ` · ${c.description}` : ''}
-                          </span>
-                        </button>
-                        <div className="admin-library-item__actions">
+                    {cats.map((c) => {
+                      const punishmentCount = templatesForCategory(
+                        state.punishmentTemplates,
+                        state.punishmentCategories,
+                        c.id,
+                      ).length;
+                      return (
+                        <li key={c.id} className="admin-library-item">
                           <button
                             type="button"
-                            className="btn btn--ghost btn--small btn--danger-text"
-                            onClick={() => void removeCategory(c.id)}
+                            className={`admin-library-item__main${manageCategoryId === c.id ? ' admin-library-item__main--active' : ''}`}
+                            onClick={() => selectCategoryForManage(c)}
                           >
-                            Delete
+                            <strong>{c.name}</strong>
+                            <span className="muted">
+                              order {c.sortOrder}
+                              {c.imageUrl ? ' · image' : ''}
+                              {punishmentCount === 0
+                                ? ' · no punishments yet'
+                                : ` · ${punishmentCount} punishment${punishmentCount === 1 ? '' : 's'}`}
+                              {c.description ? ` · ${c.description}` : ''}
+                            </span>
                           </button>
-                        </div>
-                      </li>
-                    ))}
+                          <div className="admin-library-item__actions">
+                            <button
+                              type="button"
+                              className="btn btn--ghost btn--small btn--danger-text"
+                              onClick={() => void removeCategory(c.id)}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               );
@@ -696,6 +867,74 @@ function PunishmentsManage({
               }
             />
           </div>
+          <div className="field">
+            <label htmlFor="ptpl-phrases">Required phrases (one per line)</label>
+            <textarea
+              id="ptpl-phrases"
+              rows={3}
+              value={phrasesText}
+              placeholder="Optional — user must type each phrase to complete"
+              onChange={(e) => setPhrasesText(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="ptpl-phrase-repeat">Times each phrase must be typed</label>
+            <input
+              id="ptpl-phrase-repeat"
+              type="number"
+              min={1}
+              value={tplDraft.requiredPhraseRepeatCount ?? 1}
+              onChange={(e) =>
+                setTplDraft({
+                  ...tplDraft,
+                  requiredPhraseRepeatCount: Math.max(1, Number(e.target.value) || 1),
+                })
+              }
+            />
+          </div>
+          <div className="field">
+            <span>Timer before completion</span>
+            <div className="field-row">
+              <label className="sr-only" htmlFor="ptpl-timer-min">
+                Minutes
+              </label>
+              <input
+                id="ptpl-timer-min"
+                type="number"
+                min={0}
+                placeholder="Min"
+                value={timerMinutes}
+                onChange={(e) => setTimerMinutes(e.target.value)}
+              />
+              <label className="sr-only" htmlFor="ptpl-timer-sec">
+                Seconds
+              </label>
+              <input
+                id="ptpl-timer-sec"
+                type="number"
+                min={0}
+                max={59}
+                placeholder="Sec"
+                value={timerSecondsPart}
+                onChange={(e) => setTimerSecondsPart(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="ptpl-url">Site to open (http or https)</label>
+            <input
+              id="ptpl-url"
+              type="url"
+              value={tplDraft.openUrl ?? ''}
+              placeholder="https://example.com"
+              onChange={(e) =>
+                setTplDraft({
+                  ...tplDraft,
+                  openUrl: e.target.value.trim() || undefined,
+                })
+              }
+            />
+          </div>
           <div className="btn-row">
             <button
               type="button"
@@ -707,7 +946,7 @@ function PunishmentsManage({
             <button
               type="button"
               className="btn btn--ghost"
-              onClick={() => setTplDraft(emptyTemplateDraft(manageCategory.id))}
+              onClick={() => syncTemplateDraft(emptyTemplateDraft(manageCategory.id))}
             >
               {tplDraft.id ? 'Cancel' : 'Clear'}
             </button>
@@ -718,7 +957,13 @@ function PunishmentsManage({
             );
             const templates = group?.templates ?? [];
             if (templates.length === 0) {
-              return <p className="muted">No punishments in this category yet.</p>;
+              return (
+                <p className="muted">
+                  No punishments in this category yet. Fill in the form above and click Add
+                  punishment — they will appear on the Punishments page under{' '}
+                  {PUNISHMENT_DIFFICULTY_LABELS[manageCategory.difficulty ?? 'medium']}.
+                </p>
+              );
             }
             return (
               <ul className="admin-library punishment-manage-list">
@@ -727,10 +972,14 @@ function PunishmentsManage({
                     <button
                       type="button"
                       className="admin-library-item__main"
-                      onClick={() => setTplDraft(t)}
+                      onClick={() => syncTemplateDraft(t)}
                     >
                       <strong>{t.title}</strong>
-                      <span className="muted">clears {t.malusPointsRelieved} malus</span>
+                      <span className="muted">
+                        clears {t.malusPointsRelieved} malus
+                        {requirementSummary(t)}
+                        {punishmentHasRequirements(t) ? '' : ' · no extra requirements'}
+                      </span>
                     </button>
                     <div className="admin-library-item__actions">
                       <button

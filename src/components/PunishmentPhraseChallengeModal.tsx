@@ -1,56 +1,63 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { Task } from '../types';
+import type { PunishmentTemplate } from '../types';
 import {
-  getPhraseChallengeState,
+  getCurrentPunishmentPhrase,
+  getPunishmentPhraseChallengeState,
+  MAX_PUNISHMENT_PHRASE_ERRORS,
+  recordPunishmentPhraseAttempt,
+} from '../lib/punishmentPhraseChallenge';
+import {
   getPhraseRepeatCount,
-  MAX_PHRASE_ERRORS,
-  recordPhraseAttempt,
-} from '../lib/phraseChallenge';
-import { getRequiredPhrase, phraseMatches } from '../lib/taskRequirements';
+  getRequiredPhrases,
+  phraseMatches,
+} from '../lib/punishmentRequirements';
 
-interface PhraseChallengeModalProps {
-  task: Task;
+interface PunishmentPhraseChallengeModalProps {
+  template: PunishmentTemplate;
   open: boolean;
   onPassed: () => void;
-  onFailed: (malusPoints: number) => void;
+  onFailed: () => void;
 }
 
-export function PhraseChallengeModal({
-  task,
+export function PunishmentPhraseChallengeModal({
+  template,
   open,
   onPassed,
   onFailed,
-}: PhraseChallengeModalProps) {
-  const phrase = getRequiredPhrase(task);
-  const repeatCount = getPhraseRepeatCount(task);
+}: PunishmentPhraseChallengeModalProps) {
+  const phrases = getRequiredPhrases(template);
+  const repeatCount = getPhraseRepeatCount(template);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [input, setInput] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [challenge, setChallenge] = useState(() => getPhraseChallengeState(task.id));
+  const [challenge, setChallenge] = useState(() =>
+    getPunishmentPhraseChallengeState(template.id),
+  );
+
+  const currentPhrase = getCurrentPunishmentPhrase(template, challenge);
+  const phraseNumber = Math.min(challenge.phraseIndex + 1, phrases.length);
 
   useEffect(() => {
     if (!open) return;
     setInput('');
     setFeedback(null);
-    setChallenge(getPhraseChallengeState(task.id));
+    setChallenge(getPunishmentPhraseChallengeState(template.id));
     inputRef.current?.focus();
-  }, [open, task.id]);
+  }, [open, template.id]);
 
-  if (!open || !phrase) return null;
-
-  const malusPoints = task.malusPointsOnFail ?? 0;
+  if (!open || phrases.length === 0 || !currentPhrase) return null;
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (challenge.failed) return;
 
-    const correct = phraseMatches(input, phrase);
-    const result = recordPhraseAttempt(task.id, correct, repeatCount);
+    const correct = phraseMatches(input, currentPhrase);
+    const result = recordPunishmentPhraseAttempt(template, correct);
     setChallenge(result.state);
 
     if (result.failed) {
-      onFailed(malusPoints);
+      onFailed();
       return;
     }
 
@@ -60,11 +67,16 @@ export function PhraseChallengeModal({
     }
 
     if (correct) {
-      setFeedback('Correct! Type the phrase again.');
+      const nextPhrase = getCurrentPunishmentPhrase(template, result.state);
+      if (nextPhrase && nextPhrase !== currentPhrase) {
+        setFeedback('Correct! Next phrase.');
+      } else {
+        setFeedback('Correct! Type the phrase again.');
+      }
       setInput('');
       inputRef.current?.focus();
     } else {
-      const remaining = MAX_PHRASE_ERRORS - result.state.errorCount;
+      const remaining = MAX_PUNISHMENT_PHRASE_ERRORS - result.state.errorCount;
       setFeedback(
         remaining > 0
           ? `Incorrect. ${remaining} attempt${remaining === 1 ? '' : 's'} left.`
@@ -76,30 +88,41 @@ export function PhraseChallengeModal({
   };
 
   return (
-    <div className="phrase-modal" role="dialog" aria-modal="true" aria-labelledby="phrase-modal-title">
+    <div
+      className="phrase-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="punishment-phrase-modal-title"
+    >
       <div className="phrase-modal__backdrop" aria-hidden="true" />
       <div className="phrase-modal__panel">
-        <h2 id="phrase-modal-title" className="phrase-modal__title">
+        <h2 id="punishment-phrase-modal-title" className="phrase-modal__title">
           Phrase challenge
         </h2>
         <p className="phrase-modal__hint muted">
-          Type the phrase exactly as shown (case-sensitive; spaces at the ends are ignored).
+          Type the phrase exactly as shown (case-sensitive; spaces at the ends are
+          ignored).
         </p>
+        {phrases.length > 1 && (
+          <p className="phrase-modal__stats muted">
+            Phrase {phraseNumber} of {phrases.length}
+          </p>
+        )}
         <p className="phrase-modal__target">
           <span className="phrase-modal__target-label">Phrase:</span>{' '}
-          <span className="phrase-modal__target-text">{phrase}</span>
+          <span className="phrase-modal__target-text">{currentPhrase}</span>
         </p>
         <p className="phrase-modal__stats" aria-live="polite">
-          Correct: {challenge.correctCount}/{repeatCount} · Errors: {challenge.errorCount}/
-          {MAX_PHRASE_ERRORS}
+          Correct: {challenge.correctCount}/{repeatCount} · Errors:{' '}
+          {challenge.errorCount}/{MAX_PUNISHMENT_PHRASE_ERRORS}
         </p>
         <form className="phrase-modal__form" onSubmit={handleSubmit}>
-          <label className="phrase-modal__label" htmlFor="phrase-modal-input">
+          <label className="phrase-modal__label" htmlFor="punishment-phrase-input">
             Your answer
           </label>
           <input
             ref={inputRef}
-            id="phrase-modal-input"
+            id="punishment-phrase-input"
             type="text"
             className="phrase-modal__input"
             value={input}

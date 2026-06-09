@@ -84,6 +84,7 @@ import {
   markTaskStarted,
   processDayRollover,
   purchaseReward,
+  resolvePunishmentDifficulty,
   uncompleteTask,
 } from '../lib/gameLogic';
 import {
@@ -109,7 +110,7 @@ import {
   videoStoragePath,
 } from '../lib/videoStorage';
 
-type MutateResult = { ok: true } | { ok: false; error: string };
+type MutateResult = { ok: true; id?: string } | { ok: false; error: string };
 
 interface AppStoreValue {
   state: AppState;
@@ -807,7 +808,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         const result = await upsertPunishmentCategory(category, 'insert');
         if (!result.ok) return result;
         await refreshCatalog();
-        return { ok: true };
+        return { ok: true, id: result.category.id };
       },
       updatePunishmentCategory: async (category) => {
         const denied = requireAdmin();
@@ -815,7 +816,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         const result = await upsertPunishmentCategory(category, 'update');
         if (!result.ok) return result;
         await refreshCatalog();
-        return { ok: true };
+        return { ok: true, id: result.category.id };
       },
       deletePunishmentCategory: async (id) => {
         const denied = requireAdmin();
@@ -828,7 +829,15 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       addPunishmentTemplate: async (template) => {
         const denied = requireAdmin();
         if (denied) return denied;
-        const result = await upsertPunishmentTemplate({ ...template, id: '' });
+        const difficulty = resolvePunishmentDifficulty(
+          template,
+          state.punishmentCategories,
+        );
+        const result = await upsertPunishmentTemplate({
+          ...template,
+          id: '',
+          difficulty,
+        });
         if (!result.ok) return result;
         await refreshCatalog();
         return { ok: true };
@@ -836,7 +845,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       updatePunishmentTemplate: async (template) => {
         const denied = requireAdmin();
         if (denied) return denied;
-        const result = await upsertPunishmentTemplate(template);
+        const difficulty = resolvePunishmentDifficulty(
+          template,
+          state.punishmentCategories,
+        );
+        const result = await upsertPunishmentTemplate({ ...template, difficulty });
         if (!result.ok) return result;
         await refreshCatalog();
         return { ok: true };

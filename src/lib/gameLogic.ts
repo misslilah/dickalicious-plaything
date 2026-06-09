@@ -608,7 +608,83 @@ export function groupPunishmentsByCategory(
   return groups;
 }
 
-/** @deprecated Use groupPunishmentsByCategory */
+export function resolvePunishmentDifficulty(
+  template: PunishmentTemplate,
+  categories: PunishmentCategory[],
+): (typeof PUNISHMENT_DIFFICULTY_ORDER)[number] {
+  if (template.difficulty) return template.difficulty;
+  const catId = resolvePunishmentCategoryId(template, categories);
+  if (catId) {
+    const cat = categories.find((c) => c.id === catId);
+    if (cat) return categoryDifficulty(cat);
+  }
+  return 'medium';
+}
+
+export type PunishmentDifficultyTierGroup = {
+  categories: { category: PunishmentCategory; templates: PunishmentTemplate[] }[];
+  uncategorized: PunishmentTemplate[];
+};
+
+export function groupPunishmentsByDifficultyAndCategory(
+  templates: PunishmentTemplate[],
+  categories: PunishmentCategory[],
+  options?: { includeEmptyCategories?: boolean },
+): Record<
+  (typeof PUNISHMENT_DIFFICULTY_ORDER)[number],
+  PunishmentDifficultyTierGroup
+> {
+  const categoriesByDiff = groupCategoriesByDifficulty(categories);
+  const result: Record<
+    (typeof PUNISHMENT_DIFFICULTY_ORDER)[number],
+    PunishmentDifficultyTierGroup
+  > = {
+    easy: { categories: [], uncategorized: [] },
+    medium: { categories: [], uncategorized: [] },
+    hard: { categories: [], uncategorized: [] },
+  };
+
+  for (const difficulty of PUNISHMENT_DIFFICULTY_ORDER) {
+    const catsInTier = categoriesByDiff[difficulty];
+    const categoryIdsInTier = new Set(catsInTier.map((c) => c.id));
+    const tierTemplates = templates.filter(
+      (t) => resolvePunishmentDifficulty(t, categories) === difficulty,
+    );
+
+    for (const cat of catsInTier) {
+      const catTemplates = templatesForCategory(tierTemplates, categories, cat.id);
+      if (options?.includeEmptyCategories || catTemplates.length > 0) {
+        result[difficulty].categories.push({
+          category: cat,
+          templates: catTemplates,
+        });
+      }
+    }
+
+    result[difficulty].uncategorized = tierTemplates.filter((t) => {
+      const catId = resolvePunishmentCategoryId(t, categories);
+      return !catId || !categoryIdsInTier.has(catId);
+    });
+  }
+
+  return result;
+}
+
+export function groupPunishmentsByDifficulty(
+  templates: PunishmentTemplate[],
+  categories: PunishmentCategory[],
+): Record<(typeof PUNISHMENT_DIFFICULTY_ORDER)[number], PunishmentTemplate[]> {
+  const groups: Record<
+    (typeof PUNISHMENT_DIFFICULTY_ORDER)[number],
+    PunishmentTemplate[]
+  > = { easy: [], medium: [], hard: [] };
+  for (const t of templates) {
+    groups[resolvePunishmentDifficulty(t, categories)].push(t);
+  }
+  return groups;
+}
+
+/** @deprecated Use groupPunishmentsByDifficulty */
 export function groupPunishmentTemplates(
   templates: PunishmentTemplate[],
 ): Record<string, PunishmentTemplate[]> {
