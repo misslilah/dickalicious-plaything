@@ -20,7 +20,8 @@ type DbGiftEvent = {
 type DbPending = {
   id: string;
   user_id: string;
-  task_id: string;
+  task_id: string | null;
+  punishment_template_id: string | null;
   status: ThronePaymentPending['status'];
   created_at: string;
   expires_at: string;
@@ -57,11 +58,40 @@ function mapPending(row: DbPending): ThronePaymentPending {
     id: row.id,
     userId: row.user_id,
     taskId: row.task_id,
+    punishmentTemplateId: row.punishment_template_id,
     status: row.status,
     createdAt: row.created_at,
     expiresAt: row.expires_at,
     completedAt: row.completed_at,
     giftEventId: row.gift_event_id,
+  };
+}
+
+export async function fetchUserThronePunishmentPending(
+  userId: string,
+): Promise<
+  { ok: true; pending: ThronePaymentPending[] } | { ok: false; error: string }
+> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const { data, error } = await supabase
+    .from('throne_payment_pending')
+    .select('*')
+    .eq('user_id', userId)
+    .not('punishment_template_id', 'is', null)
+    .in('status', ['waiting', 'completed'])
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    const hint = throneTableError(error);
+    if (hint) return { ok: false, error: hint };
+    return { ok: false, error: error.message };
+  }
+
+  return {
+    ok: true,
+    pending: (data as DbPending[]).map(mapPending),
   };
 }
 
@@ -90,6 +120,45 @@ export async function fetchUserThronePending(
     ok: true,
     pending: (data as DbPending[]).map(mapPending),
   };
+}
+
+export async function startThronePunishmentPending(
+  userId: string,
+  punishmentTemplateId: string,
+): Promise<
+  { ok: true; pending: ThronePaymentPending } | { ok: false; error: string }
+> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const { data: existing } = await supabase
+    .from('throne_payment_pending')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('punishment_template_id', punishmentTemplateId)
+    .eq('status', 'waiting')
+    .maybeSingle();
+
+  if (existing) {
+    return { ok: false, error: 'You are already waiting for payment verification.' };
+  }
+
+  const { data, error } = await supabase
+    .from('throne_payment_pending')
+    .insert({ user_id: userId, punishment_template_id: punishmentTemplateId })
+    .select()
+    .single();
+
+  if (error || !data) {
+    const hint = throneTableError(error);
+    if (hint) return { ok: false, error: hint };
+    if (error?.code === '23505') {
+      return { ok: false, error: 'You are already waiting for payment verification.' };
+    }
+    return { ok: false, error: error?.message ?? 'Could not start payment wait.' };
+  }
+
+  return { ok: true, pending: mapPending(data as DbPending) };
 }
 
 export async function startThronePaymentPending(
@@ -154,7 +223,12 @@ export async function cancelThronePaymentPending(
 export async function fetchWaitingThronePayments(): Promise<
   | {
       ok: true;
-      pending: (ThronePaymentPending & { username?: string; taskTitle?: string })[];
+      pending: (ThronePaymentPending & {
+        username?: string;
+        taskTitle?: string;
+        punishmentTitle?: string;
+        throneAmountCents?: number | null;
+      })[];
     }
   | { ok: false; error: string }
 > {
@@ -177,11 +251,30 @@ export async function fetchWaitingThronePayments(): Promise<
   if (rows.length === 0) return { ok: true, pending: [] };
 
   const userIds = [...new Set(rows.map((row) => row.user_id))];
-  const taskIds = [...new Set(rows.map((row) => row.task_id))];
+  const taskIds = [
+    ...new Set(rows.map((row) => row.task_id).filter((id): id is string => Boolean(id))),
+  ];
+  const punishmentIds = [
+    ...new Set(
+      rows
+        .map((row) => row.punishment_template_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
 
-  const [profilesResult, tasksResult] = await Promise.all([
+  const [profilesResult, tasksResult, punishmentsResult] = await Promise.all([
     supabase.from('profiles').select('id, username').in('id', userIds),
-    supabase.from('training_tasks').select('id, title').in('id', taskIds),
+    taskIds.length > 0
+      ? supabase.from('training_tasks').select('id, title').in('id', taskIds)
+      : Promise.resolve({ data: [] as { id: string; title: string }[] }),
+    punishmentIds.length > 0
+      ? supabase
+          .from('punishment_templates')
+          .select('id, title, throne_amount_cents')
+          .in('id', punishmentIds)
+      : Promise.resolve({
+          data: [] as { id: string; title: string; throne_amount_cents: number | null }[],
+        }),
   ]);
 
   const usernameById = new Map(
@@ -193,26 +286,52 @@ export async function fetchWaitingThronePayments(): Promise<
   const titleById = new Map(
     (tasksResult.data ?? []).map((task: { id: string; title: string }) => [task.id, task.title]),
   );
+  const punishmentById = new Map(
+    (punishmentsResult.data ?? []).map(
+      (tpl: { id: string; title: string; throne_amount_cents: number | null }) => [
+        tpl.id,
+        tpl,
+      ],
+    ),
+  );
 
-  const pending = rows.map((row) => ({
-    ...mapPending(row),
-    username: usernameById.get(row.user_id),
-    taskTitle: titleById.get(row.task_id),
-  }));
+  const pending = rows.map((row) => {
+    const punishment = row.punishment_template_id
+      ? punishmentById.get(row.punishment_template_id)
+      : undefined;
+    return {
+      ...mapPending(row),
+      username: usernameById.get(row.user_id),
+      taskTitle: row.task_id ? titleById.get(row.task_id) : undefined,
+      punishmentTitle: punishment?.title,
+      throneAmountCents: punishment?.throne_amount_cents ?? null,
+    };
+  });
 
   return { ok: true, pending };
 }
 
 export async function adminConfirmThronePayment(
   pendingId: string,
+  kind: 'training' | 'punishment' = 'training',
 ): Promise<
-  | { ok: true; userId: string; taskId: string }
+  | {
+      ok: true;
+      userId: string;
+      taskId?: string;
+      punishmentTemplateId?: string;
+    }
   | { ok: false; error: string }
 > {
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
 
-  const { data, error } = await supabase.rpc('complete_throne_payment_pending', {
+  const rpcName =
+    kind === 'punishment'
+      ? 'complete_throne_punishment_pending'
+      : 'complete_throne_payment_pending';
+
+  const { data, error } = await supabase.rpc(rpcName, {
     p_pending_id: pendingId,
     p_gift_event_id: null,
   });
@@ -223,7 +342,13 @@ export async function adminConfirmThronePayment(
     return { ok: false, error: error.message };
   }
 
-  const result = data as { ok?: boolean; error?: string; user_id?: string; task_id?: string };
+  const result = data as {
+    ok?: boolean;
+    error?: string;
+    user_id?: string;
+    task_id?: string;
+    punishment_template_id?: string;
+  };
   if (!result?.ok) {
     return { ok: false, error: result?.error ?? 'Could not confirm payment.' };
   }
@@ -231,7 +356,8 @@ export async function adminConfirmThronePayment(
   return {
     ok: true,
     userId: result.user_id!,
-    taskId: result.task_id!,
+    taskId: result.task_id,
+    punishmentTemplateId: result.punishment_template_id,
   };
 }
 

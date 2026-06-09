@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CategoryImagePicker } from '../components/CategoryImagePicker';
 import { PunishmentCategoryCard } from '../components/PunishmentCategoryCard';
@@ -16,15 +16,27 @@ import {
   templatesForCategory,
 } from '../lib/gameLogic';
 import {
+  formatThroneAmountEur,
   isValidOpenUrl,
   parsePhrasesFromText,
+  parseThroneAmountEurToCents,
   phrasesToText,
   punishmentHasRequirements,
+  punishmentHasThronePayment,
 } from '../lib/punishmentRequirements';
+import { getSupabase } from '../lib/supabase';
+import { fetchUserThronePunishmentPending } from '../lib/throneDb';
+import { getThroneUsername } from '../lib/throne';
+import {
+  fetchThroneGifts,
+  formatThroneGiftOptionLabel,
+  type ThroneGiftCatalogItem,
+} from '../lib/throneGifts';
 import type {
   PunishmentCategory,
   PunishmentDifficulty,
   PunishmentTemplate,
+  ThronePaymentPending,
 } from '../types';
 
 const UNCategorized_PREFIX = '__uncategorized__';
@@ -69,6 +81,7 @@ function PunishmentListRow({
   onAccept: () => void;
 }) {
   const requirementBadges: string[] = [];
+  if (punishmentHasThronePayment(template)) requirementBadges.push('Throne payment');
   if ((template.timerSeconds ?? 0) > 0) requirementBadges.push('Timer');
   if (template.openUrl?.trim()) requirementBadges.push('Open site');
   if ((template.requiredPhrases?.length ?? 0) > 0) requirementBadges.push('Phrase');
@@ -116,6 +129,7 @@ export function Punishments() {
   const {
     state,
     session,
+    refresh,
     acceptPunishment,
     addPunishmentCategory,
     updatePunishmentCategory,
@@ -130,6 +144,58 @@ export function Punishments() {
   const [completingTemplate, setCompletingTemplate] =
     useState<PunishmentTemplate | null>(null);
   const [completionError, setCompletionError] = useState<string | null>(null);
+  const [thronePending, setThronePending] = useState<ThronePaymentPending[]>([]);
+
+  const userId = session?.userId;
+  const thronePendingForTemplate = useMemo(() => {
+    if (!completingTemplate) return null;
+    const rows = thronePending.filter(
+      (p) => p.punishmentTemplateId === completingTemplate.id,
+    );
+    return (
+      rows.find((p) => p.status === 'waiting') ??
+      rows.find((p) => p.status === 'completed') ??
+      null
+    );
+  }, [thronePending, completingTemplate]);
+
+  const loadThronePending = useCallback(async () => {
+    if (!userId) {
+      setThronePending([]);
+      return;
+    }
+    const result = await fetchUserThronePunishmentPending(userId);
+    if (result.ok) setThronePending(result.pending);
+  }, [userId]);
+
+  useEffect(() => {
+    void loadThronePending();
+  }, [loadThronePending]);
+
+  useEffect(() => {
+    const supabase = getSupabase();
+    if (!supabase || !userId) return;
+
+    const channel = supabase
+      .channel(`punishments-throne:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'throne_payment_pending',
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          void loadThronePending();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [userId, loadThronePending]);
 
   useEffect(() => {
     if (manageFromUrl && isAdmin) setManageMode(true);
@@ -237,6 +303,14 @@ export function Punishments() {
       return;
     }
     markTemplateCompleted(templateId);
+    setCompletionError(null);
+    setCompletingTemplate(null);
+  };
+
+  const handleThroneVerified = async () => {
+    if (!completingTemplate) return;
+    await refresh();
+    markTemplateCompleted(completingTemplate.id);
     setCompletionError(null);
     setCompletingTemplate(null);
   };
@@ -450,6 +524,18 @@ export function Punishments() {
         template={completingTemplate}
         open={completingTemplate != null}
         malus={malus}
+        userId={userId}
+        thronePending={thronePendingForTemplate}
+        onThronePendingChange={(pending) => {
+          if (!completingTemplate) return;
+          setThronePending((prev) => {
+            const rest = prev.filter(
+              (p) => p.punishmentTemplateId !== completingTemplate.id,
+            );
+            return pending ? [...rest, pending] : rest;
+          });
+        }}
+        onThroneVerified={() => void handleThroneVerified()}
         onClose={() => {
           setCompletionError(null);
           setCompletingTemplate(null);
@@ -517,6 +603,12 @@ function PunishmentsManage({
     emptyTemplateDraft(''),
   );
   const [phrasesText, setPhrasesText] = useState('');
+  const [throneAmountEur, setThroneAmountEur] = useState('');
+  const [selectedThroneGiftId, setSelectedThroneGiftId] = useState('');
+  const [throneGifts, setThroneGifts] = useState<ThroneGiftCatalogItem[]>([]);
+  const [throneGiftsLoading, setThroneGiftsLoading] = useState(false);
+  const [throneGiftsError, setThroneGiftsError] = useState<string | null>(null);
+  const [throneGiftsWarning, setThroneGiftsWarning] = useState<string | null>(null);
   const [timerMinutes, setTimerMinutes] = useState('');
   const [timerSecondsPart, setTimerSecondsPart] = useState('');
   const [message, setMessage] = useState('');
@@ -530,9 +622,38 @@ function PunishmentsManage({
   const manageCategory =
     state.punishmentCategories.find((c) => c.id === manageCategoryId) ?? null;
 
+  const throneUsername = getThroneUsername();
+
+  const loadThroneGifts = useCallback(async () => {
+    setThroneGiftsLoading(true);
+    setThroneGiftsError(null);
+    setThroneGiftsWarning(null);
+    const result = await fetchThroneGifts(throneUsername);
+    setThroneGiftsLoading(false);
+    if (!result.ok) {
+      setThroneGifts([]);
+      setThroneGiftsError(`Failed to load gifts: ${result.error}`);
+      if (result.fallback) setThroneGiftsWarning(result.fallback);
+      return;
+    }
+    setThroneGifts(result.gifts);
+    if (result.warning) setThroneGiftsWarning(result.warning);
+  }, [throneUsername]);
+
+  useEffect(() => {
+    if (!tplDraft.thronePayment) return;
+    void loadThroneGifts();
+  }, [tplDraft.thronePayment, loadThroneGifts]);
+
   const syncTemplateDraft = (template: PunishmentTemplate) => {
     setTplDraft(template);
     setPhrasesText(phrasesToText(template.requiredPhrases));
+    setSelectedThroneGiftId(template.throneGiftId ?? '');
+    setThroneAmountEur(
+      template.throneAmountCents != null
+        ? formatThroneAmountEur(template.throneAmountCents)
+        : '',
+    );
     const totalSeconds = template.timerSeconds ?? 0;
     if (totalSeconds > 0) {
       setTimerMinutes(String(Math.floor(totalSeconds / 60)));
@@ -541,6 +662,21 @@ function PunishmentsManage({
       setTimerMinutes('');
       setTimerSecondsPart('');
     }
+  };
+
+  const applyThroneGiftSelection = (giftId: string) => {
+    setSelectedThroneGiftId(giftId);
+    if (!giftId) return;
+    const gift = throneGifts.find((g) => g.id === giftId);
+    if (!gift) return;
+    setThroneAmountEur(formatThroneAmountEur(gift.priceCents));
+    setTplDraft((draft) => ({
+      ...draft,
+      openUrl: gift.url,
+      throneAmountCents: gift.priceCents,
+      throneGiftId: gift.id,
+      title: draft.title.trim() ? draft.title : gift.title,
+    }));
   };
 
   useEffect(() => {
@@ -625,6 +761,18 @@ function PunishmentsManage({
       setError('Open URL must start with http:// or https://.');
       return;
     }
+    const thronePayment = Boolean(tplDraft.thronePayment);
+    const throneAmountCents = thronePayment
+      ? parseThroneAmountEurToCents(throneAmountEur)
+      : null;
+    if (thronePayment && !throneAmountCents) {
+      setError('Enter a valid Throne gift amount in EUR (e.g. 5, 25, 125).');
+      return;
+    }
+    if (thronePayment && !openUrl) {
+      setError('Throne payment punishments need an Open URL (Throne gift link).');
+      return;
+    }
     const requiredPhrases = parsePhrasesFromText(phrasesText);
     const mins = Number(timerMinutes) || 0;
     const secs = Number(timerSecondsPart) || 0;
@@ -647,6 +795,12 @@ function PunishmentsManage({
           : undefined,
       timerSeconds: timerTotal > 0 ? timerTotal : undefined,
       openUrl: openUrl || undefined,
+      thronePayment: thronePayment || undefined,
+      throneAmountCents: thronePayment ? throneAmountCents : null,
+      throneGiftId:
+        thronePayment && selectedThroneGiftId.trim()
+          ? selectedThroneGiftId.trim()
+          : tplDraft.throneGiftId?.trim() || null,
     };
     const result = tplDraft.id
       ? await updatePunishmentTemplate(payload)
@@ -681,6 +835,11 @@ function PunishmentsManage({
 
   const requirementSummary = (t: PunishmentTemplate): string => {
     const parts: string[] = [];
+    if (punishmentHasThronePayment(t)) {
+      parts.push(
+        `Throne €${formatThroneAmountEur(t.throneAmountCents) || '?'}`,
+      );
+    }
     if ((t.timerSeconds ?? 0) > 0) parts.push(`timer ${t.timerSeconds}s`);
     if (t.openUrl?.trim()) parts.push('URL');
     if ((t.requiredPhrases?.length ?? 0) > 0) {
@@ -905,6 +1064,106 @@ function PunishmentsManage({
               }
             />
           </div>
+          <div className="field">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={Boolean(tplDraft.thronePayment)}
+                onChange={(e) =>
+                  setTplDraft({
+                    ...tplDraft,
+                    thronePayment: e.target.checked,
+                  })
+                }
+              />
+              Throne payment punishment (webhook verifies gift amount)
+            </label>
+            {tplDraft.thronePayment && (
+              <p className="muted">
+                Recommended tiers: €5 → 1 malus, €25 → 10 malus, €125 → 50 malus.
+                Pick a gift below or enter amount/URL manually if fetch fails.
+              </p>
+            )}
+          </div>
+          {tplDraft.thronePayment && (
+            <div className="field">
+              <label htmlFor="ptpl-throne-gift">Select Throne gift</label>
+              <div className="field-row">
+                <select
+                  id="ptpl-throne-gift"
+                  value={selectedThroneGiftId}
+                  disabled={throneGiftsLoading || throneGifts.length === 0}
+                  onChange={(e) => applyThroneGiftSelection(e.target.value)}
+                >
+                  <option value="">
+                    {throneGiftsLoading
+                      ? 'Loading gifts from Throne…'
+                      : throneGifts.length > 0
+                        ? 'Choose a gift…'
+                        : 'No gifts loaded — refresh or enter manually'}
+                  </option>
+                  {throneGifts.map((gift) => (
+                    <option key={gift.id} value={gift.id}>
+                      {formatThroneGiftOptionLabel(gift)}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--small"
+                  disabled={throneGiftsLoading}
+                  onClick={() => void loadThroneGifts()}
+                >
+                  {throneGiftsLoading ? 'Refreshing…' : 'Refresh gifts from Throne'}
+                </button>
+              </div>
+              {throneUsername ? (
+                <p className="muted">
+                  Throne profile: throne.com/u/{throneUsername}
+                </p>
+              ) : (
+                <p className="muted">
+                  Set VITE_THRONE_URL=https://throne.com/u/your-username in .env (and
+                  Vercel) to auto-load gifts, or set THRONE_USERNAME in Supabase Edge
+                  Function secrets.
+                </p>
+              )}
+              {throneGiftsError && (
+                <p className="login-error" role="alert">
+                  {throneGiftsError}
+                </p>
+              )}
+              {throneGiftsWarning && (
+                <p className="muted" role="status">
+                  {throneGiftsWarning}
+                </p>
+              )}
+            </div>
+          )}
+          {tplDraft.thronePayment && (
+            <div className="field">
+              <label htmlFor="ptpl-throne-eur">
+                Throne gift amount (EUR) — manual fallback
+              </label>
+              <input
+                id="ptpl-throne-eur"
+                type="number"
+                min={0.01}
+                step={0.01}
+                placeholder="e.g. 5, 25, 125"
+                value={throneAmountEur}
+                onChange={(e) => {
+                  setThroneAmountEur(e.target.value);
+                  setSelectedThroneGiftId('');
+                  setTplDraft((draft) => ({ ...draft, throneGiftId: null }));
+                }}
+              />
+              <p className="muted">
+                Webhook matching uses this amount in cents. Prefer EUR gifts so it matches
+                Throne checkout.
+              </p>
+            </div>
+          )}
           <div className="field">
             <label htmlFor="ptpl-phrases">Required phrases (one per line)</label>
             <textarea

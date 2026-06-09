@@ -141,6 +141,14 @@ Deno.serve(async (req) => {
     typeof matchResult === 'object' &&
     (matchResult as { matched?: boolean }).matched === true;
 
+  if (matched) {
+    console.log('throne-webhook matched pending', {
+      eventId: eventRow.id,
+      type: (matchResult as { type?: string }).type ?? 'unknown',
+      amountCents: parsed.amountCents,
+    });
+  }
+
   return jsonResponse({
     received: true,
     eventId: eventRow.id,

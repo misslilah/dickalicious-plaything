@@ -917,16 +917,23 @@ function TrainingThroneAdmin() {
     };
   }, [load]);
 
-  const handleConfirm = async (pendingId: string) => {
+  const handleConfirm = async (
+    pendingId: string,
+    kind: 'training' | 'punishment',
+  ) => {
     setActingId(pendingId);
     setMessage(null);
-    const result = await adminConfirmThronePayment(pendingId);
+    const result = await adminConfirmThronePayment(pendingId, kind);
     setActingId(null);
     if (!result.ok) {
       setError(result.error);
       return;
     }
-    setMessage('Throne payment confirmed — training task completed.');
+    setMessage(
+      kind === 'punishment'
+        ? 'Throne payment confirmed — punishment completed and malus reduced.'
+        : 'Throne payment confirmed — training task completed.',
+    );
     await load();
   };
 
@@ -940,8 +947,8 @@ function TrainingThroneAdmin() {
         </p>
         <ol className="throne-setup-steps">
           <li>
-            Run migrations <code>073</code>, <code>074</code>, and{' '}
-            <code>075_throne_payment_pending_profiles_fkey.sql</code> in Supabase SQL Editor.
+            Run migrations <code>073</code> through <code>077_throne_punishment_tiers.sql</code>{' '}
+            in Supabase SQL Editor.
           </li>
           <li>
             Set <code>THRONE_WEBHOOK_SECRET</code> in Supabase → Edge Functions → Secrets.
@@ -958,8 +965,9 @@ function TrainingThroneAdmin() {
             <code>X-Throne-Webhook-Secret</code>.
           </li>
           <li>
-            Create a training task with &quot;Throne payment task&quot; and set Open URL to the
-            Throne gift link.
+            Create a training task with &quot;Throne payment task&quot; or a punishment with
+            &quot;Throne payment punishment&quot; and set Open URL to the matching Throne gift
+            link (€5 / €25 / €125 tiers).
           </li>
         </ol>
         {webhookUrl ? (
@@ -987,8 +995,9 @@ function TrainingThroneAdmin() {
       <section className="card">
         <h3 className="section-title">Waiting for verification</h3>
         <p className="muted">
-          Users who clicked &quot;I completed payment on Throne&quot;. Confirm manually when you
-          see the gift on Throne, or wait for the webhook to auto-complete (FIFO queue).
+          Users who clicked &quot;I completed payment on Throne&quot;. Punishments match by gift
+          amount tier; training tasks use a FIFO queue. Confirm manually if the webhook does not
+          arrive.
         </p>
         {message && (
           <p className="notice admin-notice" role="status">
@@ -1006,11 +1015,23 @@ function TrainingThroneAdmin() {
           <p className="muted">No users waiting for Throne verification.</p>
         ) : (
           <ul className="training-proof-admin-list">
-            {pending.map((row) => (
+            {pending.map((row) => {
+              const isPunishment = Boolean(row.punishmentTemplateId);
+              const targetLabel = isPunishment
+                ? `${row.punishmentTitle ?? 'Punishment'}${
+                    row.throneAmountCents != null
+                      ? ` (€${(row.throneAmountCents / 100).toFixed(2)})`
+                      : ''
+                  }`
+                : (row.taskTitle ?? 'Training task');
+              return (
               <li key={row.id} className="training-proof-admin-item card">
                 <div className="training-proof-admin-item__meta">
                   <strong>{row.username ?? row.userId.slice(0, 8)}</strong>
-                  <span className="muted"> · {row.taskTitle ?? 'Training task'}</span>
+                  <span className="muted">
+                    {' '}
+                    · {isPunishment ? 'Punishment' : 'Training'}: {targetLabel}
+                  </span>
                   <span className="muted">
                     {' '}
                     · waiting since {new Date(row.createdAt).toLocaleString()}
@@ -1021,13 +1042,16 @@ function TrainingThroneAdmin() {
                     type="button"
                     className="btn btn--primary btn--small"
                     disabled={actingId === row.id}
-                    onClick={() => void handleConfirm(row.id)}
+                    onClick={() =>
+                      void handleConfirm(row.id, isPunishment ? 'punishment' : 'training')
+                    }
                   >
                     Confirm payment
                   </button>
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </section>

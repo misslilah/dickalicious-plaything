@@ -100,6 +100,9 @@ type DbPunishmentTemplate = {
   required_phrase_repeat_count: number | null;
   timer_seconds: number | null;
   open_url: string | null;
+  throne_payment: boolean | null;
+  throne_amount_cents: number | null;
+  throne_gift_id: string | null;
 };
 
 type DbVideoCategory = {
@@ -237,6 +240,9 @@ function mapPunishmentTemplate(row: DbPunishmentTemplate): PunishmentTemplate {
       : undefined,
     timerSeconds: row.timer_seconds ?? undefined,
     openUrl: row.open_url?.trim() || undefined,
+    thronePayment: Boolean(row.throne_payment),
+    throneAmountCents: row.throne_amount_cents ?? null,
+    throneGiftId: row.throne_gift_id ?? null,
   };
 }
 
@@ -555,6 +561,21 @@ export async function upsertPunishmentTemplate(
     return { ok: false, error: 'Open URL must start with http:// or https://.' };
   }
 
+  const thronePayment = Boolean(template.thronePayment);
+  const throneAmountCents =
+    template.throneAmountCents != null && template.throneAmountCents > 0
+      ? Math.round(template.throneAmountCents)
+      : null;
+  if (thronePayment && !throneAmountCents) {
+    return { ok: false, error: 'Throne payment punishments need a gift amount (EUR).' };
+  }
+  if (thronePayment && !openUrl) {
+    return {
+      ok: false,
+      error: 'Throne payment punishments need an Open URL (Throne gift link).',
+    };
+  }
+
   const row = {
     id: template.id || undefined,
     title: template.title,
@@ -573,6 +594,12 @@ export async function upsertPunishmentTemplate(
         ? template.timerSeconds
         : null,
     open_url: openUrl,
+    throne_payment: thronePayment,
+    throne_amount_cents: thronePayment ? throneAmountCents : null,
+    throne_gift_id:
+      thronePayment && template.throneGiftId?.trim()
+        ? template.throneGiftId.trim()
+        : null,
   };
 
   const { data, error } = template.id

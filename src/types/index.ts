@@ -196,6 +196,12 @@ export interface PunishmentTemplate {
   timerSeconds?: number;
   /** URL the user must open before completing. */
   openUrl?: string;
+  /** When true, completion requires Throne gift webhook matching throneAmountCents. */
+  thronePayment?: boolean;
+  /** Expected Throne gift amount in cents (e.g. 500 = €5) for webhook tier matching. */
+  throneAmountCents?: number | null;
+  /** Throne wishlist item id (optional metadata; amount_cents is primary for webhooks). */
+  throneGiftId?: string | null;
 }
 
 /** Runtime punishment assigned to the user (not the admin catalog). */
@@ -307,7 +313,10 @@ export type ThronePaymentPendingStatus =
 export interface ThronePaymentPending {
   id: string;
   userId: string;
-  taskId: string;
+  /** Set for training task Throne payments. */
+  taskId?: string | null;
+  /** Set for punishment Throne payments. */
+  punishmentTemplateId?: string | null;
   status: ThronePaymentPendingStatus;
   createdAt: string;
   expiresAt: string;
@@ -325,6 +334,7 @@ export interface ThroneGiftEvent {
   currency: string | null;
   matchedUserId: string | null;
   matchedTaskId: string | null;
+  matchedPunishmentTemplateId?: string | null;
   payload?: Record<string, unknown> | null;
 }
 

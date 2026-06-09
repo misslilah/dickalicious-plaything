@@ -1,0 +1,3 @@
+# Admin-only: caller JWT verified in handler via is_admin().
+# Deploy: supabase functions deploy throne-fetch-gifts
+verify_jwt = true

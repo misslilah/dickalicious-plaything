@@ -21,12 +21,31 @@ export function getPhraseRepeatCount(template: PunishmentTemplate): number {
   return Math.max(1, template.requiredPhraseRepeatCount ?? 1);
 }
 
+export function punishmentHasThronePayment(template: PunishmentTemplate): boolean {
+  return Boolean(template.thronePayment);
+}
+
 export function punishmentHasRequirements(template: PunishmentTemplate): boolean {
   return (
     punishmentHasTimer(template) ||
     punishmentHasOpenUrl(template) ||
     punishmentHasPhrase(template)
   );
+}
+
+/** Format cents as EUR for admin display (e.g. 500 → "5.00"). */
+export function formatThroneAmountEur(cents: number | null | undefined): string {
+  if (cents == null || !Number.isFinite(cents)) return '';
+  return (cents / 100).toFixed(2);
+}
+
+/** Parse admin EUR input to cents (e.g. "5" → 500, "25.50" → 2550). */
+export function parseThroneAmountEurToCents(value: string): number | null {
+  const trimmed = value.trim().replace(',', '.');
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.round(parsed * 100);
 }
 
 export function isValidOpenUrl(url: string): boolean {
