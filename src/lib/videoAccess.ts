@@ -1,5 +1,15 @@
 import { canAccessTier, effectiveVideoTier } from './tiers';
-import type { ContentTier, PatreonMemberTier, PatreonStatus, Video, VideoCategory } from '../types';
+import type {
+  ContentTier,
+  PatreonMemberTier,
+  PatreonStatus,
+  Video,
+  VideoCategory,
+} from '../types';
+
+export interface InteractiveVideoTierAccess {
+  requiredTier?: ContentTier | null;
+}
 
 export interface VideoAccessContext {
   patreonTier: PatreonMemberTier | null | undefined;
@@ -67,4 +77,23 @@ export function videoRequiredTier(
   category: VideoCategory | undefined,
 ): ContentTier {
   return effectiveVideoTier(video.requiredTier, category?.requiredTier);
+}
+
+export function interactiveVideoRequiredTier(
+  video: InteractiveVideoTierAccess,
+): ContentTier {
+  return video.requiredTier ?? 'sweetie';
+}
+
+export function canWatchInteractiveVideo(
+  video: InteractiveVideoTierAccess,
+  ctx: VideoAccessContext,
+): boolean {
+  if (ctx.isAdmin) return true;
+  return canAccessTier(
+    interactiveVideoRequiredTier(video),
+    ctx.patreonTier,
+    ctx.patreonStatus,
+    false,
+  );
 }

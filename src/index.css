@@ -6458,6 +6458,11 @@ a.task-list-row {
   border-color: rgba(232, 121, 249, 0.4);
 }
 
+.interactive-videos__card--locked {
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
 .interactive-videos__card h3 {
   margin: 0 0 0.35rem;
   font-size: 1.05rem;

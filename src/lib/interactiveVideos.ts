@@ -1,3 +1,4 @@
+import type { ContentTier } from '../types';
 import { getSupabase } from './supabase';
 import {
   uploadToSupabaseStorage,
@@ -36,6 +37,7 @@ export interface InteractiveVideo {
   description: string | null;
   storagePath: string;
   durationSeconds: number | null;
+  requiredTier?: ContentTier | null;
   createdAt: string;
   cues: InteractiveVideoCue[];
 }
@@ -45,6 +47,7 @@ export interface InteractiveVideoSummary {
   title: string;
   description: string | null;
   durationSeconds: number | null;
+  requiredTier?: ContentTier | null;
   createdAt: string;
   cueCount: number;
 }
@@ -53,6 +56,7 @@ export interface InteractiveVideoInput {
   title: string;
   description: string | null;
   durationSeconds?: number | null;
+  requiredTier?: ContentTier | null;
 }
 
 export interface InteractiveCueInput {
@@ -69,6 +73,7 @@ type DbInteractiveVideo = {
   description: string | null;
   storage_path: string;
   duration_seconds: number | null;
+  required_tier: ContentTier | null;
   created_at: string;
 };
 
@@ -150,6 +155,7 @@ function mapVideo(
     description: row.description,
     storagePath: row.storage_path,
     durationSeconds: row.duration_seconds,
+    requiredTier: row.required_tier ?? undefined,
     createdAt: row.created_at,
     cues: cues.sort((a, b) => a.timeMs - b.timeMs || a.sortOrder - b.sortOrder),
   };
@@ -211,6 +217,7 @@ export async function fetchInteractiveVideoSummaries(): Promise<
       title: video.title,
       description: video.description,
       durationSeconds: video.durationSeconds,
+      requiredTier: video.requiredTier,
       createdAt: video.createdAt,
       cueCount: video.cues.length,
     })),
@@ -307,6 +314,7 @@ export async function createInteractiveVideo(
       description: input.description?.trim() || null,
       storage_path: storagePath,
       duration_seconds: input.durationSeconds ?? null,
+      required_tier: input.requiredTier ?? 'sweetie',
     })
     .select('*')
     .single();
@@ -353,6 +361,7 @@ export async function updateInteractiveVideo(
       description: input.description?.trim() || null,
       storage_path: storagePath,
       duration_seconds: input.durationSeconds ?? existing.video.durationSeconds,
+      required_tier: input.requiredTier ?? existing.video.requiredTier ?? 'sweetie',
     })
     .eq('id', videoId)
     .select('*')

@@ -1,19 +1,55 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { InteractiveVideoPlayer } from '../components/InteractiveVideoPlayer';
 import { useOptionalAudioPlayer } from '../contexts/AudioPlayerProvider';
 import { useOptionalVideoPlayer } from '../contexts/VideoPlayerProvider';
 import { useVideoPlaylistPlayback } from '../contexts/VideoPlaylistPlaybackContext';
-import { InteractiveVideoPlayer } from '../components/InteractiveVideoPlayer';
-import { fetchInteractiveVideo, type InteractiveVideo } from '../lib/interactiveVideos';
+import { useAppStore } from '../hooks/useAppStore';
+import { getPatreonPageUrl } from '../lib/patreon';
+import {
+  fetchInteractiveVideo,
+  type InteractiveVideo,
+} from '../lib/interactiveVideos';
 import {
   fetchUserVideoPlaylists,
   videoIdsForPlaylist,
 } from '../lib/videoPlaylistDb';
+import { requiresTierMessage } from '../lib/tiers';
+import type { ContentTier } from '../types';
+import {
+  canWatchInteractiveVideo,
+  interactiveVideoRequiredTier,
+  type VideoAccessContext,
+} from '../lib/videoAccess';
+
+function TierUpgradeBanner({ requiredTier }: { requiredTier: ContentTier }) {
+  const patreonUrl = getPatreonPageUrl();
+  return (
+    <div className="tier-upgrade-banner" role="alert">
+      <p>
+        <strong>{requiresTierMessage(requiredTier)}</strong> to watch this interactive
+        video.
+      </p>
+      <p className="muted">
+        Link your Patreon account in Settings or upgrade your membership.
+      </p>
+      <a
+        href={patreonUrl}
+        className="btn btn--primary"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        View Patreon tiers
+      </a>
+    </div>
+  );
+}
 
 export function InteractiveVideoPlay() {
   const audio = useOptionalAudioPlayer();
   const globalVideo = useOptionalVideoPlayer();
   const playlistCtx = useVideoPlaylistPlayback();
+  const { session } = useAppStore();
   const navigate = useNavigate();
   const { videoId } = useParams<{ videoId: string }>();
   const [searchParams] = useSearchParams();
@@ -22,6 +58,16 @@ export function InteractiveVideoPlay() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const advancingRef = useRef(false);
+
+  const videoAccessCtx: VideoAccessContext = useMemo(
+    () => ({
+      patreonTier: session?.patreonTier,
+      patreonStatus: session?.patreonStatus,
+      isAdmin: session?.role === 'admin',
+      purchasedVideoIds: [],
+    }),
+    [session?.patreonTier, session?.patreonStatus, session?.role],
+  );
 
   useEffect(() => {
     audio?.pausePlayback();
@@ -99,6 +145,8 @@ export function InteractiveVideoPlay() {
   const playlistProgress =
     playlistCtx.active?.type === 'interactive' ? playlistCtx.progress : null;
 
+  const locked = video != null && !canWatchInteractiveVideo(video, videoAccessCtx);
+
   if (loading) {
     return (
       <div className="page">
@@ -116,6 +164,22 @@ export function InteractiveVideoPlay() {
         <Link to="/videos/interactive" className="btn btn--ghost">
           Back to interactive videos
         </Link>
+      </div>
+    );
+  }
+
+  if (locked) {
+    return (
+      <div className="page">
+        <header className="page-header">
+          <p className="muted">
+            <Link to="/videos/interactive">← Interactive Videos</Link>
+          </p>
+          <h2>{video.title}</h2>
+        </header>
+        <section className="card">
+          <TierUpgradeBanner requiredTier={interactiveVideoRequiredTier(video)} />
+        </section>
       </div>
     );
   }

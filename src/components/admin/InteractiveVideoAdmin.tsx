@@ -12,13 +12,20 @@ import {
   type InteractiveVideo,
   type InteractiveVideoInput,
 } from '../../lib/interactiveVideos';
+import { TierBadge } from '../TierBadge';
 import { UploadProgressBar } from '../UploadProgressBar';
+import {
+  tierAccessHint,
+  VIDEO_ACCESS_CUMULATIVE_NOTE,
+  VIDEO_ACCESS_OPTIONS,
+} from '../../lib/tiers';
+import type { ContentTier } from '../../types';
 import { formatMb, formatVideoSizeError, MAX_VIDEO_SIZE_LABEL } from '../../lib/videoStorage';
 
 type DraftCue = InteractiveCueInput & { localId: string };
 
 function blankForm(): InteractiveVideoInput {
-  return { title: '', description: '', durationSeconds: null };
+  return { title: '', description: '', durationSeconds: null, requiredTier: 'sweetie' };
 }
 
 const DEFAULT_PERSISTENT_DURATION_MS = 5000;
@@ -147,6 +154,7 @@ export function InteractiveVideoAdmin() {
       title: video.title,
       description: video.description ?? '',
       durationSeconds: video.durationSeconds,
+      requiredTier: video.requiredTier ?? 'sweetie',
     });
     setVideoFile(undefined);
     setDraftCues(
@@ -267,6 +275,7 @@ export function InteractiveVideoAdmin() {
       title: form.title,
       description: form.description?.trim() ? form.description : null,
       durationSeconds: form.durationSeconds,
+      requiredTier: form.requiredTier ?? 'sweetie',
     };
 
     if (editingId) {
@@ -384,6 +393,9 @@ export function InteractiveVideoAdmin() {
                   {' '}
                   · {video.cues.length} cue{video.cues.length === 1 ? '' : 's'}
                 </span>
+                <span className="video-meta-badges">
+                  <TierBadge tier={video.requiredTier ?? 'sweetie'} accessStyle />
+                </span>
               </div>
               <div className="admin-list__actions">
                 <button type="button" className="btn btn--ghost btn--sm" onClick={() => startEdit(video)}>
@@ -421,6 +433,25 @@ export function InteractiveVideoAdmin() {
             onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
             rows={2}
           />
+        </label>
+
+        <label className="field">
+          <span className="field__label">Who can watch?</span>
+          <span className="field__hint">{VIDEO_ACCESS_CUMULATIVE_NOTE}</span>
+          <select
+            value={form.requiredTier ?? 'sweetie'}
+            onChange={(e) =>
+              setForm((p) => ({ ...p, requiredTier: e.target.value as ContentTier }))
+            }
+            aria-label="Minimum Patreon tier"
+          >
+            {VIDEO_ACCESS_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <span className="field__hint">{tierAccessHint(form.requiredTier ?? 'sweetie')}</span>
         </label>
 
         <label className="field">

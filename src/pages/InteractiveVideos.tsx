@@ -1,20 +1,39 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { TierBadge } from '../components/TierBadge';
+import { VideoPlaylistSection } from '../components/VideoPlaylistSection';
+import { useAppStore } from '../hooks/useAppStore';
 import { formatDuration } from '../lib/formatDuration';
 import {
   fetchInteractiveVideoSummaries,
   type InteractiveVideoSummary,
 } from '../lib/interactiveVideos';
-import { VideoPlaylistSection } from '../components/VideoPlaylistSection';
+import { requiresTierMessage } from '../lib/tiers';
+import {
+  canWatchInteractiveVideo,
+  interactiveVideoRequiredTier,
+  type VideoAccessContext,
+} from '../lib/videoAccess';
 
 interface InteractiveVideosProps {
   embedded?: boolean;
 }
 
 export function InteractiveVideos({ embedded = false }: InteractiveVideosProps) {
+  const { session } = useAppStore();
   const [videos, setVideos] = useState<InteractiveVideoSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const videoAccessCtx: VideoAccessContext = useMemo(
+    () => ({
+      patreonTier: session?.patreonTier,
+      patreonStatus: session?.patreonStatus,
+      isAdmin: session?.role === 'admin',
+      purchasedVideoIds: [],
+    }),
+    [session?.patreonTier, session?.patreonStatus, session?.role],
+  );
 
   useEffect(() => {
     void fetchInteractiveVideoSummaries().then((result) => {
@@ -53,19 +72,52 @@ export function InteractiveVideos({ embedded = false }: InteractiveVideosProps) 
         </section>
       ) : (
         <ul className="interactive-videos__list">
-          {videos.map((video) => (
-            <li key={video.id}>
-              <Link to={`/videos/interactive/${video.id}`} className="interactive-videos__card card">
-                <h3>{video.title}</h3>
-                {video.description && <p className="muted">{video.description}</p>}
-                <p className="interactive-videos__meta muted">
-                  {video.cueCount} cue{video.cueCount === 1 ? '' : 's'}
-                  {video.durationSeconds != null &&
-                    ` · ${formatDuration(video.durationSeconds)}`}
-                </p>
-              </Link>
-            </li>
-          ))}
+          {videos.map((video) => {
+            const locked = !canWatchInteractiveVideo(video, videoAccessCtx);
+            const requiredTier = interactiveVideoRequiredTier(video);
+
+            if (locked) {
+              return (
+                <li key={video.id}>
+                  <div
+                    className="interactive-videos__card interactive-videos__card--locked card"
+                    aria-disabled="true"
+                  >
+                    <h3>{video.title}</h3>
+                    <p className="interactive-videos__meta muted">
+                      <span aria-hidden>🔒 </span>
+                      {requiresTierMessage(requiredTier)}
+                    </p>
+                    <p className="video-meta-badges">
+                      <TierBadge tier={requiredTier} accessStyle />
+                      {video.durationSeconds != null && (
+                        <span className="video-list-item__duration" aria-label="Duration">
+                          {formatDuration(video.durationSeconds)}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </li>
+              );
+            }
+
+            return (
+              <li key={video.id}>
+                <Link to={`/videos/interactive/${video.id}`} className="interactive-videos__card card">
+                  <h3>{video.title}</h3>
+                  {video.description && <p className="muted">{video.description}</p>}
+                  <p className="interactive-videos__meta muted">
+                    {video.cueCount} cue{video.cueCount === 1 ? '' : 's'}
+                    {video.durationSeconds != null &&
+                      ` · ${formatDuration(video.durationSeconds)}`}
+                  </p>
+                  <p className="video-meta-badges">
+                    <TierBadge tier={requiredTier} accessStyle />
+                  </p>
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       )}
     </>
