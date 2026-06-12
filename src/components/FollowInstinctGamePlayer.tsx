@@ -32,13 +32,36 @@ const FACE_MODEL =
   'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
 
 const MAX_ROUNDS_PER_SESSION = 8;
-const ORDER_REVEAL_DELAY_MS = 3000;
-const COMMAND_WINDOW_MS = 4500;
-const PHRASE_COMMAND_WINDOW_MS = 45000;
+const ORDER_REVEAL_DELAY_MS = 1000;
+const COMMAND_WINDOW_MS = 4000;
+const PHRASE_COMMAND_WINDOW_MS = 15000;
 const TONGUE_HOLD_FRAMES = 6;
 const EYES_CLOSED_HOLD_FRAMES = 8;
 const SUCCESS_ADVANCE_MS = 900;
 const FAIL_ADVANCE_MS = 1200;
+
+function followInstinctStreakKey(gameId: string): string {
+  return `follow-instinct-streak-${gameId}`;
+}
+
+function readPersistedStreak(gameId: string): number {
+  try {
+    const raw = sessionStorage.getItem(followInstinctStreakKey(gameId));
+    if (raw == null) return 0;
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writePersistedStreak(gameId: string, value: number): void {
+  try {
+    sessionStorage.setItem(followInstinctStreakKey(gameId), String(Math.max(0, value)));
+  } catch {
+    /* sessionStorage unavailable */
+  }
+}
 
 function shuffleRounds(pool: FollowInstinctRound[]): FollowInstinctRound[] {
   const copy = [...pool];
@@ -111,13 +134,18 @@ function phrasePoseFirstHint(orderType: FollowInstinctOrderType): string {
   }
 }
 
+export type FollowInstinctGameQuitHandler = () => void;
+
 interface FollowInstinctGamePlayerProps {
   game: FollowInstinctGame;
+  /** Called on mount with quit handler; modal should invoke before closing. */
+  onRegisterQuitHandler?: (handler: FollowInstinctGameQuitHandler | null) => void;
   onAttemptStatusChange?: (status: DailyGameAttemptStatus) => void;
 }
 
 export function FollowInstinctGamePlayer({
   game,
+  onRegisterQuitHandler,
   onAttemptStatusChange,
 }: FollowInstinctGamePlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -128,6 +156,8 @@ export function FollowInstinctGamePlayer({
   const eyesClosedFramesRef = useRef(0);
   const sessionQueueRef = useRef<FollowInstinctRound[]>([]);
   const advanceTimeoutRef = useRef<number | null>(null);
+  const commandTimerIntervalRef = useRef<number | null>(null);
+  const commandWindowTotalRef = useRef(COMMAND_WINDOW_MS);
   const typedPhraseRef = useRef('');
   const phraseInputRef = useRef<HTMLInputElement>(null);
   const poseActiveRef = useRef(false);
@@ -139,11 +169,13 @@ export function FollowInstinctGamePlayer({
   const [sessionTotal, setSessionTotal] = useState(0);
   const [activeRound, setActiveRound] = useState<FollowInstinctRound | null>(null);
   const [feedback, setFeedback] = useState<'idle' | 'success' | 'fail'>('idle');
-  const [streak, setStreak] = useState(0);
+  const [streak, setStreak] = useState(() => readPersistedStreak(game.id));
   const [sessionBestStreak, setSessionBestStreak] = useState(0);
   const [allTimeBestStreak, setAllTimeBestStreak] = useState(0);
   const sessionBestStreakRef = useRef(0);
   const persistSessionBestStreakRef = useRef<() => void>(() => {});
+  const streakAtRiskRef = useRef(false);
+  const streakRef = useRef(streak);
   const [sessionDone, setSessionDone] = useState(false);
   const [replayBusy, setReplayBusy] = useState(false);
   const [replayError, setReplayError] = useState('');
@@ -151,6 +183,7 @@ export function FollowInstinctGamePlayer({
   const [orderRevealed, setOrderRevealed] = useState(false);
   const [typedPhrase, setTypedPhrase] = useState('');
   const [poseActive, setPoseActive] = useState(false);
+  const [commandRemainingMs, setCommandRemainingMs] = useState(0);
   const roundStartRef = useRef(0);
   const judgedRef = useRef(false);
 
@@ -169,6 +202,14 @@ export function FollowInstinctGamePlayer({
     }
   }, []);
 
+  const clearCommandTimer = useCallback(() => {
+    if (commandTimerIntervalRef.current !== null) {
+      window.clearInterval(commandTimerIntervalRef.current);
+      commandTimerIntervalRef.current = null;
+    }
+    setCommandRemainingMs(0);
+  }, []);
+
   const persistSessionBestStreak = useCallback(() => {
     const best = sessionBestStreakRef.current;
     if (best <= 0) return;
@@ -181,6 +222,37 @@ export function FollowInstinctGamePlayer({
   }, [allTimeBestStreak, game.id]);
 
   persistSessionBestStreakRef.current = persistSessionBestStreak;
+
+  useEffect(() => {
+    streakRef.current = streak;
+  }, [streak]);
+
+  useEffect(() => {
+    writePersistedStreak(game.id, streak);
+  }, [game.id, streak]);
+
+  const resetStreakToZero = useCallback(() => {
+    setStreak(0);
+    writePersistedStreak(game.id, 0);
+  }, [game.id]);
+
+  const applyQuitPenalty = useCallback(() => {
+    if (!streakAtRiskRef.current) return;
+    resetStreakToZero();
+  }, [resetStreakToZero]);
+
+  const applyQuitStreakRules = useCallback(() => {
+    applyQuitPenalty();
+    if (!streakAtRiskRef.current) {
+      writePersistedStreak(game.id, streakRef.current);
+    }
+    persistSessionBestStreak();
+  }, [applyQuitPenalty, game.id, persistSessionBestStreak]);
+
+  useEffect(() => {
+    onRegisterQuitHandler?.(applyQuitStreakRules);
+    return () => onRegisterQuitHandler?.(null);
+  }, [applyQuitStreakRules, onRegisterQuitHandler]);
 
   const recordStreak = useCallback(
     (next: number) => {
@@ -203,8 +275,11 @@ export function FollowInstinctGamePlayer({
       const queue = sessionQueueRef.current;
       if (queue.length === 0) return;
       clearAdvanceTimeout();
+      clearCommandTimer();
       if (index >= queue.length) {
+        streakAtRiskRef.current = false;
         persistSessionBestStreak();
+        writePersistedStreak(game.id, streakRef.current);
         setSessionDone(true);
         setActiveRound(null);
         setDetecting(false);
@@ -212,6 +287,7 @@ export function FollowInstinctGamePlayer({
         setFeedback('idle');
         return;
       }
+      streakAtRiskRef.current = true;
       setRoundIndex(index);
       setActiveRound(queue[index]);
       setFeedback('idle');
@@ -225,7 +301,7 @@ export function FollowInstinctGamePlayer({
       setPoseActive(false);
       setDetecting(false);
     },
-    [clearAdvanceTimeout, persistSessionBestStreak],
+    [clearAdvanceTimeout, clearCommandTimer, game.id, persistSessionBestStreak],
   );
 
   const scheduleAdvance = useCallback(
@@ -249,9 +325,6 @@ export function FollowInstinctGamePlayer({
     sessionQueueRef.current = queue;
     setSessionTotal(queue.length);
     setSessionDone(false);
-    setStreak(0);
-    setSessionBestStreak(0);
-    sessionBestStreakRef.current = 0;
     setReplayError('');
     startRound(0);
   }, [clearAdvanceTimeout, playableRounds, startRound]);
@@ -272,6 +345,7 @@ export function FollowInstinctGamePlayer({
           }
           onAttemptStatusChange?.(result.status);
         }
+        streakAtRiskRef.current = true;
         restartSession();
       })();
     },
@@ -293,9 +367,25 @@ export function FollowInstinctGamePlayer({
   useEffect(() => {
     return () => {
       clearAdvanceTimeout();
+      clearCommandTimer();
+      if (streakAtRiskRef.current) {
+        writePersistedStreak(game.id, 0);
+      } else {
+        writePersistedStreak(game.id, streakRef.current);
+      }
       persistSessionBestStreakRef.current();
     };
-  }, [clearAdvanceTimeout]);
+  }, [clearAdvanceTimeout, clearCommandTimer, game.id]);
+
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      if (streakAtRiskRef.current) {
+        writePersistedStreak(game.id, 0);
+      }
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [game.id]);
 
   useEffect(() => {
     if (playableRounds.length === 0) return;
@@ -319,12 +409,18 @@ export function FollowInstinctGamePlayer({
     poseActiveRef.current = false;
     setPoseActive(false);
     const timerId = window.setTimeout(() => {
+      const needsPhrase = activeRound
+        ? followInstinctRoundRequiresPhrase(activeRound)
+        : false;
+      commandWindowTotalRef.current = needsPhrase
+        ? PHRASE_COMMAND_WINDOW_MS
+        : COMMAND_WINDOW_MS;
       roundStartRef.current = performance.now();
       setOrderRevealed(true);
       setDetecting(true);
     }, ORDER_REVEAL_DELAY_MS);
     return () => window.clearTimeout(timerId);
-  }, [roundIndex, sessionActive, activeRound?.imagePath]);
+  }, [roundIndex, sessionActive, activeRound?.imagePath, activeRound]);
 
   useEffect(() => {
     let cancelled = false;
@@ -407,8 +503,20 @@ export function FollowInstinctGamePlayer({
     };
   }, []);
 
-  const markRoundSuccess = useCallback(() => {
+  const markRoundFail = useCallback(() => {
+    if (judgedRef.current) return;
     judgedRef.current = true;
+    clearCommandTimer();
+    setDetecting(false);
+    setFeedback('fail');
+    resetStreakToZero();
+    scheduleAdvance(roundIndex, FAIL_ADVANCE_MS);
+  }, [clearCommandTimer, resetStreakToZero, roundIndex, scheduleAdvance]);
+
+  const markRoundSuccess = useCallback(() => {
+    if (judgedRef.current) return;
+    judgedRef.current = true;
+    clearCommandTimer();
     setDetecting(false);
     setFeedback('success');
     setStreak((value) => {
@@ -417,7 +525,34 @@ export function FollowInstinctGamePlayer({
       return next;
     });
     scheduleAdvance(roundIndex, SUCCESS_ADVANCE_MS);
-  }, [recordStreak, roundIndex, scheduleAdvance]);
+  }, [clearCommandTimer, recordStreak, roundIndex, scheduleAdvance]);
+
+  useEffect(() => {
+    if (!orderRevealed || !activeRound || feedback !== 'idle' || sessionDone) {
+      return;
+    }
+
+    const deadline = roundStartRef.current + commandWindowTotalRef.current;
+
+    const tickCommandWindow = () => {
+      if (judgedRef.current) return;
+      const left = Math.max(0, deadline - performance.now());
+      setCommandRemainingMs(left);
+      if (left <= 0) {
+        markRoundFail();
+      }
+    };
+
+    tickCommandWindow();
+    commandTimerIntervalRef.current = window.setInterval(tickCommandWindow, 100);
+
+    return () => {
+      if (commandTimerIntervalRef.current !== null) {
+        window.clearInterval(commandTimerIntervalRef.current);
+        commandTimerIntervalRef.current = null;
+      }
+    };
+  }, [orderRevealed, activeRound, roundIndex, feedback, sessionDone, markRoundFail]);
 
   const onPhraseChange = useCallback((value: string) => {
     if (!poseActiveRef.current) return;
@@ -433,7 +568,6 @@ export function FollowInstinctGamePlayer({
     if (!video || !landmarker) return;
 
     const needsPhrase = followInstinctRoundRequiresPhrase(activeRound);
-    const commandWindowMs = needsPhrase ? PHRASE_COMMAND_WINDOW_MS : COMMAND_WINDOW_MS;
 
     const tick = () => {
       if (!detecting || judgedRef.current || !activeRound) return;
@@ -495,14 +629,6 @@ export function FollowInstinctGamePlayer({
         }
       }
 
-      if (!judgedRef.current && now - roundStartRef.current >= commandWindowMs) {
-        judgedRef.current = true;
-        setDetecting(false);
-        setFeedback('fail');
-        setStreak(0);
-        scheduleAdvance(roundIndex, FAIL_ADVANCE_MS);
-      }
-
       rafRef.current = requestAnimationFrame(tick);
     };
 
@@ -523,6 +649,13 @@ export function FollowInstinctGamePlayer({
 
   const displayedBestStreak = Math.max(sessionBestStreak, allTimeBestStreak);
   const roundsLabel = sessionTotal > 0 ? sessionTotal : MAX_ROUNDS_PER_SESSION;
+  const activeCommandWindowMs = activeRound
+    ? followInstinctRoundRequiresPhrase(activeRound)
+      ? PHRASE_COMMAND_WINDOW_MS
+      : COMMAND_WINDOW_MS
+    : COMMAND_WINDOW_MS;
+  const showCommandTimer =
+    orderRevealed && feedback === 'idle' && commandRemainingMs > 0 && !sessionDone;
 
   if (cameraError) {
     return (
@@ -564,6 +697,34 @@ export function FollowInstinctGamePlayer({
           )}
         </span>
       </div>
+
+      {showCommandTimer && (
+        <div
+          className="follow-instinct-player__timer"
+          role="timer"
+          aria-live="polite"
+          aria-label={`${Math.ceil(commandRemainingMs / 1000)} seconds remaining`}
+        >
+          <span className="follow-instinct-player__countdown">
+            {Math.ceil(commandRemainingMs / 1000)}s
+          </span>
+          <div
+            className="follow-instinct-player__timer-track"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={activeCommandWindowMs}
+            aria-valuenow={commandRemainingMs}
+            aria-label="Time remaining"
+          >
+            <div
+              className="follow-instinct-player__timer-fill"
+              style={{
+                width: `${(commandRemainingMs / activeCommandWindowMs) * 100}%`,
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {cameraReady && <PrivacyNotice variant="camera" />}
 

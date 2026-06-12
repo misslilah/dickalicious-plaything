@@ -158,3 +158,19 @@ export async function fetchMiniGameLeaderboard(
 
   return { ok: true, leaderboard: { entries, userRank } };
 }
+
+export async function adminResetMiniGameLeaderboard(
+  gameType: MiniGameType,
+  gameId: string,
+): Promise<{ ok: true; deletedCount: number } | { ok: false; error: string }> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const { data, error } = await supabase.rpc('admin_reset_mini_game_leaderboard', {
+    p_game_type: gameType,
+    p_game_id: gameId,
+  });
+
+  if (error) return { ok: false, error: formatDbError(error) };
+  return { ok: true, deletedCount: typeof data === 'number' ? data : 0 };
+}

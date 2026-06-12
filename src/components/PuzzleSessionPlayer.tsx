@@ -1,26 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useAppStore } from '../hooks/useAppStore';
 import { PuzzleGamePlayer } from './PuzzleGamePlayer';
 import {
   startMiniGameAttempt,
   type DailyGameAttemptStatus,
 } from '../lib/dailyGameAttempts';
 import {
-  PUZZLE_SESSION_STREAK_KEY,
+  adminResetPuzzleLeaderboard,
+  fetchPuzzleBestSolver,
+  formatPuzzleSolveTime,
+  upsertPuzzleBestTime,
+  type PuzzleBestSolver,
+} from '../lib/puzzleLeaderboardDb';
+import {
+  pickRandomPuzzle,
   puzzleDisplayTitle,
   type PuzzleGame,
 } from '../lib/puzzleGames';
 
-const PUZZLE_TRANSITION_MS = 1200;
-
-type SessionPhase = 'playing' | 'transition' | 'complete';
-
-function writePersistedStreak(value: number): void {
-  try {
-    sessionStorage.setItem(PUZZLE_SESSION_STREAK_KEY, String(Math.max(0, value)));
-  } catch {
-    /* sessionStorage unavailable */
-  }
-}
+type SessionPhase = 'playing' | 'complete';
 
 export type PuzzleSessionQuitHandler = () => void;
 
@@ -35,182 +33,165 @@ export function PuzzleSessionPlayer({
   onRegisterQuitHandler,
   onAttemptStatusChange,
 }: PuzzleSessionPlayerProps) {
-  const [puzzleIndex, setPuzzleIndex] = useState(0);
-  const [streak, setStreak] = useState(0);
+  const { session } = useAppStore();
+  const isAdmin = session?.role === 'admin';
+  const [currentPuzzle, setCurrentPuzzle] = useState<PuzzleGame | null>(() =>
+    pickRandomPuzzle(puzzles),
+  );
   const [phase, setPhase] = useState<SessionPhase>('playing');
   const [lastMoveCount, setLastMoveCount] = useState(0);
-  const [streakAtRisk, setStreakAtRisk] = useState(true);
-  const [replayBusy, setReplayBusy] = useState(false);
-  const [replayError, setReplayError] = useState('');
-  const streakAtRiskRef = useRef(false);
-  const streakRef = useRef(streak);
-  const transitionTimerRef = useRef<number | null>(null);
+  const [lastSolveTimeMs, setLastSolveTimeMs] = useState(0);
+  const [bestSolver, setBestSolver] = useState<PuzzleBestSolver | null>(null);
+  const [bestSolverLoading, setBestSolverLoading] = useState(false);
+  const [nextBusy, setNextBusy] = useState(false);
+  const [nextError, setNextError] = useState('');
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetError, setResetError] = useState('');
+  const [resetMessage, setResetMessage] = useState('');
 
-  const currentPuzzle = puzzles[puzzleIndex] ?? null;
-  const puzzleNumber = puzzleIndex + 1;
-  const totalPuzzles = puzzles.length;
-
-  useEffect(() => {
-    streakRef.current = streak;
-  }, [streak]);
-
-  useEffect(() => {
-    writePersistedStreak(0);
-  }, []);
-
-  useEffect(() => {
-    writePersistedStreak(streak);
-  }, [streak]);
-
-  useEffect(() => {
-    if (phase === 'playing' && currentPuzzle) {
-      streakAtRiskRef.current = true;
-      setStreakAtRisk(true);
-    }
-    if (phase === 'transition' || phase === 'complete') {
-      streakAtRiskRef.current = false;
-      setStreakAtRisk(false);
-    }
-  }, [phase, currentPuzzle]);
-
-  const clearTransitionTimer = useCallback(() => {
-    if (transitionTimerRef.current != null) {
-      window.clearTimeout(transitionTimerRef.current);
-      transitionTimerRef.current = null;
+  const loadBestSolver = useCallback(async (puzzleId: string) => {
+    setBestSolverLoading(true);
+    const result = await fetchPuzzleBestSolver(puzzleId);
+    setBestSolverLoading(false);
+    if (result.ok) {
+      setBestSolver(result.bestSolver);
     }
   }, []);
 
-  useEffect(() => () => {
-    clearTransitionTimer();
-  }, [clearTransitionTimer]);
-
-  const resetStreakToZero = useCallback(() => {
-    setStreak(0);
-    writePersistedStreak(0);
-  }, []);
-
-  const applyQuitPenalty = useCallback(() => {
-    if (!streakAtRiskRef.current) return;
-    resetStreakToZero();
-  }, [resetStreakToZero]);
-
-  const applyQuitStreakRules = useCallback(() => {
-    applyQuitPenalty();
-    if (!streakAtRiskRef.current) {
-      writePersistedStreak(streakRef.current);
-    }
-  }, [applyQuitPenalty]);
-
   useEffect(() => {
-    onRegisterQuitHandler?.(applyQuitStreakRules);
+    onRegisterQuitHandler?.(() => {});
     return () => onRegisterQuitHandler?.(null);
-  }, [applyQuitStreakRules, onRegisterQuitHandler]);
+  }, [onRegisterQuitHandler]);
 
   useEffect(() => {
-    return () => {
-      if (streakAtRiskRef.current) {
-        writePersistedStreak(0);
-      } else {
-        writePersistedStreak(streakRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const onBeforeUnload = () => {
-      if (streakAtRiskRef.current) {
-        writePersistedStreak(0);
-      }
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => window.removeEventListener('beforeunload', onBeforeUnload);
-  }, []);
-
-  const advanceToNextPuzzle = useCallback(() => {
-    const nextIndex = puzzleIndex + 1;
-    if (nextIndex >= puzzles.length) {
-      setPhase('complete');
-      return;
-    }
-    setPuzzleIndex(nextIndex);
-    setPhase('playing');
-  }, [puzzleIndex, puzzles.length]);
+    if (!currentPuzzle) return;
+    void loadBestSolver(currentPuzzle.id);
+  }, [currentPuzzle, loadBestSolver]);
 
   const handlePuzzleComplete = useCallback(
-    (moveCount: number) => {
-      clearTransitionTimer();
+    (moveCount: number, solveTimeMs: number) => {
+      if (!currentPuzzle) return;
       setLastMoveCount(moveCount);
-      setStreak((prev) => prev + 1);
-      streakAtRiskRef.current = false;
-      setStreakAtRisk(false);
-      setPhase('transition');
-      transitionTimerRef.current = window.setTimeout(() => {
-        transitionTimerRef.current = null;
-        advanceToNextPuzzle();
-      }, PUZZLE_TRANSITION_MS);
-    },
-    [advanceToNextPuzzle, clearTransitionTimer],
-  );
-
-  const restartSession = useCallback(() => {
-    clearTransitionTimer();
-    setPuzzleIndex(0);
-    resetStreakToZero();
-    setLastMoveCount(0);
-    streakAtRiskRef.current = false;
-    setStreakAtRisk(false);
-    setPhase('playing');
-  }, [clearTransitionTimer, resetStreakToZero]);
-
-  const handlePlayAgain = useCallback(
-    (lost: boolean) => {
+      setLastSolveTimeMs(solveTimeMs);
+      setPhase('complete');
       void (async () => {
-        if (replayBusy) return;
-        if (lost) {
-          setReplayError('');
-          setReplayBusy(true);
-          const result = await startMiniGameAttempt('puzzle');
-          setReplayBusy(false);
-          if (!result.ok) {
-            setReplayError(result.error);
-            if (result.status) onAttemptStatusChange?.(result.status);
-            return;
-          }
-          onAttemptStatusChange?.(result.status);
+        const result = await upsertPuzzleBestTime(currentPuzzle.id, solveTimeMs);
+        if (result.ok) {
+          await loadBestSolver(currentPuzzle.id);
         }
-        restartSession();
       })();
     },
-    [onAttemptStatusChange, replayBusy, restartSession],
+    [currentPuzzle, loadBestSolver],
   );
 
+  const handleNextRandom = useCallback(() => {
+    void (async () => {
+      if (nextBusy) return;
+      setNextError('');
+      setNextBusy(true);
+      const result = await startMiniGameAttempt('puzzle');
+      setNextBusy(false);
+      if (!result.ok) {
+        setNextError(result.error);
+        if (result.status) onAttemptStatusChange?.(result.status);
+        return;
+      }
+      onAttemptStatusChange?.(result.status);
+      const next = pickRandomPuzzle(puzzles, currentPuzzle?.id);
+      if (!next) {
+        setNextError('No puzzles available.');
+        return;
+      }
+      setCurrentPuzzle(next);
+      setPhase('playing');
+      setLastMoveCount(0);
+      setLastSolveTimeMs(0);
+    })();
+  }, [currentPuzzle?.id, nextBusy, onAttemptStatusChange, puzzles]);
+
+  const handleResetLeaderboard = useCallback(() => {
+    if (
+      !window.confirm(
+        'Reset all puzzle leaderboard times? This cannot be undone.',
+      )
+    ) {
+      return;
+    }
+    void (async () => {
+      if (resetBusy) return;
+      setResetError('');
+      setResetMessage('');
+      setResetBusy(true);
+      const result = await adminResetPuzzleLeaderboard();
+      setResetBusy(false);
+      if (!result.ok) {
+        setResetError(result.error);
+        return;
+      }
+      setResetMessage(
+        result.deletedCount > 0
+          ? `Leaderboard reset (${result.deletedCount} record${result.deletedCount === 1 ? '' : 's'} cleared).`
+          : 'Leaderboard was already empty.',
+      );
+      setBestSolver(null);
+      if (currentPuzzle) {
+        await loadBestSolver(currentPuzzle.id);
+      }
+    })();
+  }, [currentPuzzle, loadBestSolver, resetBusy]);
+
   if (puzzles.length === 0) {
-    return (
-      <p className="muted">No puzzles available yet.</p>
-    );
+    return <p className="muted">No puzzles available yet.</p>;
+  }
+
+  if (!currentPuzzle) {
+    return <p className="muted">No puzzles available yet.</p>;
   }
 
   return (
     <div className="puzzle-session-player">
-      <div className="puzzle-session-player__stats">
-        <span className="puzzle-session-player__streak">
-          Streak: <strong>{streak}</strong>
-        </span>
-        <span className="muted puzzle-session-player__progress">
-          Puzzle {Math.min(puzzleNumber, totalPuzzles)} of {totalPuzzles}
-        </span>
+      <div className="puzzle-session-player__header">
+        <p className="puzzle-session-player__best-solver" aria-live="polite">
+          {bestSolverLoading && !bestSolver ? (
+            <span className="muted">Loading best solver…</span>
+          ) : bestSolver ? (
+            <>
+              Best solver: <strong>{bestSolver.username}</strong>
+              {' — '}
+              {formatPuzzleSolveTime(bestSolver.bestTimeMs)}
+            </>
+          ) : (
+            <span className="muted">No best time yet — be the first!</span>
+          )}
+        </p>
+        {isAdmin && (
+          <button
+            type="button"
+            className="btn btn--ghost btn--small puzzle-session-player__reset"
+            onClick={handleResetLeaderboard}
+            disabled={resetBusy}
+          >
+            {resetBusy ? 'Resetting…' : 'Reset leaderboard'}
+          </button>
+        )}
       </div>
 
-      {phase === 'playing' && currentPuzzle && (
+      {resetError && (
+        <p className="login-error" role="alert">
+          {resetError}
+        </p>
+      )}
+      {resetMessage && (
+        <p className="muted puzzle-session-player__reset-message" role="status">
+          {resetMessage}
+        </p>
+      )}
+
+      {phase === 'playing' && (
         <>
           <p className="muted puzzle-session-player__title">
             {puzzleDisplayTitle(currentPuzzle)}
           </p>
-          {streakAtRisk && (
-            <p className="puzzle-session-player__quit-hint muted" aria-live="polite">
-              Leaving now resets your streak.
-            </p>
-          )}
           <PuzzleGamePlayer
             key={currentPuzzle.id}
             puzzle={currentPuzzle}
@@ -220,38 +201,26 @@ export function PuzzleSessionPlayer({
         </>
       )}
 
-      {phase === 'transition' && (
-        <div className="puzzle-game-player__win" role="status">
-          <p className="puzzle-game-player__win-title">Puzzle solved!</p>
-          <p className="muted">
-            Completed in {lastMoveCount} moves · Streak: {streak}
-          </p>
-          <p className="muted">Loading next puzzle…</p>
-        </div>
-      )}
-
       {phase === 'complete' && (
         <div className="puzzle-game-player__win puzzle-session-player__complete" role="status">
-          <p className="puzzle-game-player__win-title">Session complete!</p>
+          <p className="puzzle-game-player__win-title">Puzzle solved!</p>
           <p className="muted">
-            You solved all {totalPuzzles} puzzle{totalPuzzles === 1 ? '' : 's'}.
+            Completed in {formatPuzzleSolveTime(lastSolveTimeMs)} · {lastMoveCount}{' '}
+            move{lastMoveCount === 1 ? '' : 's'}
           </p>
-          <p className="puzzle-session-player__final-streak">
-            Final streak: <strong>{streak}</strong>
-          </p>
-          {replayError && (
+          {nextError && (
             <p className="login-error" role="alert">
-              {replayError}
+              {nextError}
             </p>
           )}
           <div className="btn-row">
             <button
               type="button"
               className="btn btn--primary"
-              onClick={() => handlePlayAgain(false)}
-              disabled={replayBusy}
+              onClick={handleNextRandom}
+              disabled={nextBusy}
             >
-              {replayBusy ? 'Starting…' : 'Play again'}
+              {nextBusy ? 'Starting…' : 'Next random puzzle'}
             </button>
           </div>
         </div>

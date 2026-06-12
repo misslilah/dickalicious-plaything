@@ -322,6 +322,7 @@ export function MiniGames() {
                 gameId={game.id}
                 title={game.title || 'Focus Training'}
                 userId={session?.userId ?? null}
+                isAdmin={session?.role === 'admin'}
                 refreshKey={leaderboardRefresh}
               />
             ))}
@@ -332,6 +333,7 @@ export function MiniGames() {
                 gameId={game.id}
                 title={game.title || 'Follow your instinct'}
                 userId={session?.userId ?? null}
+                isAdmin={session?.role === 'admin'}
                 refreshKey={leaderboardRefresh}
               />
             ))}

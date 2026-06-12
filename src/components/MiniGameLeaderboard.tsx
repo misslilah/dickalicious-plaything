@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
+  adminResetMiniGameLeaderboard,
   fetchMiniGameLeaderboard,
   type MiniGameLeaderboardEntry,
   type MiniGameType,
@@ -10,6 +11,7 @@ interface MiniGameLeaderboardProps {
   gameId: string;
   title: string;
   userId: string | null;
+  isAdmin?: boolean;
   refreshKey?: number;
 }
 
@@ -18,6 +20,7 @@ export function MiniGameLeaderboard({
   gameId,
   title,
   userId,
+  isAdmin = false,
   refreshKey = 0,
 }: MiniGameLeaderboardProps) {
   const [entries, setEntries] = useState<MiniGameLeaderboardEntry[]>([]);
@@ -26,28 +29,57 @@ export function MiniGameLeaderboard({
   );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetError, setResetError] = useState('');
+  const [resetMessage, setResetMessage] = useState('');
+  const [localRefresh, setLocalRefresh] = useState(0);
+
+  const loadLeaderboard = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    const result = await fetchMiniGameLeaderboard(gameType, gameId, userId);
+    setLoading(false);
+    if (!result.ok) {
+      setError(result.error);
+      setEntries([]);
+      setUserRank(null);
+      return;
+    }
+    setEntries(result.leaderboard.entries);
+    setUserRank(result.leaderboard.userRank);
+  }, [gameType, gameId, userId]);
 
   useEffect(() => {
-    let cancelled = false;
+    void loadLeaderboard();
+  }, [loadLeaderboard, refreshKey, localRefresh]);
+
+  const handleResetLeaderboard = useCallback(() => {
+    if (
+      !window.confirm(
+        `Reset the "${title}" leaderboard? All best streak records will be cleared. This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
     void (async () => {
-      setLoading(true);
-      setError('');
-      const result = await fetchMiniGameLeaderboard(gameType, gameId, userId);
-      if (cancelled) return;
-      setLoading(false);
+      if (resetBusy) return;
+      setResetError('');
+      setResetMessage('');
+      setResetBusy(true);
+      const result = await adminResetMiniGameLeaderboard(gameType, gameId);
+      setResetBusy(false);
       if (!result.ok) {
-        setError(result.error);
-        setEntries([]);
-        setUserRank(null);
+        setResetError(result.error);
         return;
       }
-      setEntries(result.leaderboard.entries);
-      setUserRank(result.leaderboard.userRank);
+      setResetMessage(
+        result.deletedCount > 0
+          ? `Leaderboard reset (${result.deletedCount} record${result.deletedCount === 1 ? '' : 's'} cleared).`
+          : 'Leaderboard was already empty.',
+      );
+      setLocalRefresh((key) => key + 1);
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [gameType, gameId, userId, refreshKey]);
+  }, [gameId, gameType, resetBusy, title]);
 
   const userInTop =
     userId != null && entries.some((entry) => entry.userId === userId);
@@ -57,9 +89,32 @@ export function MiniGameLeaderboard({
   return (
     <article className="mini-game-leaderboard">
       <header className="mini-game-leaderboard__header">
-        <h4 className="mini-game-leaderboard__title">{title}</h4>
-        <span className="mini-game-leaderboard__subtitle muted">Best streak</span>
+        <div className="mini-game-leaderboard__heading">
+          <h4 className="mini-game-leaderboard__title">{title}</h4>
+          <span className="mini-game-leaderboard__subtitle muted">Best streak</span>
+        </div>
+        {isAdmin && (
+          <button
+            type="button"
+            className="btn btn--ghost btn--small mini-game-leaderboard__reset"
+            onClick={handleResetLeaderboard}
+            disabled={resetBusy}
+          >
+            {resetBusy ? 'Resetting…' : 'Reset leaderboard'}
+          </button>
+        )}
       </header>
+
+      {resetError && (
+        <p className="login-error mini-game-leaderboard__status" role="alert">
+          {resetError}
+        </p>
+      )}
+      {resetMessage && (
+        <p className="muted mini-game-leaderboard__status" role="status">
+          {resetMessage}
+        </p>
+      )}
 
       {loading && <p className="muted mini-game-leaderboard__status">Loading…</p>}
       {error && (

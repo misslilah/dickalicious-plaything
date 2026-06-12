@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { formatPuzzleSolveTime } from '../lib/puzzleLeaderboardDb';
 import {
   PUZZLE_ROTATION_LABELS,
   createShuffledPuzzlePieces,
@@ -17,7 +18,7 @@ interface PuzzleGamePlayerProps {
   puzzle: PuzzleGame;
   /** When true, parent handles win flow (no standalone win screen). */
   sessionMode?: boolean;
-  onComplete?: (moveCount: number) => void;
+  onComplete?: (moveCount: number, solveTimeMs: number) => void;
 }
 
 export function PuzzleGamePlayer({
@@ -32,6 +33,7 @@ export function PuzzleGamePlayer({
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const [won, setWon] = useState(false);
   const [moveCount, setMoveCount] = useState(0);
+  const [elapsedMs, setElapsedMs] = useState(0);
   const [dragSlot, setDragSlot] = useState<number | null>(null);
   const [dragOverSlot, setDragOverSlot] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -48,6 +50,8 @@ export function PuzzleGamePlayer({
 
   const onCompleteRef = useRef(onComplete);
   const moveCountRef = useRef(moveCount);
+  const elapsedMsRef = useRef(elapsedMs);
+  const startedAtRef = useRef(Date.now());
   const completedRef = useRef(false);
 
   useEffect(() => {
@@ -59,12 +63,26 @@ export function PuzzleGamePlayer({
   }, [moveCount]);
 
   useEffect(() => {
+    elapsedMsRef.current = elapsedMs;
+  }, [elapsedMs]);
+
+  useEffect(() => {
+    if (won) return;
+    const timer = window.setInterval(() => {
+      setElapsedMs(Date.now() - startedAtRef.current);
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [won]);
+
+  useEffect(() => {
     if (!isPuzzleSolved(pieces) || completedRef.current) return;
     completedRef.current = true;
+    const solveTimeMs = Date.now() - startedAtRef.current;
+    setElapsedMs(solveTimeMs);
     setWon(true);
     setSelectedSlot(null);
     if (sessionMode) {
-      onCompleteRef.current?.(moveCountRef.current);
+      onCompleteRef.current?.(moveCountRef.current, solveTimeMs);
     }
   }, [pieces, sessionMode]);
 
@@ -73,6 +91,9 @@ export function PuzzleGamePlayer({
     setSelectedSlot(null);
     setWon(false);
     setMoveCount(0);
+    setElapsedMs(0);
+    startedAtRef.current = Date.now();
+    completedRef.current = false;
     setDragSlot(null);
     setDragOverSlot(null);
     setIsDragging(false);
@@ -217,6 +238,9 @@ export function PuzzleGamePlayer({
       <div className="puzzle-game-player__toolbar">
         <p className="muted puzzle-game-player__hint">{rotationHint}</p>
         <div className="puzzle-game-player__stats">
+          <span className="puzzle-game-player__timer">
+            {formatPuzzleSolveTime(elapsedMs)}
+          </span>
           <span className="puzzle-game-player__moves">{moveCount} moves</span>
           {!sessionMode && (
             <button type="button" className="btn btn--ghost btn--small" onClick={resetPuzzle}>
@@ -288,7 +312,9 @@ export function PuzzleGamePlayer({
       {won && !sessionMode && (
         <div className="puzzle-game-player__win" role="status">
           <p className="puzzle-game-player__win-title">Puzzle solved!</p>
-          <p className="muted">Completed in {moveCount} moves.</p>
+          <p className="muted">
+            Completed in {formatPuzzleSolveTime(elapsedMs)} · {moveCount} moves.
+          </p>
           <button type="button" className="btn btn--primary" onClick={resetPuzzle}>
             Play again
           </button>

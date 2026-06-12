@@ -1,9 +1,10 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import type { DailyGameAttemptStatus } from '../lib/dailyGameAttempts';
 import {
   fetchFollowInstinctGame,
   type FollowInstinctGame,
 } from '../lib/followInstinctGames';
+import type { FollowInstinctGameQuitHandler } from './FollowInstinctGamePlayer';
 
 const FollowInstinctGamePlayer = lazy(() =>
   import('./FollowInstinctGamePlayer').then((m) => ({
@@ -25,6 +26,14 @@ export function FollowInstinctGameModal({
   const [game, setGame] = useState<FollowInstinctGame | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [quitHandler, setQuitHandler] = useState<FollowInstinctGameQuitHandler | null>(
+    null,
+  );
+
+  const handleClose = useCallback(() => {
+    quitHandler?.();
+    onClose();
+  }, [onClose, quitHandler]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -36,11 +45,11 @@ export function FollowInstinctGameModal({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') handleClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  }, [handleClose]);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,7 +92,7 @@ export function FollowInstinctGameModal({
           <button
             type="button"
             className="btn btn--ghost btn--small flash-word-game-modal__close"
-            onClick={onClose}
+            onClick={handleClose}
             aria-label="Close game"
           >
             ✕
@@ -97,7 +106,7 @@ export function FollowInstinctGameModal({
               <p className="login-error" role="alert">
                 {error}
               </p>
-              <button type="button" className="btn btn--ghost" onClick={onClose}>
+              <button type="button" className="btn btn--ghost" onClick={handleClose}>
                 Back to Mini Games
               </button>
             </>
@@ -106,6 +115,7 @@ export function FollowInstinctGameModal({
             <Suspense fallback={<p className="muted">Loading camera game…</p>}>
               <FollowInstinctGamePlayer
                 game={game}
+                onRegisterQuitHandler={setQuitHandler}
                 onAttemptStatusChange={onAttemptStatusChange}
               />
             </Suspense>

@@ -81,7 +81,7 @@ export function PuzzleGameModal({
           <div className="flash-word-game-modal__heading">
             <h2 id="puzzle-game-modal-title">Puzzle</h2>
             <p className="muted flash-word-game-modal__desc">
-              Solve puzzles in order — each win grows your streak.
+              Solve a random puzzle — fastest time wins the leaderboard.
             </p>
           </div>
           <button

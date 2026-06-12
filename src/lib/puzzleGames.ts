@@ -198,6 +198,18 @@ async function removeImages(paths: string[]): Promise<void> {
 
 export const PUZZLE_SESSION_STREAK_KEY = 'puzzle-session-streak';
 
+export function pickRandomPuzzle(
+  puzzles: PuzzleGame[],
+  excludeId?: string,
+): PuzzleGame | null {
+  if (puzzles.length === 0) return null;
+  const candidates = excludeId
+    ? puzzles.filter((puzzle) => puzzle.id !== excludeId)
+    : puzzles;
+  const pool = candidates.length > 0 ? candidates : puzzles;
+  return pool[Math.floor(Math.random() * pool.length)] ?? null;
+}
+
 export async function fetchActivePuzzleGames(): Promise<
   { ok: true; puzzles: PuzzleGame[] } | { ok: false; error: string }
 > {
