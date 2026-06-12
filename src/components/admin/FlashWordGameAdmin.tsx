@@ -23,13 +23,17 @@ import {
   type FlashWordGame,
   type FlashWordGameInput,
   type FlashWordHardDistractionZoneInput,
+  type FlashWordHardModeImageFormEntry,
   type FlashWordSavedCombination,
   type FlashWordStreakTier,
   type FlashWordTripletInput,
   type FlashWordZone,
+  type HardModeImageFileEntry,
   type StreakTierAudioFileEntry,
 } from '../../lib/flashWordGames';
+import { FlashWordGameTestModal } from '../FlashWordGameTestModal';
 import { FlashWordZoneEditor } from '../FlashWordZoneEditor';
+import { buildSandboxFlashWordGame } from '../../lib/flashWordAdminTest';
 
 const EMPTY_TRIPLET: FlashWordTripletInput = {
   word1: '',
@@ -44,6 +48,7 @@ type CardFormEntry = {
   distractionZones: FlashWordDistractionZoneInput[];
   hardModeZones: FlashWordZone[];
   hardDistractionZones: FlashWordHardDistractionZoneInput[];
+  hardModeImages: FlashWordHardModeImageFormEntry[];
   pendingFile?: File;
   pendingPreviewUrl?: string;
 };
@@ -93,6 +98,13 @@ function cardToFormEntry(card: FlashWordCard): CardFormEntry {
       id: zone.id,
       zone: { ...zone.zone },
       word: zone.word,
+    })),
+    hardModeImages: card.hardModeImages.map((image) => ({
+      id: image.id,
+      imagePath: image.imagePath,
+      imageUrl: image.imageUrl,
+      zone: { ...image.zone },
+      displayMode: image.displayMode,
     })),
   };
 }
@@ -154,6 +166,10 @@ export function FlashWordGameAdmin() {
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [libraryBusy, setLibraryBusy] = useState(false);
   const [saveToLibraryOnCreate, setSaveToLibraryOnCreate] = useState(true);
+  const [testPlay, setTestPlay] = useState<{
+    game: FlashWordGame;
+    cardLabel: string;
+  } | null>(null);
 
   const selectedCard = form.cards[selectedCardIndex] ?? null;
   const zoneImageUrl =
@@ -276,6 +292,18 @@ export function FlashWordGameAdmin() {
     }));
   };
 
+  const updateCardHardModeImages = (
+    index: number,
+    hardModeImages: FlashWordHardModeImageFormEntry[],
+  ) => {
+    setForm((prev) => ({
+      ...prev,
+      cards: prev.cards.map((card, i) =>
+        i === index ? { ...card, hardModeImages } : card,
+      ),
+    }));
+  };
+
   const addCardFromFile = (file: File) => {
     if (!file.type.startsWith('image/')) {
       setError('Only image files are allowed.');
@@ -295,6 +323,7 @@ export function FlashWordGameAdmin() {
           distractionZones: [],
           hardModeZones: [],
           hardDistractionZones: [],
+          hardModeImages: [],
           pendingFile: file,
           pendingPreviewUrl: previewUrl,
         },
@@ -334,6 +363,9 @@ export function FlashWordGameAdmin() {
     setForm((prev) => {
       const card = prev.cards[index];
       if (card?.pendingPreviewUrl) URL.revokeObjectURL(card.pendingPreviewUrl);
+      for (const image of card?.hardModeImages ?? []) {
+        if (image.pendingPreviewUrl) URL.revokeObjectURL(image.pendingPreviewUrl);
+      }
       const nextCards = prev.cards.filter((_, i) => i !== index);
       setSelectedCardIndex((current) => {
         if (nextCards.length === 0) return 0;
@@ -499,6 +531,12 @@ export function FlashWordGameAdmin() {
       distractionZones: form.distractionZonesEnabled ? card.distractionZones : [],
       hardModeZones: card.hardModeZones,
       hardDistractionZones: card.hardDistractionZones,
+      hardModeImages: card.hardModeImages.map((image) => ({
+        id: image.id,
+        imagePath: image.imagePath,
+        zone: image.zone,
+        displayMode: image.displayMode,
+      })),
     })),
     triplets: form.triplets,
     streakTiers: form.streakTiers.map((tier) => ({
@@ -516,6 +554,15 @@ export function FlashWordGameAdmin() {
         card.pendingFile ? { cardIndex: index, file: card.pendingFile } : null,
       )
       .filter((entry): entry is CardFileEntry => entry != null);
+
+  const buildHardModeImageFiles = (): HardModeImageFileEntry[] =>
+    form.cards.flatMap((card, cardIndex) =>
+      card.hardModeImages.flatMap((image, imageIndex) =>
+        image.pendingFile
+          ? [{ cardIndex, imageIndex, file: image.pendingFile }]
+          : [],
+      ),
+    );
 
   const buildStreakAudioFiles = (): StreakTierAudioFileEntry[] =>
     form.streakTiers
@@ -542,13 +589,33 @@ export function FlashWordGameAdmin() {
     }
 
     setSaving(true);
+    const missingHardModeImage = form.cards.some((card) =>
+      card.hardModeImages.some((image) => !image.pendingFile && !image.imagePath),
+    );
+    if (missingHardModeImage) {
+      setError('Each hard mode overlay image needs an image upload.');
+      return;
+    }
+
     const input = buildInput();
     const cardFiles = buildCardFiles();
+    const hardModeImageFiles = buildHardModeImageFiles();
     const streakAudioFiles = buildStreakAudioFiles();
     const wasEditing = editingId != null;
     const result = editingId
-      ? await updateFlashWordGame(editingId, input, cardFiles, streakAudioFiles)
-      : await createFlashWordGame(input, cardFiles, streakAudioFiles);
+      ? await updateFlashWordGame(
+          editingId,
+          input,
+          cardFiles,
+          streakAudioFiles,
+          hardModeImageFiles,
+        )
+      : await createFlashWordGame(
+          input,
+          cardFiles,
+          streakAudioFiles,
+          hardModeImageFiles,
+        );
     setSaving(false);
 
     if (!result.ok) {
@@ -582,6 +649,30 @@ export function FlashWordGameAdmin() {
     setEditingId(result.game.id);
     setForm(gameToForm(result.game));
     setSelectedCardIndex(0);
+  };
+
+  const openTestPlay = (cardIndex: number) => {
+    const card = form.cards[cardIndex];
+    if (!card) return;
+
+    const result = buildSandboxFlashWordGame({
+      title: form.title,
+      flashDurationMs: form.flashDurationMs,
+      distractionZonesEnabled: form.distractionZonesEnabled,
+      card,
+      triplets: form.triplets,
+    });
+
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+
+    setError('');
+    setTestPlay({
+      game: result.game,
+      cardLabel: `Card ${cardIndex + 1}`,
+    });
   };
 
   const remove = async (game: FlashWordGame) => {
@@ -800,6 +891,13 @@ export function FlashWordGameAdmin() {
                       <span className="flash-game-cards__thumb-label">Card {index + 1}</span>
                     </button>
                     <div className="flash-game-cards__item-actions">
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--small"
+                        onClick={() => openTestPlay(index)}
+                      >
+                        Test play
+                      </button>
                       <label className="btn btn--ghost btn--small">
                         Replace
                         <input
@@ -843,7 +941,29 @@ export function FlashWordGameAdmin() {
                   onHardDistractionZonesChange={(hardDistractionZones) =>
                     updateCardHardDistractionZones(selectedCardIndex, hardDistractionZones)
                   }
+                  hardModeImages={selectedCard.hardModeImages}
+                  onHardModeImagesChange={(hardModeImages) =>
+                    updateCardHardModeImages(selectedCardIndex, hardModeImages)
+                  }
                 />
+              )}
+
+              {selectedCard && (
+                <div className="flash-game-test-play">
+                  <h4 className="section-title">Test play</h4>
+                  <p className="muted">
+                    Play the selected card in sandbox mode with hard mode forced on. Uses
+                    unsaved zone edits and your word combinations — streak, leaderboard, and
+                    daily limits are not affected.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--small"
+                    onClick={() => openTestPlay(selectedCardIndex)}
+                  >
+                    Test play card {selectedCardIndex + 1}
+                  </button>
+                </div>
               )}
             </>
           )}
@@ -1099,6 +1219,14 @@ export function FlashWordGameAdmin() {
           {saving ? 'Saving…' : editingId ? 'Save changes' : 'Create game'}
         </button>
       </section>
+
+      {testPlay && (
+        <FlashWordGameTestModal
+          game={testPlay.game}
+          cardLabel={testPlay.cardLabel}
+          onClose={() => setTestPlay(null)}
+        />
+      )}
     </>
   );
 }

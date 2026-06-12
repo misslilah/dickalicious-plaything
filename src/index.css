@@ -5960,8 +5960,98 @@ a.task-list-row {
 }
 
 .flash-zone-editor__hard-highlights,
-.flash-zone-editor__hard-distractions {
+.flash-zone-editor__hard-distractions,
+.flash-zone-editor__hard-images {
   margin-top: 0.65rem;
+}
+
+.flash-zone-editor__zone--hard-image {
+  border-color: #ec4899;
+  background: rgba(236, 72, 153, 0.12);
+  z-index: 1;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+
+.flash-zone-editor__zone--hard-image .flash-zone-editor__zone-label {
+  color: #f9a8d4;
+  z-index: 1;
+}
+
+.flash-zone-editor__zone--hard-image .flash-zone-editor__resize {
+  border-color: #ec4899;
+  z-index: 2;
+}
+
+.flash-zone-editor__hard-image-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  pointer-events: none;
+}
+
+.flash-word-player__hard-image {
+  position: absolute;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.flash-word-player__hard-image-fit {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  display: block;
+}
+
+.flash-word-player__hard-image--pop {
+  animation: flash-hard-image-pop 0.15s ease-out;
+}
+
+@keyframes flash-hard-image-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.flash-zone-editor__hard-image-mode {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.flash-zone-editor__hard-image-mode select {
+  width: 100%;
+}
+
+.flash-game-test-play {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(251, 191, 36, 0.2);
+}
+
+.flash-word-game-test-modal__sandbox {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+}
+
+.flash-word-player__test-banner {
+  margin: 0 0 0.65rem;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: #fde68a;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: var(--radius-md);
+  background: rgba(251, 191, 36, 0.1);
 }
 
 .flash-zone-editor__zone-label {

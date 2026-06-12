@@ -36,13 +36,20 @@ export const DEFAULT_HARD_HIGHLIGHT_ZONE = {
   heightPct: 10,
 };
 
+export const DEFAULT_HARD_MODE_IMAGE_ZONE = {
+  xPct: 8,
+  yPct: 8,
+  widthPct: 22,
+  heightPct: 22,
+};
+
 export const MAX_FLASH_GAME_IMAGE_BYTES = 5 * 1024 * 1024;
 
 export const FLASH_GAME_IMAGE_ACCEPT =
   'image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif';
 
 const MIGRATION_HINT =
-  'Flash Cards games are not set up yet. In Supabase SQL Editor, run supabase/migrations/028_flash_word_games.sql through 032_flash_card_distraction_zones.sql, 045_flash_word_streak_rewards.sql, and 050_flash_card_hard_mode.sql, then retry.';
+  'Flash Cards games are not set up yet. In Supabase SQL Editor, run supabase/migrations/028_flash_word_games.sql through 032_flash_card_distraction_zones.sql, 045_flash_word_streak_rewards.sql, 050_flash_card_hard_mode.sql, and 085_flash_card_hard_mode_images.sql, then retry.';
 
 const BUCKET_HINT =
   'The flash-game-images storage bucket is not set up yet. In Supabase SQL Editor, run supabase/migrations/028_flash_word_games.sql, then retry the upload.';
@@ -71,6 +78,20 @@ export interface FlashWordHardDistractionZone {
   word: string;
 }
 
+/** Persistent overlays stay visible during wait + flash; pop overlays flash briefly like distractions. */
+export type FlashWordHardModeImageDisplayMode = 'persistent' | 'pop';
+
+export const DEFAULT_HARD_MODE_IMAGE_DISPLAY_MODE: FlashWordHardModeImageDisplayMode =
+  'persistent';
+
+export interface FlashWordHardModeImage {
+  id: string;
+  imagePath: string;
+  imageUrl: string;
+  zone: FlashWordZone;
+  displayMode: FlashWordHardModeImageDisplayMode;
+}
+
 export interface FlashWordCard {
   id: string;
   gameId: string;
@@ -80,6 +101,7 @@ export interface FlashWordCard {
   distractionZones: FlashWordDistractionZone[];
   hardModeZones: FlashWordZone[];
   hardDistractionZones: FlashWordHardDistractionZone[];
+  hardModeImages: FlashWordHardModeImage[];
   sortOrder: number;
 }
 
@@ -138,12 +160,30 @@ export interface FlashWordHardDistractionZoneInput {
   word: string;
 }
 
+export interface FlashWordHardModeImageInput {
+  id?: string;
+  imagePath?: string;
+  zone: FlashWordZone;
+  displayMode?: FlashWordHardModeImageDisplayMode;
+}
+
+export type FlashWordHardModeImageFormEntry = {
+  id?: string;
+  zone: FlashWordZone;
+  imagePath?: string;
+  imageUrl?: string;
+  displayMode?: FlashWordHardModeImageDisplayMode;
+  pendingFile?: File;
+  pendingPreviewUrl?: string;
+};
+
 export interface FlashWordCardInput {
   id?: string;
   zone: FlashWordZone;
   distractionZones?: FlashWordDistractionZoneInput[];
   hardModeZones?: FlashWordZone[];
   hardDistractionZones?: FlashWordHardDistractionZoneInput[];
+  hardModeImages?: FlashWordHardModeImageInput[];
 }
 
 export interface FlashWordTripletInput {
@@ -204,6 +244,7 @@ type DbFlashWordCard = {
   zone_height_pct: number;
   hard_zones?: unknown;
   hard_distraction_zones?: unknown;
+  hard_mode_images?: unknown;
   sort_order: number;
 };
 
@@ -219,6 +260,19 @@ type HardDistractionZoneJson = {
   word?: string;
   zone?: HardZoneJson;
 };
+
+type HardModeImageJson = {
+  id?: string;
+  imagePath?: string;
+  zone?: HardZoneJson;
+  displayMode?: string;
+};
+
+function parseHardModeImageDisplayMode(
+  value: unknown,
+): FlashWordHardModeImageDisplayMode {
+  return value === 'pop' ? 'pop' : DEFAULT_HARD_MODE_IMAGE_DISPLAY_MODE;
+}
 
 type DbFlashWordDistractionZone = {
   id: string;
@@ -283,6 +337,12 @@ function formatDbError(error: { message?: string; code?: string }): string {
     (message.includes('column') && message.includes('flash_word_games'))
   ) {
     return `${message} Run supabase/migrations/032_flash_card_distraction_zones.sql in Supabase SQL Editor, then retry.`;
+  }
+  if (
+    message.includes('hard_mode_images') ||
+    (message.includes('column') && message.includes('hard_mode_images'))
+  ) {
+    return `${message} Run supabase/migrations/085_flash_card_hard_mode_images.sql in Supabase SQL Editor, then retry.`;
   }
   if (
     message.includes('hard_zones') ||
@@ -382,6 +442,39 @@ export function serializeHardDistractionZones(
   }));
 }
 
+export function parseHardModeImagesJson(value: unknown): FlashWordHardModeImage[] {
+  if (!Array.isArray(value)) return [];
+  const result: FlashWordHardModeImage[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue;
+    const row = entry as HardModeImageJson;
+    const zone = parseZoneJson(row.zone);
+    const imagePath = typeof row.imagePath === 'string' ? row.imagePath.trim() : '';
+    if (!zone || !imagePath) continue;
+    const imageUrl = getFlashGameImageUrl(imagePath);
+    if (!imageUrl) continue;
+    result.push({
+      id: typeof row.id === 'string' && row.id.trim() ? row.id : crypto.randomUUID(),
+      imagePath,
+      imageUrl,
+      zone,
+      displayMode: parseHardModeImageDisplayMode(row.displayMode),
+    });
+  }
+  return result;
+}
+
+export function serializeHardModeImages(
+  images: FlashWordHardModeImageInput[],
+): HardModeImageJson[] {
+  return images.map((entry) => ({
+    id: entry.id ?? crypto.randomUUID(),
+    imagePath: entry.imagePath?.trim() ?? '',
+    zone: serializeHardModeZones([entry.zone])[0]!,
+    displayMode: parseHardModeImageDisplayMode(entry.displayMode),
+  }));
+}
+
 export function isFlashHardModeActive(streak: number): boolean {
   return streak >= FLASH_HARD_MODE_STREAK_THRESHOLD;
 }
@@ -457,6 +550,16 @@ export function flashCardStoragePath(
   return `${gameId}/cards/${cardId}/${safe}`;
 }
 
+export function flashHardModeImageStoragePath(
+  gameId: string,
+  cardId: string,
+  imageId: string,
+  fileName: string,
+): string {
+  const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  return `${gameId}/cards/${cardId}/hard/${imageId}/${safe}`;
+}
+
 export function flashStreakAudioStoragePath(
   gameId: string,
   tierId: string,
@@ -521,6 +624,7 @@ function mapCard(
     distractionZones,
     hardModeZones: parseHardModeZonesJson(row.hard_zones),
     hardDistractionZones: parseHardDistractionZonesJson(row.hard_distraction_zones),
+    hardModeImages: parseHardModeImagesJson(row.hard_mode_images),
     sortOrder: row.sort_order,
   };
 }
@@ -1121,10 +1225,92 @@ export type CardFileEntry = {
   file: File;
 };
 
+export type HardModeImageFileEntry = {
+  cardIndex: number;
+  imageIndex: number;
+  file: File;
+};
+
+async function resolveCardHardModeImages(
+  gameId: string,
+  cardId: string,
+  cardIndex: number,
+  inputs: FlashWordHardModeImageInput[],
+  fileEntries: HardModeImageFileEntry[],
+  existingImages: FlashWordHardModeImage[],
+): Promise<
+  | { ok: true; serialized: HardModeImageJson[]; pathsToDelete: string[] }
+  | { ok: false; error: string }
+> {
+  const keptIds = new Set<string>();
+  const serialized: HardModeImageJson[] = [];
+  const pathsToDelete: string[] = [];
+
+  for (let imageIndex = 0; imageIndex < inputs.length; imageIndex += 1) {
+    const input = inputs[imageIndex]!;
+    const imageId = input.id ?? crypto.randomUUID();
+    keptIds.add(imageId);
+
+    const existing = existingImages.find((image) => image.id === imageId);
+    const fileEntry = fileEntries.find(
+      (entry) => entry.cardIndex === cardIndex && entry.imageIndex === imageIndex,
+    );
+    let imagePath = input.imagePath?.trim() || existing?.imagePath || '';
+
+    if (fileEntry) {
+      if (!fileEntry.file.type.startsWith('image/')) {
+        return { ok: false, error: 'Only image files are allowed for hard mode overlays.' };
+      }
+      if (fileEntry.file.size > MAX_FLASH_GAME_IMAGE_BYTES) {
+        return {
+          ok: false,
+          error: `Hard mode image too large. Max ${MAX_FLASH_GAME_IMAGE_BYTES / (1024 * 1024)} MB.`,
+        };
+      }
+      const nextPath = flashHardModeImageStoragePath(
+        gameId,
+        cardId,
+        imageId,
+        fileEntry.file.name || 'overlay.jpg',
+      );
+      const uploaded = await uploadFlashGameImage(
+        nextPath,
+        fileEntry.file,
+        fileEntry.file.type,
+      );
+      if (!uploaded.ok) return uploaded;
+      if (imagePath && imagePath !== nextPath) {
+        pathsToDelete.push(imagePath);
+      }
+      imagePath = nextPath;
+    }
+
+    if (!imagePath) {
+      return { ok: false, error: 'Each hard mode overlay image needs an image upload.' };
+    }
+
+    serialized.push({
+      id: imageId,
+      imagePath,
+      zone: serializeHardModeZones([input.zone])[0]!,
+      displayMode: parseHardModeImageDisplayMode(input.displayMode),
+    });
+  }
+
+  for (const existing of existingImages) {
+    if (!keptIds.has(existing.id)) {
+      pathsToDelete.push(existing.imagePath);
+    }
+  }
+
+  return { ok: true, serialized, pathsToDelete };
+}
+
 async function replaceGameCards(
   gameId: string,
   cards: FlashWordCardInput[],
   cardFiles: CardFileEntry[],
+  hardModeImageFiles: HardModeImageFileEntry[] = [],
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
@@ -1135,6 +1321,7 @@ async function replaceGameCards(
   const existingById = new Map(existingRes.cards.map((card) => [card.id, card]));
   const keptIds = new Set<string>();
   const pathsToDelete: string[] = [];
+  const hardImagePathsToDelete: string[] = [];
 
   for (let index = 0; index < cards.length; index += 1) {
     const cardInput = cards[index]!;
@@ -1173,6 +1360,17 @@ async function replaceGameCards(
         imagePath = nextPath;
       }
 
+      const hardImagesResult = await resolveCardHardModeImages(
+        gameId,
+        cardInput.id,
+        index,
+        cardInput.hardModeImages ?? [],
+        hardModeImageFiles,
+        existing.hardModeImages,
+      );
+      if (!hardImagesResult.ok) return hardImagesResult;
+      hardImagePathsToDelete.push(...hardImagesResult.pathsToDelete);
+
       const { error } = await supabase
         .from('flash_word_cards')
         .update({
@@ -1185,6 +1383,7 @@ async function replaceGameCards(
           hard_distraction_zones: serializeHardDistractionZones(
             cardInput.hardDistractionZones ?? [],
           ),
+          hard_mode_images: hardImagesResult.serialized,
           sort_order: index,
         })
         .eq('id', cardInput.id);
@@ -1225,6 +1424,20 @@ async function replaceGameCards(
     );
     if (!uploaded.ok) return uploaded;
 
+    const hardImagesResult = await resolveCardHardModeImages(
+      gameId,
+      cardId,
+      index,
+      cardInput.hardModeImages ?? [],
+      hardModeImageFiles,
+      [],
+    );
+    if (!hardImagesResult.ok) {
+      await deleteFlashGameImages([imagePath]);
+      return hardImagesResult;
+    }
+    hardImagePathsToDelete.push(...hardImagesResult.pathsToDelete);
+
     const { error } = await supabase.from('flash_word_cards').insert({
       id: cardId,
       game_id: gameId,
@@ -1237,6 +1450,7 @@ async function replaceGameCards(
       hard_distraction_zones: serializeHardDistractionZones(
         cardInput.hardDistractionZones ?? [],
       ),
+      hard_mode_images: hardImagesResult.serialized,
       sort_order: index,
     });
 
@@ -1255,6 +1469,7 @@ async function replaceGameCards(
   for (const existing of existingRes.cards) {
     if (!keptIds.has(existing.id)) {
       pathsToDelete.push(existing.imagePath);
+      hardImagePathsToDelete.push(...existing.hardModeImages.map((image) => image.imagePath));
       const { error } = await supabase
         .from('flash_word_cards')
         .delete()
@@ -1263,7 +1478,10 @@ async function replaceGameCards(
     }
   }
 
-  const deleteResult = await deleteFlashGameImages(pathsToDelete);
+  const deleteResult = await deleteFlashGameImages([
+    ...pathsToDelete,
+    ...hardImagePathsToDelete,
+  ]);
   if (!deleteResult.ok) return deleteResult;
 
   return { ok: true };
@@ -1273,6 +1491,7 @@ export async function createFlashWordGame(
   input: FlashWordGameInput,
   cardFiles: CardFileEntry[],
   streakAudioFiles: StreakTierAudioFileEntry[] = [],
+  hardModeImageFiles: HardModeImageFileEntry[] = [],
 ): Promise<{ ok: true; game: FlashWordGame } | { ok: false; error: string }> {
   const validationError = validateGameInput(input);
   if (validationError) return { ok: false, error: validationError };
@@ -1305,7 +1524,12 @@ export async function createFlashWordGame(
     return { ok: false, error: error ? formatDbError(error) : 'Save failed.' };
   }
 
-  const cardsResult = await replaceGameCards(id, input.cards, cardFiles);
+  const cardsResult = await replaceGameCards(
+    id,
+    input.cards,
+    cardFiles,
+    hardModeImageFiles,
+  );
   if (!cardsResult.ok) {
     await supabase.from('flash_word_games').delete().eq('id', id);
     return cardsResult;
@@ -1337,6 +1561,7 @@ export async function updateFlashWordGame(
   input: FlashWordGameInput,
   cardFiles: CardFileEntry[] = [],
   streakAudioFiles: StreakTierAudioFileEntry[] = [],
+  hardModeImageFiles: HardModeImageFileEntry[] = [],
 ): Promise<{ ok: true; game: FlashWordGame } | { ok: false; error: string }> {
   const validationError = validateGameInput(input);
   if (validationError) return { ok: false, error: validationError };
@@ -1366,7 +1591,12 @@ export async function updateFlashWordGame(
 
   if (error) return { ok: false, error: formatDbError(error) };
 
-  const cardsResult = await replaceGameCards(gameId, input.cards, cardFiles);
+  const cardsResult = await replaceGameCards(
+    gameId,
+    input.cards,
+    cardFiles,
+    hardModeImageFiles,
+  );
   if (!cardsResult.ok) return cardsResult;
 
   const tripletsResult = await replaceGameTriplets(gameId, input.triplets);
@@ -1393,7 +1623,12 @@ export async function deleteFlashWordGame(
   const existing = await fetchFlashWordGame(gameId);
   if (!existing.ok) return existing;
 
-  const imagePaths = existing.game.cards.map((card) => card.imagePath);
+  const imagePaths = [
+    ...existing.game.cards.map((card) => card.imagePath),
+    ...existing.game.cards.flatMap((card) =>
+      card.hardModeImages.map((image) => image.imagePath),
+    ),
+  ];
   const audioPaths = existing.game.streakTiers
     .map((tier) => tier.audioStoragePath)
     .filter((path): path is string => path != null);

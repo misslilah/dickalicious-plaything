@@ -18,6 +18,7 @@ import {
   type FlashWordGame,
   type FlashWordGameTriplet,
   type FlashWordHardDistractionZone,
+  type FlashWordHardModeImage,
 } from '../lib/flashWordGames';
 import {
   fetchMiniGameUserBestStreak,
@@ -88,6 +89,8 @@ function randomStreakSidePlacement(): StreakToastPlacement {
 
 interface FlashWordGamePlayerProps {
   game: FlashWordGame;
+  /** Sandbox play from admin — full gameplay without persistence or limits. */
+  isTestMode?: boolean;
   /** Called on mount with quit handler; modal should invoke before closing. */
   onRegisterQuitHandler?: (handler: FlashWordGameQuitHandler | null) => void;
   onAttemptStatusChange?: (status: DailyGameAttemptStatus) => void;
@@ -95,6 +98,7 @@ interface FlashWordGamePlayerProps {
 
 export function FlashWordGamePlayer({
   game,
+  isTestMode = false,
   onRegisterQuitHandler,
   onAttemptStatusChange,
 }: FlashWordGamePlayerProps) {
@@ -109,7 +113,9 @@ export function FlashWordGamePlayer({
   const [choices, setChoices] = useState<string[]>([]);
   const [selectedWord, setSelectedWord] = useState<string | null>(null);
   const [correct, setCorrect] = useState<boolean | null>(null);
-  const [streak, setStreak] = useState(() => readPersistedStreak(game.id));
+  const [streak, setStreak] = useState(() =>
+    isTestMode ? 0 : readPersistedStreak(game.id),
+  );
   const [roundCommitted, setRoundCommitted] = useState(false);
   const [sessionBestStreak, setSessionBestStreak] = useState(0);
   const [allTimeBestStreak, setAllTimeBestStreak] = useState(0);
@@ -126,9 +132,11 @@ export function FlashWordGamePlayer({
     zoneId: string;
     word: string;
   } | null>(null);
+  const [popHardImageIds, setPopHardImageIds] = useState<Set<string>>(() => new Set());
   const waitTimerRef = useRef<number | null>(null);
   const flashTimerRef = useRef<number | null>(null);
   const distractionTimerRef = useRef<number | null>(null);
+  const popHardImageTimerRef = useRef<number | null>(null);
   const streakToastTimerRef = useRef<number | null>(null);
   const awardedStreakThresholdsRef = useRef<Set<number>>(new Set());
   const phaseRef = useRef<GamePhase>('ready');
@@ -151,8 +159,9 @@ export function FlashWordGamePlayer({
   }, [phase]);
 
   useEffect(() => {
+    if (isTestMode) return;
     writePersistedStreak(game.id, streak);
-  }, [game.id, streak]);
+  }, [game.id, isTestMode, streak]);
 
   const clearStreakToastTimer = useCallback(() => {
     if (streakToastTimerRef.current != null) {
@@ -181,6 +190,8 @@ export function FlashWordGamePlayer({
 
   const applyStreakRewards = useCallback(
     (newStreak: number) => {
+      if (isTestMode) return;
+
       const matching = streakTiers.filter(
         (tier) => tier.streakThreshold === newStreak,
       );
@@ -200,7 +211,7 @@ export function FlashWordGamePlayer({
         }
       }
     },
-    [awardBonusXp, playStreakAudio, showStreakMessage, streakTiers, xpToast],
+    [awardBonusXp, isTestMode, playStreakAudio, showStreakMessage, streakTiers, xpToast],
   );
 
   const clearTimers = useCallback(() => {
@@ -216,6 +227,10 @@ export function FlashWordGamePlayer({
       window.clearTimeout(distractionTimerRef.current);
       distractionTimerRef.current = null;
     }
+    if (popHardImageTimerRef.current != null) {
+      window.clearTimeout(popHardImageTimerRef.current);
+      popHardImageTimerRef.current = null;
+    }
   }, []);
 
   useEffect(() => () => {
@@ -224,6 +239,8 @@ export function FlashWordGamePlayer({
   }, [clearTimers, clearStreakToastTimer]);
 
   useEffect(() => {
+    if (isTestMode) return;
+
     let cancelled = false;
     void (async () => {
       const result = await fetchMiniGameUserBestStreak('flash_cards', game.id);
@@ -233,9 +250,11 @@ export function FlashWordGamePlayer({
     return () => {
       cancelled = true;
     };
-  }, [game.id]);
+  }, [game.id, isTestMode]);
 
   const persistSessionBestStreak = useCallback(() => {
+    if (isTestMode) return;
+
     const best = sessionBestStreakRef.current;
     if (best <= 0) return;
     void (async () => {
@@ -247,9 +266,11 @@ export function FlashWordGamePlayer({
         setHighlightsRefresh((key) => key + 1);
       }
     })();
-  }, [game.id, allTimeBestStreak]);
+  }, [allTimeBestStreak, game.id, isTestMode]);
 
   useEffect(() => {
+    if (isTestMode) return;
+
     return () => {
       if (streakAtRiskRef.current) {
         writePersistedStreak(game.id, 0);
@@ -258,12 +279,14 @@ export function FlashWordGamePlayer({
       }
       persistSessionBestStreak();
     };
-  }, [game.id, persistSessionBestStreak]);
+  }, [game.id, isTestMode, persistSessionBestStreak]);
 
   const resetStreakToZero = useCallback(() => {
     setStreak(0);
-    writePersistedStreak(game.id, 0);
-  }, [game.id]);
+    if (!isTestMode) {
+      writePersistedStreak(game.id, 0);
+    }
+  }, [game.id, isTestMode]);
 
   const applyQuitPenalty = useCallback(() => {
     if (!streakAtRiskRef.current) return;
@@ -271,19 +294,28 @@ export function FlashWordGamePlayer({
   }, [resetStreakToZero]);
 
   const applyQuitStreakRules = useCallback(() => {
+    if (isTestMode) return;
+
     applyQuitPenalty();
     if (!streakAtRiskRef.current) {
       writePersistedStreak(game.id, streakRef.current);
     }
     persistSessionBestStreak();
-  }, [applyQuitPenalty, game.id, persistSessionBestStreak]);
+  }, [applyQuitPenalty, game.id, isTestMode, persistSessionBestStreak]);
 
   useEffect(() => {
+    if (isTestMode) {
+      onRegisterQuitHandler?.(null);
+      return () => onRegisterQuitHandler?.(null);
+    }
+
     onRegisterQuitHandler?.(applyQuitStreakRules);
     return () => onRegisterQuitHandler?.(null);
-  }, [applyQuitStreakRules, onRegisterQuitHandler]);
+  }, [applyQuitStreakRules, isTestMode, onRegisterQuitHandler]);
 
   const recordStreak = useCallback((next: number) => {
+    if (isTestMode) return;
+
     if (next > sessionBestStreakRef.current) {
       sessionBestStreakRef.current = next;
       setSessionBestStreak(next);
@@ -294,13 +326,13 @@ export function FlashWordGamePlayer({
         })();
       }
     }
-  }, [allTimeBestStreak, game.id]);
+  }, [allTimeBestStreak, game.id, isTestMode]);
 
   useEffect(() => {
     setImageFailed(false);
   }, [activeCard?.imageUrl]);
 
-  const hardModeActive = isFlashHardModeActive(streak);
+  const hardModeActive = isTestMode || isFlashHardModeActive(streak);
 
   useEffect(() => {
     const distractionsEnabled = game.distractionZonesEnabled || hardModeActive;
@@ -365,6 +397,62 @@ export function FlashWordGamePlayer({
     };
   }, [phase, activeCard, game.distractionZonesEnabled, hardModeActive]);
 
+  const hardOverlayPhaseActive = phase === 'waiting' || phase === 'flash';
+
+  useEffect(() => {
+    if (!hardModeActive || !hardOverlayPhaseActive || !activeCard) {
+      setPopHardImageIds(new Set());
+      if (popHardImageTimerRef.current != null) {
+        window.clearTimeout(popHardImageTimerRef.current);
+        popHardImageTimerRef.current = null;
+      }
+      return;
+    }
+
+    const popImages = activeCard.hardModeImages.filter(
+      (image) => image.displayMode === 'pop',
+    );
+    if (popImages.length === 0) {
+      setPopHardImageIds(new Set());
+      return;
+    }
+
+    const scheduleNextPop = () => {
+      const gapMs = HARD_DISTRACTION_GAP_MIN_MS + Math.random() * HARD_DISTRACTION_GAP_RANGE_MS;
+      popHardImageTimerRef.current = window.setTimeout(() => {
+        if (phaseRef.current !== 'waiting' && phaseRef.current !== 'flash') return;
+
+        const target = popImages[Math.floor(Math.random() * popImages.length)]!;
+        setPopHardImageIds(new Set([target.id]));
+
+        const flashMs =
+          DISTRACTION_FLASH_MIN_MS + Math.random() * DISTRACTION_FLASH_RANGE_MS;
+        popHardImageTimerRef.current = window.setTimeout(() => {
+          setPopHardImageIds(new Set());
+          if (phaseRef.current === 'waiting' || phaseRef.current === 'flash') {
+            scheduleNextPop();
+          }
+        }, flashMs);
+      }, gapMs);
+    };
+
+    scheduleNextPop();
+
+    return () => {
+      if (popHardImageTimerRef.current != null) {
+        window.clearTimeout(popHardImageTimerRef.current);
+        popHardImageTimerRef.current = null;
+      }
+      setPopHardImageIds(new Set());
+    };
+  }, [phase, activeCard, hardModeActive, hardOverlayPhaseActive]);
+
+  const shouldShowHardModeImage = (image: FlashWordHardModeImage): boolean => {
+    if (!hardModeActive || !hardOverlayPhaseActive) return false;
+    if (image.displayMode === 'pop') return popHardImageIds.has(image.id);
+    return true;
+  };
+
   const flashedWord =
     activeTriplet != null ? getFlashedWord(activeTriplet, flashIndex) : '';
 
@@ -392,6 +480,7 @@ export function FlashWordGamePlayer({
     setSelectedWord(null);
     setCorrect(null);
     setDistractionFlash(null);
+    setPopHardImageIds(new Set());
     setImageFailed(false);
     setPhase('waiting');
 
@@ -438,6 +527,7 @@ export function FlashWordGamePlayer({
     setSelectedWord(null);
     setCorrect(null);
     setDistractionFlash(null);
+    setPopHardImageIds(new Set());
     setImageFailed(false);
     streakAtRiskRef.current = false;
     setRoundCommitted(false);
@@ -447,7 +537,7 @@ export function FlashWordGamePlayer({
   const playAgainFromResult = (lost: boolean) => {
     void (async () => {
       if (replayBusy) return;
-      if (lost) {
+      if (!isTestMode && lost) {
         setReplayError('');
         setReplayBusy(true);
         const result = await startMiniGameAttempt('flash_cards');
@@ -459,8 +549,10 @@ export function FlashWordGamePlayer({
         }
         onAttemptStatusChange?.(result.status);
       }
-      streakAtRiskRef.current = true;
-      setRoundCommitted(true);
+      if (!isTestMode) {
+        streakAtRiskRef.current = true;
+        setRoundCommitted(true);
+      }
       beginRound();
     })();
   };
@@ -496,15 +588,37 @@ export function FlashWordGamePlayer({
     ) : null;
 
   return (
-    <div className="flash-word-player" ref={playerRootRef}>
+    <div
+      className={[
+        'flash-word-player',
+        isTestMode ? 'flash-word-player--test' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      ref={playerRootRef}
+    >
       <FlashWordStreakPortal toast={streakToast} anchorRef={playerRootRef} />
+      {isTestMode && (
+        <p className="flash-word-player__test-banner" role="status">
+          Test play — sandbox mode. Streak, leaderboard, and daily limits are not
+          affected. Hard mode is forced on.
+        </p>
+      )}
       <div className="flash-word-player__stats">
         <span className="flash-word-player__streak">
-          Streak: <strong>{streak}</strong>
-          {displayedBestStreak > 0 && (
+          {isTestMode ? (
             <>
-              {' '}
-              · Best: <strong>{displayedBestStreak}</strong>
+              Test streak: <strong>{streak}</strong>
+            </>
+          ) : (
+            <>
+              Streak: <strong>{streak}</strong>
+              {displayedBestStreak > 0 && (
+                <>
+                  {' '}
+                  · Best: <strong>{displayedBestStreak}</strong>
+                </>
+              )}
             </>
           )}
           {hardModeActive && (
@@ -520,12 +634,14 @@ export function FlashWordGamePlayer({
         </span>
       </div>
 
-      <MiniGameLeaderboardHighlights
-        gameType="flash_cards"
-        gameId={game.id}
-        refreshKey={highlightsRefresh}
-        className="flash-word-player__leaderboard-highlights"
-      />
+      {!isTestMode && (
+        <MiniGameLeaderboardHighlights
+          gameType="flash_cards"
+          gameId={game.id}
+          refreshKey={highlightsRefresh}
+          className="flash-word-player__leaderboard-highlights"
+        />
+      )}
 
       <div className="flash-word-player__stage-layout">
         <div className="flash-word-player__stage-row">
@@ -596,6 +712,30 @@ export function FlashWordGamePlayer({
                             style={flashWordZoneStyle(hardZone)}
                           />
                         ))}
+                      {hardModeActive &&
+                        activeCard.hardModeImages.map((hardImage) =>
+                          shouldShowHardModeImage(hardImage) ? (
+                          <div
+                            key={hardImage.id}
+                            className={[
+                              'flash-word-player__hard-image',
+                              hardImage.displayMode === 'pop'
+                                ? 'flash-word-player__hard-image--pop'
+                                : '',
+                            ]
+                              .filter(Boolean)
+                              .join(' ')}
+                            style={flashWordZoneStyle(hardImage.zone)}
+                          >
+                            <img
+                              src={hardImage.imageUrl}
+                              alt=""
+                              className="flash-word-player__hard-image-fit"
+                              draggable={false}
+                            />
+                          </div>
+                          ) : null,
+                        )}
                       {game.distractionZonesEnabled &&
                         activeCard.distractionZones.map((distractionZone) => (
                           <div
@@ -652,7 +792,7 @@ export function FlashWordGamePlayer({
           </>
         )}
 
-        {roundCommitted && phase !== 'ready' && phase !== 'result' && (
+        {!isTestMode && roundCommitted && phase !== 'ready' && phase !== 'result' && (
           <p className="flash-word-player__quit-hint muted" aria-live="polite">
             Leaving now resets your streak.
           </p>

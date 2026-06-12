@@ -2,10 +2,15 @@ import { useCallback, useRef, type PointerEvent as ReactPointerEvent } from 'rea
 import {
   DEFAULT_DISTRACTION_ZONE,
   DEFAULT_HARD_HIGHLIGHT_ZONE,
+  DEFAULT_HARD_MODE_IMAGE_ZONE,
+  FLASH_GAME_IMAGE_ACCEPT,
   FLASH_HARD_MODE_STREAK_THRESHOLD,
+  MAX_FLASH_GAME_IMAGE_BYTES,
   normalizeZone,
   type FlashWordDistractionZoneInput,
   type FlashWordHardDistractionZoneInput,
+  type FlashWordHardModeImageDisplayMode,
+  type FlashWordHardModeImageFormEntry,
   type FlashWordZone,
 } from '../lib/flashWordGames';
 import {
@@ -25,6 +30,8 @@ interface FlashWordZoneEditorProps {
   onHardModeHighlightZonesChange?: (zones: FlashWordZone[]) => void;
   hardDistractionZones?: FlashWordHardDistractionZoneInput[];
   onHardDistractionZonesChange?: (zones: FlashWordHardDistractionZoneInput[]) => void;
+  hardModeImages?: FlashWordHardModeImageFormEntry[];
+  onHardModeImagesChange?: (images: FlashWordHardModeImageFormEntry[]) => void;
 }
 
 type DragMode = 'move' | 'resize';
@@ -32,7 +39,8 @@ type DragTarget =
   | { kind: 'main' }
   | { kind: 'distraction'; index: number }
   | { kind: 'hardHighlight'; index: number }
-  | { kind: 'hardDistraction'; index: number };
+  | { kind: 'hardDistraction'; index: number }
+  | { kind: 'hardImage'; index: number };
 
 const HARD_HIGHLIGHT_COLOR_COUNT = 3;
 
@@ -51,9 +59,13 @@ export function FlashWordZoneEditor({
   onHardModeHighlightZonesChange,
   hardDistractionZones = [],
   onHardDistractionZonesChange,
+  hardModeImages = [],
+  onHardModeImagesChange,
 }: FlashWordZoneEditorProps) {
   const showHardMode =
-    onHardModeHighlightZonesChange != null || onHardDistractionZonesChange != null;
+    onHardModeHighlightZonesChange != null ||
+    onHardDistractionZonesChange != null ||
+    onHardModeImagesChange != null;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -109,6 +121,15 @@ export function FlashWordZoneEditor({
         );
         return;
       }
+      if (target.kind === 'hardImage') {
+        if (!onHardModeImagesChange) return;
+        onHardModeImagesChange(
+          hardModeImages.map((entry, index) =>
+            index === target.index ? { ...entry, zone: nextZone } : entry,
+          ),
+        );
+        return;
+      }
       if (!onHardDistractionZonesChange) return;
       onHardDistractionZonesChange(
         hardDistractionZones.map((entry, index) =>
@@ -120,10 +141,12 @@ export function FlashWordZoneEditor({
       distractionZones,
       hardDistractionZones,
       hardModeHighlightZones,
+      hardModeImages,
       onChange,
       onDistractionZonesChange,
       onHardDistractionZonesChange,
       onHardModeHighlightZonesChange,
+      onHardModeImagesChange,
     ],
   );
 
@@ -242,6 +265,67 @@ export function FlashWordZoneEditor({
     );
   };
 
+  const addHardModeImage = (file: File) => {
+    if (!onHardModeImagesChange) return;
+    if (!file.type.startsWith('image/')) return;
+    if (file.size > MAX_FLASH_GAME_IMAGE_BYTES) return;
+    const offset = hardModeImages.length * 8;
+    onHardModeImagesChange([
+      ...hardModeImages,
+      {
+        zone: normalizeZone({
+          ...DEFAULT_HARD_MODE_IMAGE_ZONE,
+          xPct: DEFAULT_HARD_MODE_IMAGE_ZONE.xPct + offset,
+          yPct: DEFAULT_HARD_MODE_IMAGE_ZONE.yPct + offset * 0.5,
+        }),
+        pendingFile: file,
+        pendingPreviewUrl: URL.createObjectURL(file),
+        displayMode: 'persistent',
+      },
+    ]);
+  };
+
+  const replaceHardModeImage = (index: number, file: File) => {
+    if (!onHardModeImagesChange) return;
+    if (!file.type.startsWith('image/')) return;
+    if (file.size > MAX_FLASH_GAME_IMAGE_BYTES) return;
+    onHardModeImagesChange(
+      hardModeImages.map((entry, i) => {
+        if (i !== index) return entry;
+        if (entry.pendingPreviewUrl) URL.revokeObjectURL(entry.pendingPreviewUrl);
+        return {
+          ...entry,
+          pendingFile: file,
+          pendingPreviewUrl: URL.createObjectURL(file),
+        };
+      }),
+    );
+  };
+
+  const removeHardModeImage = (index: number) => {
+    if (!onHardModeImagesChange) return;
+    const entry = hardModeImages[index];
+    if (entry?.pendingPreviewUrl) URL.revokeObjectURL(entry.pendingPreviewUrl);
+    onHardModeImagesChange(hardModeImages.filter((_, i) => i !== index));
+  };
+
+  const updateHardModeImageDisplayMode = (
+    index: number,
+    displayMode: FlashWordHardModeImageDisplayMode,
+  ) => {
+    if (!onHardModeImagesChange) return;
+    onHardModeImagesChange(
+      hardModeImages.map((entry, i) => (i === index ? { ...entry, displayMode } : entry)),
+    );
+  };
+
+  const hardModeImageDisplayLabel = (
+    displayMode: FlashWordHardModeImageDisplayMode | undefined,
+  ): string => (displayMode === 'pop' ? 'Pop' : 'Persistent');
+
+  const hardModeImagePreviewUrl = (entry: FlashWordHardModeImageFormEntry): string | null =>
+    entry.pendingPreviewUrl ?? entry.imageUrl ?? null;
+
   const normalizedMain = normalizeZone(zone);
 
   return (
@@ -251,7 +335,7 @@ export function FlashWordZoneEditor({
         {showDistractionZones &&
           ' Green boxes are distraction zones — visible here only; they flash extra words during the wait.'}
         {showHardMode &&
-          ' Hard mode boxes (cyan, orange, amber) appear only when a player streak reaches 20+.'}
+          ' Hard mode overlays (colored boxes and images) appear only when a player streak reaches 20+.'}
       </p>
       <div
         ref={containerRef}
@@ -325,6 +409,48 @@ export function FlashWordZoneEditor({
                     aria-label="Resize hard mode highlight zone"
                     onPointerDown={onPointerDown(
                       { kind: 'hardHighlight', index },
+                      'resize',
+                      normalized,
+                    )}
+                  />
+                </div>
+              );
+            })}
+          {onHardModeImagesChange &&
+            hardModeImages.map((entry, index) => {
+              const normalized = normalizeZone(entry.zone);
+              const previewUrl = hardModeImagePreviewUrl(entry);
+              return (
+                <div
+                  key={entry.id ?? `hard-image-${index}`}
+                  className="flash-zone-editor__zone flash-zone-editor__zone--hard-image"
+                  style={flashWordZoneStyle(normalized)}
+                  onPointerDown={onPointerDown(
+                    { kind: 'hardImage', index },
+                    'move',
+                    normalized,
+                  )}
+                  role="presentation"
+                >
+                  <span className="flash-zone-editor__zone-label">
+                    Hard image ({hardModeImageDisplayLabel(entry.displayMode)})
+                  </span>
+                  {previewUrl ? (
+                    <img
+                      src={previewUrl}
+                      alt=""
+                      className="flash-zone-editor__hard-image-preview"
+                      draggable={false}
+                    />
+                  ) : (
+                    <span className="flash-zone-editor__zone-word">No image</span>
+                  )}
+                  <button
+                    type="button"
+                    className="flash-zone-editor__resize"
+                    aria-label="Resize hard mode image zone"
+                    onPointerDown={onPointerDown(
+                      { kind: 'hardImage', index },
                       'resize',
                       normalized,
                     )}
@@ -462,6 +588,84 @@ export function FlashWordZoneEditor({
                       >
                         Remove
                       </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {onHardModeImagesChange && (
+            <div className="flash-zone-editor__hard-images">
+              <div className="flash-zone-editor__distractions-header">
+                <h6 className="section-title">Hard mode overlay images</h6>
+                <label className="btn btn--ghost btn--small">
+                  Add image
+                  <input
+                    type="file"
+                    accept={FLASH_GAME_IMAGE_ACCEPT}
+                    className="visually-hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) addHardModeImage(file);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+              </div>
+              <p className="muted">
+                Drag and resize each box on the card. Images scale to fit inside the selected
+                area. Choose <strong>Persistent</strong> to keep an overlay visible until word
+                choice, or <strong>Pop</strong> for brief flashes like distractions.
+              </p>
+              {hardModeImages.length === 0 ? (
+                <p className="muted">
+                  No hard mode images yet — add an overlay image to distract players.
+                </p>
+              ) : (
+                <ul className="flash-zone-editor__distraction-list">
+                  {hardModeImages.map((entry, index) => (
+                    <li
+                      key={entry.id ?? `hard-image-field-${index}`}
+                      className="flash-zone-editor__distraction-row"
+                    >
+                      <label className="form-field flash-zone-editor__hard-image-mode">
+                        Overlay image {index + 1}
+                        <select
+                          value={entry.displayMode ?? 'persistent'}
+                          onChange={(e) =>
+                            updateHardModeImageDisplayMode(
+                              index,
+                              e.target.value as FlashWordHardModeImageDisplayMode,
+                            )
+                          }
+                        >
+                          <option value="persistent">Persistent — visible until word choice</option>
+                          <option value="pop">Pop — brief flashes during the round</option>
+                        </select>
+                      </label>
+                      <div className="btn-row">
+                        <label className="btn btn--ghost btn--small">
+                          Replace
+                          <input
+                            type="file"
+                            accept={FLASH_GAME_IMAGE_ACCEPT}
+                            className="visually-hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) replaceHardModeImage(index, file);
+                              e.target.value = '';
+                            }}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className="btn btn--danger btn--small"
+                          onClick={() => removeHardModeImage(index)}
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </li>
                   ))}
                 </ul>
