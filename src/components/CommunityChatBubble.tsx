@@ -21,9 +21,12 @@ import {
 import {
   COMMUNITY_CHANNELS,
   canAccessCommunityChannel,
+  canPostCommunityChannel,
   getCommunityChannelLockMessage,
+  getCommunityChannelReadOnlyMessage,
   type CommunityChannel,
 } from '../lib/communityChannels';
+import type { CommunityMessage } from '../lib/communityChat';
 import { COMMUNITY_MESSAGE_MAX_LENGTH } from '../lib/communityChat';
 import { formatUnreadBadgeCount } from '../lib/communityChatUnread';
 import { getPatreonPageUrl } from '../lib/patreon';
@@ -43,6 +46,66 @@ function formatMessageTime(iso: string): string {
 
 function isChannelView(view: CommunityView): view is CommunityChannel {
   return view !== 'admin-contact';
+}
+
+function ChannelMessageBubble({
+  msg,
+  isOwn,
+  isAdmin,
+  onDelete,
+  onToggleHeart,
+}: {
+  msg: CommunityMessage;
+  isOwn: boolean;
+  isAdmin: boolean;
+  onDelete: (messageId: string) => void;
+  onToggleHeart: (messageId: string, hearted: boolean) => void;
+}) {
+  return (
+    <article
+      className={`community-message${isOwn ? ' community-message--own' : ''}${
+        msg.heartCount > 0 ? ' community-message--hearted' : ''
+      }`}
+    >
+      <header className="community-message__meta">
+        <strong>{msg.username}</strong>
+        <time dateTime={msg.createdAt}>{formatMessageTime(msg.createdAt)}</time>
+      </header>
+      <p className="community-message__body">{msg.body}</p>
+      <footer className="community-message__footer">
+        {msg.heartCount > 0 && (
+          <span className="community-message__heart-count" aria-label={`${msg.heartCount} hearts`}>
+            <span aria-hidden="true">❤️</span>
+            {msg.heartCount}
+          </span>
+        )}
+        {isAdmin && (
+          <div className="community-message__admin-actions">
+            <button
+              type="button"
+              className={`community-message__action community-message__action--heart${
+                msg.hearted ? ' community-message__action--heart-active' : ''
+              }`}
+              onClick={() => onToggleHeart(msg.id, msg.hearted)}
+              aria-label={msg.hearted ? 'Remove heart' : 'Heart message'}
+              title={msg.hearted ? 'Remove heart' : 'Heart message'}
+            >
+              <span aria-hidden="true">{msg.hearted ? '❤️' : '🤍'}</span>
+            </button>
+            <button
+              type="button"
+              className="community-message__action community-message__action--delete"
+              onClick={() => onDelete(msg.id)}
+              aria-label="Delete message"
+              title="Delete message"
+            >
+              <span aria-hidden="true">🗑️</span>
+            </button>
+          </div>
+        )}
+      </footer>
+    </article>
+  );
 }
 
 function viewLabel(
@@ -152,12 +215,28 @@ export function CommunityChatBubble() {
     session?.patreonStatus,
     isAdmin,
   );
+  const canPost =
+    canAccess &&
+    canPostCommunityChannel(activeChannel, isAdmin) &&
+    isChannelView(activeView) &&
+    open;
+  const readOnlyMessage = getCommunityChannelReadOnlyMessage(activeChannel);
 
-  const { messages, loading, error, sending, send } = useCommunityChat({
+  const {
+    messages,
+    loading,
+    error,
+    actionError,
+    sending,
+    send,
+    removeMessage,
+    toggleHeart,
+  } = useCommunityChat({
     channel: activeChannel,
     userId: session?.userId,
     username: session?.username,
-    canPost: canAccess && isChannelView(activeView) && open,
+    canPost,
+    isAdmin,
   });
 
   const adminDmMode = isAdmin
@@ -366,42 +445,44 @@ export function CommunityChatBubble() {
             className="community-channels community-channels--widget"
             aria-label="Chat channels"
           >
-            {COMMUNITY_CHANNELS.map((ch) => {
-              const accessible = canAccessCommunityChannel(
-                ch.id,
-                session?.patreonTier,
-                session?.patreonStatus,
-                isAdmin,
-              );
-              const tabUnread = getUnreadCountForChannelTab(
-                unreadByView,
-                ch.id,
-                activeView,
-                open,
-              );
-              return (
-                <button
-                  key={ch.id}
-                  type="button"
-                  className={`community-channels__tab${
-                    activeView === ch.id ? ' community-channels__tab--active' : ''
-                  }${!accessible ? ' community-channels__tab--locked' : ''}`}
-                  onClick={() => setActiveView(ch.id)}
-                  aria-current={activeView === ch.id ? 'true' : undefined}
-                >
-                  {!accessible && <span aria-hidden>🔒 </span>}
-                  {ch.label}
-                  {tabUnread > 0 && (
-                    <span
-                      className="community-channels__badge community-channels__badge--unread"
-                      aria-label={`${tabUnread} unread`}
-                    >
-                      {formatUnreadBadgeCount(tabUnread)}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+            <div className="community-channels__scroll">
+              {COMMUNITY_CHANNELS.map((ch) => {
+                const accessible = canAccessCommunityChannel(
+                  ch.id,
+                  session?.patreonTier,
+                  session?.patreonStatus,
+                  isAdmin,
+                );
+                const tabUnread = getUnreadCountForChannelTab(
+                  unreadByView,
+                  ch.id,
+                  activeView,
+                  open,
+                );
+                return (
+                  <button
+                    key={ch.id}
+                    type="button"
+                    className={`community-channels__tab${
+                      activeView === ch.id ? ' community-channels__tab--active' : ''
+                    }${!accessible ? ' community-channels__tab--locked' : ''}`}
+                    onClick={() => setActiveView(ch.id)}
+                    aria-current={activeView === ch.id ? 'true' : undefined}
+                  >
+                    {!accessible && <span aria-hidden>🔒 </span>}
+                    {ch.label}
+                    {tabUnread > 0 && (
+                      <span
+                        className="community-channels__badge community-channels__badge--unread"
+                        aria-label={`${tabUnread} unread`}
+                      >
+                        {formatUnreadBadgeCount(tabUnread)}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
             <button
               type="button"
               className={`community-channels__tab community-channels__tab--admin${
@@ -653,9 +734,9 @@ export function CommunityChatBubble() {
 
             {showChannelChat && canAccess && (
               <>
-                {error && (
+                {(error || actionError) && (
                   <p className="login-error" role="alert">
-                    {error}
+                    {error || actionError}
                   </p>
                 )}
 
@@ -670,72 +751,81 @@ export function CommunityChatBubble() {
                   {!loading && messages.length === 0 && (
                     <div className="community-messages__empty">
                       <span className="community-messages__empty-icon" aria-hidden="true">
-                        👋
+                        {activeChannel === 'announcements' ? '📣' : '👋'}
                       </span>
                       <p className="muted community-messages__empty-text">
-                        No messages yet. Say hello!
+                        {activeChannel === 'announcements'
+                          ? 'No announcements yet.'
+                          : 'No messages yet. Say hello!'}
                       </p>
                     </div>
                   )}
-                  {messages.map((msg) => {
-                    const isOwn = msg.userId === session?.userId;
-                    return (
-                      <article
-                        key={msg.id}
-                        className={`community-message${
-                          isOwn ? ' community-message--own' : ''
-                        }`}
-                      >
-                        <header className="community-message__meta">
-                          <strong>{msg.username}</strong>
-                          <time dateTime={msg.createdAt}>
-                            {formatMessageTime(msg.createdAt)}
-                          </time>
-                        </header>
-                        <p className="community-message__body">{msg.body}</p>
-                      </article>
-                    );
-                  })}
+                  {messages.map((msg) => (
+                    <ChannelMessageBubble
+                      key={msg.id}
+                      msg={msg}
+                      isOwn={msg.userId === session?.userId}
+                      isAdmin={isAdmin}
+                      onDelete={(messageId) => {
+                        void removeMessage(messageId);
+                      }}
+                      onToggleHeart={(messageId, hearted) => {
+                        void toggleHeart(messageId, hearted);
+                      }}
+                    />
+                  ))}
                 </div>
 
-                <form
-                  className="community-compose community-compose--widget"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void handleChannelSend();
-                  }}
-                >
-                  <label className="sr-only" htmlFor="widget-community-message-input">
-                    Message
-                  </label>
-                  <textarea
-                    id="widget-community-message-input"
-                    className="community-compose__input"
-                    rows={2}
-                    maxLength={COMMUNITY_MESSAGE_MAX_LENGTH}
-                    placeholder="Write a message…"
-                    value={draft}
-                    disabled={sending}
-                    onChange={(e) => setDraft(e.target.value)}
-                  />
-                  <div className="community-compose__footer">
-                    <span className="muted community-compose__count">
-                      {draft.trim().length}/{COMMUNITY_MESSAGE_MAX_LENGTH}
-                    </span>
-                    <button
-                      type="submit"
-                      className="btn btn--primary btn--small"
-                      disabled={sending || !draft.trim()}
-                    >
-                      {sending ? 'Sending…' : 'Send'}
-                    </button>
-                  </div>
-                  {sendError && (
-                    <p className="login-error" role="alert">
-                      {sendError}
+                {canPost ? (
+                  <form
+                    className="community-compose community-compose--widget"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void handleChannelSend();
+                    }}
+                  >
+                    <label className="sr-only" htmlFor="widget-community-message-input">
+                      Message
+                    </label>
+                    <textarea
+                      id="widget-community-message-input"
+                      className="community-compose__input"
+                      rows={2}
+                      maxLength={COMMUNITY_MESSAGE_MAX_LENGTH}
+                      placeholder={
+                        activeChannel === 'announcements'
+                          ? 'Write an announcement…'
+                          : 'Write a message…'
+                      }
+                      value={draft}
+                      disabled={sending}
+                      onChange={(e) => setDraft(e.target.value)}
+                    />
+                    <div className="community-compose__footer">
+                      <span className="muted community-compose__count">
+                        {draft.trim().length}/{COMMUNITY_MESSAGE_MAX_LENGTH}
+                      </span>
+                      <button
+                        type="submit"
+                        className="btn btn--primary btn--small"
+                        disabled={sending || !draft.trim()}
+                      >
+                        {sending ? 'Sending…' : 'Send'}
+                      </button>
+                    </div>
+                    {sendError && (
+                      <p className="login-error" role="alert">
+                        {sendError}
+                      </p>
+                    )}
+                  </form>
+                ) : (
+                  readOnlyMessage && (
+                    <p className="community-compose community-compose--readonly muted">
+                      {readOnlyMessage}
                     </p>
-                  )}
-                </form>
+                  )
+                )}
               </>
             )}
           </div>

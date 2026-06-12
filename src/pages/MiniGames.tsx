@@ -309,6 +309,13 @@ export function MiniGames() {
       )}
 
       {!loading && hasGames && (
+        <p className="notice mini-games-leaderboards-notice" role="status">
+          Leaderboards reset on the 1st of every month. The #1 player on each
+          leaderboard wins one free month of Princess tier.
+        </p>
+      )}
+
+      {!loading && hasGames && (
         <section className="mini-games-leaderboards">
           <h3 className="mini-games-leaderboards__heading">Leaderboards</h3>
           <p className="muted mini-games-leaderboards__intro">

@@ -19,6 +19,16 @@ export interface MiniGameLeaderboardResult {
   userRank: { rank: number; bestStreak: number } | null;
 }
 
+export interface MiniGameGreatestEver {
+  username: string;
+  bestStreak: number;
+}
+
+export interface MiniGameCurrentBest {
+  username: string;
+  bestStreak: number;
+}
+
 function formatDbError(error: { message?: string; code?: string }): string {
   const message = error.message ?? 'Unknown error';
   if (
@@ -157,6 +167,64 @@ export async function fetchMiniGameLeaderboard(
   }
 
   return { ok: true, leaderboard: { entries, userRank } };
+}
+
+export async function fetchMiniGameGreatestEver(
+  gameType: MiniGameType,
+  gameId: string,
+): Promise<{ ok: true; greatest: MiniGameGreatestEver | null } | { ok: false; error: string }> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const { data, error } = await supabase
+    .from('mini_game_leaderboard_hall_of_fame')
+    .select('greatest_username, greatest_best_streak')
+    .eq('game_type', gameType)
+    .eq('game_id', gameId)
+    .maybeSingle();
+
+  if (error) {
+    if (
+      error.code === 'PGRST205' ||
+      (error.message ?? '').includes("Could not find the table 'public.mini_game_leaderboard_hall_of_fame'")
+    ) {
+      return { ok: true, greatest: null };
+    }
+    return { ok: false, error: formatDbError(error) };
+  }
+
+  if (!data || data.greatest_best_streak <= 0) {
+    return { ok: true, greatest: null };
+  }
+
+  return {
+    ok: true,
+    greatest: {
+      username: data.greatest_username?.trim() || 'Player',
+      bestStreak: data.greatest_best_streak,
+    },
+  };
+}
+
+export async function fetchMiniGameCurrentBest(
+  gameType: MiniGameType,
+  gameId: string,
+): Promise<{ ok: true; currentBest: MiniGameCurrentBest | null } | { ok: false; error: string }> {
+  const result = await fetchMiniGameLeaderboard(gameType, gameId, null);
+  if (!result.ok) return result;
+
+  const leader = result.leaderboard.entries[0];
+  if (!leader || leader.bestStreak <= 0) {
+    return { ok: true, currentBest: null };
+  }
+
+  return {
+    ok: true,
+    currentBest: {
+      username: leader.username,
+      bestStreak: leader.bestStreak,
+    },
+  };
 }
 
 export async function adminResetMiniGameLeaderboard(

@@ -45,11 +45,12 @@ export const COMMUNITY_UNREAD_CHANNEL_VIEWS: CommunityChannel[] = COMMUNITY_CHAN
 );
 
 export function emptyUnreadCounts(): Record<CommunityUnreadView, number> {
+  const counts = Object.fromEntries(
+    COMMUNITY_CHANNELS.map((channel) => [channel.id, 0]),
+  ) as Record<CommunityChannel, number>;
+
   return {
-    global: 0,
-    sweetie: 0,
-    princess: 0,
-    slut: 0,
+    ...counts,
     'admin-contact': 0,
     'admin-inbox': 0,
   };

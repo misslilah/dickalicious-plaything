@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { MiniGameLeaderboardHighlights } from './MiniGameLeaderboardHighlights';
 import {
   adminResetMiniGameLeaderboard,
   fetchMiniGameLeaderboard,
@@ -56,7 +57,7 @@ export function MiniGameLeaderboard({
   const handleResetLeaderboard = useCallback(() => {
     if (
       !window.confirm(
-        `Reset the "${title}" leaderboard? All best streak records will be cleared. This cannot be undone.`,
+        `Reset the "${title}" leaderboard? This clears current rankings but preserves the greatest score ever record.`,
       )
     ) {
       return;
@@ -74,7 +75,7 @@ export function MiniGameLeaderboard({
       }
       setResetMessage(
         result.deletedCount > 0
-          ? `Leaderboard reset (${result.deletedCount} record${result.deletedCount === 1 ? '' : 's'} cleared).`
+          ? `Leaderboard reset (${result.deletedCount} record${result.deletedCount === 1 ? '' : 's'} cleared). Greatest score ever preserved.`
           : 'Leaderboard was already empty.',
       );
       setLocalRefresh((key) => key + 1);
@@ -104,6 +105,13 @@ export function MiniGameLeaderboard({
           </button>
         )}
       </header>
+
+      <MiniGameLeaderboardHighlights
+        gameType={gameType}
+        gameId={gameId}
+        refreshKey={refreshKey + localRefresh}
+        className="mini-game-leaderboard__highlights"
+      />
 
       {resetError && (
         <p className="login-error mini-game-leaderboard__status" role="alert">

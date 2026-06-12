@@ -2,7 +2,7 @@ import type { CommunityChannel } from './communityChannels';
 import { getSupabase, isSupabaseConfigured } from './supabase';
 
 export const COMMUNITY_CHAT_MIGRATION_HINT =
-  'Community chat is not set up yet. In Supabase SQL Editor, run supabase/migrations/052_community_chat.sql, then retry.';
+  'Community chat is not set up yet. In Supabase SQL Editor, run supabase/migrations/052_community_chat.sql and 084_community_announcements_admin_tools.sql, then retry.';
 
 export const COMMUNITY_MESSAGE_MAX_LENGTH = 2000;
 export const COMMUNITY_SEND_COOLDOWN_MS = 3000;
@@ -15,6 +15,8 @@ export interface CommunityMessage {
   username: string;
   body: string;
   createdAt: string;
+  heartCount: number;
+  hearted: boolean;
 }
 
 type CommunityMessageRow = {
@@ -26,7 +28,16 @@ type CommunityMessageRow = {
   created_at: string;
 };
 
-function mapRow(row: CommunityMessageRow): CommunityMessage {
+type CommunityReactionRow = {
+  message_id: string;
+  user_id: string;
+};
+
+function mapRow(
+  row: CommunityMessageRow,
+  heartCount = 0,
+  hearted = false,
+): CommunityMessage {
   return {
     id: row.id,
     channel: row.channel as CommunityChannel,
@@ -34,7 +45,39 @@ function mapRow(row: CommunityMessageRow): CommunityMessage {
     username: row.username,
     body: row.body,
     createdAt: row.created_at,
+    heartCount,
+    hearted,
   };
+}
+
+async function fetchHeartMeta(
+  messageIds: string[],
+  currentUserId: string | undefined,
+): Promise<Map<string, { heartCount: number; hearted: boolean }>> {
+  const meta = new Map<string, { heartCount: number; hearted: boolean }>();
+  if (messageIds.length === 0) return meta;
+
+  const supabase = getSupabase();
+  if (!supabase) return meta;
+
+  const { data, error } = await supabase
+    .from('community_message_reactions')
+    .select('message_id, user_id')
+    .in('message_id', messageIds)
+    .eq('reaction', 'heart');
+
+  if (error) return meta;
+
+  for (const row of (data ?? []) as CommunityReactionRow[]) {
+    const existing = meta.get(row.message_id) ?? { heartCount: 0, hearted: false };
+    existing.heartCount += 1;
+    if (currentUserId && row.user_id === currentUserId) {
+      existing.hearted = true;
+    }
+    meta.set(row.message_id, existing);
+  }
+
+  return meta;
 }
 
 export function normalizeCommunityBody(raw: string): string | null {
@@ -48,6 +91,7 @@ export function normalizeCommunityBody(raw: string): string | null {
 
 export async function fetchCommunityMessages(
   channel: CommunityChannel,
+  currentUserId?: string,
 ): Promise<{ ok: true; messages: CommunityMessage[] } | { ok: false; error: string }> {
   if (!isSupabaseConfigured()) {
     return { ok: false, error: 'Supabase is not configured.' };
@@ -65,15 +109,24 @@ export async function fetchCommunityMessages(
     .limit(COMMUNITY_MESSAGES_PAGE_SIZE);
 
   if (error) {
-    if (/community_messages|schema cache/i.test(error.message)) {
+    if (/community_messages|community_message_reactions|schema cache/i.test(error.message)) {
       return { ok: false, error: COMMUNITY_CHAT_MIGRATION_HINT };
     }
     return { ok: false, error: error.message };
   }
 
+  const rows = (data ?? []) as CommunityMessageRow[];
+  const heartMeta = await fetchHeartMeta(
+    rows.map((row) => row.id),
+    currentUserId,
+  );
+
   return {
     ok: true,
-    messages: (data ?? []).map((row) => mapRow(row as CommunityMessageRow)),
+    messages: rows.map((row) => {
+      const hearts = heartMeta.get(row.id);
+      return mapRow(row, hearts?.heartCount ?? 0, hearts?.hearted ?? false);
+    }),
   };
 }
 
@@ -118,4 +171,82 @@ export async function sendCommunityMessage(
   }
 
   return { ok: true, message: mapRow(data as CommunityMessageRow) };
+}
+
+export async function deleteCommunityMessage(
+  messageId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!isSupabaseConfigured()) {
+    return { ok: false, error: 'Supabase is not configured.' };
+  }
+  const supabase = getSupabase();
+  if (!supabase) {
+    return { ok: false, error: 'Supabase is not configured.' };
+  }
+
+  const { error } = await supabase.from('community_messages').delete().eq('id', messageId);
+
+  if (error) {
+    if (/row-level security|policy/i.test(error.message)) {
+      return { ok: false, error: 'You do not have permission to delete this message.' };
+    }
+    return { ok: false, error: error.message };
+  }
+
+  return { ok: true };
+}
+
+export async function toggleCommunityMessageHeart(
+  messageId: string,
+  userId: string,
+  hearted: boolean,
+): Promise<
+  | { ok: true; hearted: boolean; heartCount: number }
+  | { ok: false; error: string }
+> {
+  if (!isSupabaseConfigured()) {
+    return { ok: false, error: 'Supabase is not configured.' };
+  }
+  const supabase = getSupabase();
+  if (!supabase) {
+    return { ok: false, error: 'Supabase is not configured.' };
+  }
+
+  if (hearted) {
+    const { error } = await supabase.from('community_message_reactions').delete().match({
+      message_id: messageId,
+      user_id: userId,
+      reaction: 'heart',
+    });
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+  } else {
+    const { error } = await supabase.from('community_message_reactions').insert({
+      message_id: messageId,
+      user_id: userId,
+      reaction: 'heart',
+    });
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+  }
+
+  const { count, error: countError } = await supabase
+    .from('community_message_reactions')
+    .select('id', { count: 'exact', head: true })
+    .eq('message_id', messageId)
+    .eq('reaction', 'heart');
+
+  if (countError) {
+    return { ok: false, error: countError.message };
+  }
+
+  return {
+    ok: true,
+    hearted: !hearted,
+    heartCount: count ?? 0,
+  };
 }

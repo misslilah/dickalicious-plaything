@@ -23,6 +23,7 @@ import {
   fetchMiniGameUserBestStreak,
   upsertMiniGameBestStreak,
 } from '../lib/miniGameLeaderboardDb';
+import { MiniGameLeaderboardHighlights } from './MiniGameLeaderboardHighlights';
 import {
   startMiniGameAttempt,
   type DailyGameAttemptStatus,
@@ -112,6 +113,7 @@ export function FlashWordGamePlayer({
   const [roundCommitted, setRoundCommitted] = useState(false);
   const [sessionBestStreak, setSessionBestStreak] = useState(0);
   const [allTimeBestStreak, setAllTimeBestStreak] = useState(0);
+  const [highlightsRefresh, setHighlightsRefresh] = useState(0);
   const sessionBestStreakRef = useRef(0);
   const [streakToast, setStreakToast] = useState<FlashWordStreakToast | null>(null);
   const playerRootRef = useRef<HTMLDivElement>(null);
@@ -238,8 +240,11 @@ export function FlashWordGamePlayer({
     if (best <= 0) return;
     void (async () => {
       const result = await upsertMiniGameBestStreak('flash_cards', game.id, best);
-      if (result.ok && best > allTimeBestStreak) {
-        setAllTimeBestStreak(best);
+      if (result.ok) {
+        if (best > allTimeBestStreak) {
+          setAllTimeBestStreak(best);
+        }
+        setHighlightsRefresh((key) => key + 1);
       }
     })();
   }, [game.id, allTimeBestStreak]);
@@ -514,6 +519,13 @@ export function FlashWordGamePlayer({
           {game.triplets.length === 1 ? '' : 's'}
         </span>
       </div>
+
+      <MiniGameLeaderboardHighlights
+        gameType="flash_cards"
+        gameId={game.id}
+        refreshKey={highlightsRefresh}
+        className="flash-word-player__leaderboard-highlights"
+      />
 
       <div className="flash-word-player__stage-layout">
         <div className="flash-word-player__stage-row">

@@ -24,6 +24,7 @@ import {
   fetchMiniGameUserBestStreak,
   upsertMiniGameBestStreak,
 } from '../lib/miniGameLeaderboardDb';
+import { MiniGameLeaderboardHighlights } from './MiniGameLeaderboardHighlights';
 import { PrivacyNotice } from './PrivacyNotice';
 
 const MEDIAPIPE_WASM =
@@ -172,6 +173,7 @@ export function FollowInstinctGamePlayer({
   const [streak, setStreak] = useState(() => readPersistedStreak(game.id));
   const [sessionBestStreak, setSessionBestStreak] = useState(0);
   const [allTimeBestStreak, setAllTimeBestStreak] = useState(0);
+  const [highlightsRefresh, setHighlightsRefresh] = useState(0);
   const sessionBestStreakRef = useRef(0);
   const persistSessionBestStreakRef = useRef<() => void>(() => {});
   const streakAtRiskRef = useRef(false);
@@ -215,8 +217,11 @@ export function FollowInstinctGamePlayer({
     if (best <= 0) return;
     void (async () => {
       const result = await upsertMiniGameBestStreak('follow_instinct', game.id, best);
-      if (result.ok && best > allTimeBestStreak) {
-        setAllTimeBestStreak(best);
+      if (result.ok) {
+        if (best > allTimeBestStreak) {
+          setAllTimeBestStreak(best);
+        }
+        setHighlightsRefresh((key) => key + 1);
       }
     })();
   }, [allTimeBestStreak, game.id]);
@@ -262,7 +267,10 @@ export function FollowInstinctGamePlayer({
         if (next > allTimeBestStreak) {
           void (async () => {
             const result = await upsertMiniGameBestStreak('follow_instinct', game.id, next);
-            if (result.ok) setAllTimeBestStreak(next);
+            if (result.ok) {
+              setAllTimeBestStreak(next);
+              setHighlightsRefresh((key) => key + 1);
+            }
           })();
         }
       }
@@ -287,7 +295,7 @@ export function FollowInstinctGamePlayer({
         setFeedback('idle');
         return;
       }
-      streakAtRiskRef.current = true;
+      streakAtRiskRef.current = false;
       setRoundIndex(index);
       setActiveRound(queue[index]);
       setFeedback('idle');
@@ -345,7 +353,6 @@ export function FollowInstinctGamePlayer({
           }
           onAttemptStatusChange?.(result.status);
         }
-        streakAtRiskRef.current = true;
         restartSession();
       })();
     },
@@ -416,6 +423,7 @@ export function FollowInstinctGamePlayer({
         ? PHRASE_COMMAND_WINDOW_MS
         : COMMAND_WINDOW_MS;
       roundStartRef.current = performance.now();
+      streakAtRiskRef.current = true;
       setOrderRevealed(true);
       setDetecting(true);
     }, ORDER_REVEAL_DELAY_MS);
@@ -506,6 +514,7 @@ export function FollowInstinctGamePlayer({
   const markRoundFail = useCallback(() => {
     if (judgedRef.current) return;
     judgedRef.current = true;
+    streakAtRiskRef.current = false;
     clearCommandTimer();
     setDetecting(false);
     setFeedback('fail');
@@ -516,11 +525,13 @@ export function FollowInstinctGamePlayer({
   const markRoundSuccess = useCallback(() => {
     if (judgedRef.current) return;
     judgedRef.current = true;
+    streakAtRiskRef.current = false;
     clearCommandTimer();
     setDetecting(false);
     setFeedback('success');
     setStreak((value) => {
       const next = value + 1;
+      streakRef.current = next;
       recordStreak(next);
       return next;
     });
@@ -697,6 +708,13 @@ export function FollowInstinctGamePlayer({
           )}
         </span>
       </div>
+
+      <MiniGameLeaderboardHighlights
+        gameType="follow_instinct"
+        gameId={game.id}
+        refreshKey={highlightsRefresh}
+        className="follow-instinct-player__leaderboard-highlights"
+      />
 
       {showCommandTimer && (
         <div
