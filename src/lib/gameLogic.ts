@@ -11,6 +11,7 @@ import { todayKey, isYesterday } from './dates';
 import { getLevelFromXp, taskMatchesUserStage } from './levels';
 import {
   frequencyMatchesPlanDate,
+  isCategoryScopeTask,
   isHomePlanTask,
 } from './taskScope';
 
@@ -173,6 +174,54 @@ export function getCategoryTaskStatus(
   if (entry?.completed) return 'done';
   if (isTaskStartedToday(state, taskId)) return 'in_progress';
   return 'not_started';
+}
+
+/** Remove all completions and progress for tasks in a category (used when leaving). */
+export function clearCategoryAccomplishments(
+  state: AppState,
+  categoryId: string,
+): AppState {
+  const taskIds = new Set(
+    state.tasks
+      .filter((t) => isCategoryScopeTask(t, categoryId))
+      .map((t) => t.id),
+  );
+  if (taskIds.size === 0) return state;
+
+  let xpLoss = 0;
+  let pointsLoss = 0;
+
+  const dailyPlans: AppState['dailyPlans'] = {};
+  for (const [date, plan] of Object.entries(state.dailyPlans)) {
+    const updatedTasks = plan.tasks.map((entry) => {
+      if (!taskIds.has(entry.taskId)) return entry;
+      if (entry.completed) {
+        const task = state.tasks.find((t) => t.id === entry.taskId);
+        if (task) {
+          xpLoss += task.xpReward;
+          pointsLoss += task.pointsReward ?? 0;
+        }
+      }
+      return { taskId: entry.taskId, completed: false };
+    });
+    dailyPlans[date] = {
+      ...plan,
+      tasks: updatedTasks,
+      startedTaskIds: (plan.startedTaskIds ?? []).filter((id) => !taskIds.has(id)),
+    };
+  }
+
+  const nextXp = Math.max(0, state.progress.totalXp - xpLoss);
+  return {
+    ...state,
+    dailyPlans,
+    progress: {
+      ...state.progress,
+      totalXp: nextXp,
+      points: Math.max(0, state.progress.points - pointsLoss),
+      currentLevel: getLevelFromXp(nextXp),
+    },
+  };
 }
 
 export function markTaskStarted(state: AppState, taskId: string): AppState {

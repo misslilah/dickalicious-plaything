@@ -17,9 +17,13 @@ import {
   getCategoryGroup,
   getCategoryUnlockBlockReason,
   getPreviousTierGroup,
+  getTierGroupStats,
+  getTierUnlockProgressLabel,
+  isCategoryFullyComplete,
   isCategoryUnlocked,
   isTierGroupUnlocked,
   MAX_ACTIVE_CATEGORY_JOINS,
+  TIER_UNLOCK_PERCENT,
 } from '../lib/categoryProgression';
 import { formatLevelDisplay } from '../lib/levels';
 import { clearLockCard, createLockCard } from '../lib/lockCardDb';
@@ -369,8 +373,16 @@ export function Dashboard() {
               <h2 className="section-title">{CATEGORY_GROUP_LABELS[group]}</h2>
               {tierLocked && prevGroup && (
                 <p className="muted category-tier__hint">
-                  Complete any {CATEGORY_GROUP_LABELS[prevGroup]} category to
-                  unlock this tier.
+                  Complete at least {TIER_UNLOCK_PERCENT}% of{' '}
+                  {CATEGORY_GROUP_LABELS[prevGroup]} categories to unlock this tier.
+                  {' '}
+                  {getTierUnlockProgressLabel(state, group)}
+                </p>
+              )}
+              {!tierLocked && group !== 'all' && group !== 'beginner' && prevGroup && (
+                <p className="muted category-tier__hint">
+                  {getTierUnlockProgressLabel(state, group) ??
+                    `${getTierGroupStats(state, prevGroup).percent}% of ${CATEGORY_GROUP_LABELS[prevGroup]} categories completed.`}
                 </p>
               )}
               <div className="category-grid">
@@ -384,6 +396,7 @@ export function Dashboard() {
                     cat,
                     state.progress.currentLevel,
                   );
+                  const isCompleted = isCategoryFullyComplete(state, cat.id);
 
                   return (
                     <CategoryCard
@@ -393,6 +406,7 @@ export function Dashboard() {
                       completionPercent={completion.percent}
                       completedCount={completion.completed}
                       isMember={isMember}
+                      isCompleted={isCompleted}
                       isUnlocked={unlocked}
                       lockReason={lockReason}
                       canJoin={joinGate.ok}

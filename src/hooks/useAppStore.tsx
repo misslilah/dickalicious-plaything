@@ -72,7 +72,11 @@ import {
   leaveCategoryDb,
   syncCategoryProgressDb,
 } from '../lib/categoryMembersDb';
-import { canJoinCategory } from '../lib/categoryProgression';
+import {
+  canJoinCategory,
+  getCategoryTaskBlockReason,
+  isCategoryTaskAvailable,
+} from '../lib/categoryProgression';
 import { todayKey } from '../lib/dates';
 import {
   acceptPunishment,
@@ -80,6 +84,7 @@ import {
   applyPunishmentCompletionFromServer,
   applyTaskMalus,
   closeDay,
+  clearCategoryAccomplishments,
   completeTask,
   dismissPunishment,
   ensureDailyPlan,
@@ -527,8 +532,32 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         const entry = plan?.tasks.find((t) => t.taskId === taskId);
         if (entry?.completed) return { ok: true };
 
-        const userId = userIdRef.current;
         const isAdmin = session?.role === 'admin';
+        const categoryId = task?.categoryId;
+        const isCategoryTask =
+          task != null && (task.taskScope ?? 'category') === 'category';
+        if (
+          !isAdmin &&
+          isCategoryTask &&
+          categoryId &&
+          !state.joinedCategoryIds.includes(categoryId)
+        ) {
+          return { ok: false, error: 'Join this category to complete its tasks.' };
+        }
+        if (
+          !isAdmin &&
+          isCategoryTask &&
+          categoryId &&
+          task &&
+          !isCategoryTaskAvailable(state, task, categoryId)
+        ) {
+          return {
+            ok: false,
+            error: getCategoryTaskBlockReason(state, task, categoryId),
+          };
+        }
+
+        const userId = userIdRef.current;
         const countsTowardLimit =
           task != null && countsTowardDailyCompletionLimit(task);
 
@@ -547,7 +576,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
         const next = completeTask(state, taskId, session?.userId ?? null);
         applyUserState(next);
-        const categoryId = task?.categoryId;
         if (
           userId &&
           categoryId &&
@@ -730,13 +758,16 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         if (!userId) return { ok: false, error: 'Not signed in.' };
         const result = await leaveCategoryDb(userId, categoryId);
         if (!result.ok) return result;
-        setState((s) => ({
-          ...s,
-          joinedCategoryIds: s.joinedCategoryIds.filter((id) => id !== categoryId),
-          categoryMemberProgress: s.categoryMemberProgress.filter(
+        const cleared = clearCategoryAccomplishments(state, categoryId);
+        applyUserState({
+          ...cleared,
+          joinedCategoryIds: cleared.joinedCategoryIds.filter(
+            (id) => id !== categoryId,
+          ),
+          categoryMemberProgress: cleared.categoryMemberProgress.filter(
             (p) => p.categoryId !== categoryId,
           ),
-        }));
+        });
         return { ok: true };
       },
       updateSettings: (partial) => {

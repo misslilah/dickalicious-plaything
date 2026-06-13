@@ -1,9 +1,10 @@
-import type { AppState, Category, CategoryGroup } from '../types';
+import type { AppState, Category, CategoryGroup, Task } from '../types';
 import { getUserStage } from './levels';
 import { isOnceTaskCompleted } from './taskScope';
 import { isCategoryScopeTask } from './taskScope';
 
 export const MAX_ACTIVE_CATEGORY_JOINS = 3;
+export const TIER_UNLOCK_PERCENT = 70;
 
 export const CATEGORY_GROUP_ORDER: CategoryGroup[] = [
   'all',
@@ -49,8 +50,33 @@ export function getCategoryGroup(category: Category): CategoryGroup {
   return normalizeCategoryGroup(raw) ?? 'beginner';
 }
 
-export function getCategoryTasks(state: AppState, categoryId: string) {
-  return state.tasks.filter((t) => isCategoryScopeTask(t, categoryId));
+export function getCategoryTasks(state: AppState, categoryId: string): Task[] {
+  return sortCategoryTasks(
+    state.tasks.filter((t) => isCategoryScopeTask(t, categoryId)),
+  );
+}
+
+export function getRegularCategoryTasks(
+  state: AppState,
+  categoryId: string,
+): Task[] {
+  return getCategoryTasks(state, categoryId).filter((t) => !t.isExamTask);
+}
+
+export function getExamCategoryTasks(
+  state: AppState,
+  categoryId: string,
+): Task[] {
+  return getCategoryTasks(state, categoryId).filter((t) => t.isExamTask);
+}
+
+export function sortCategoryTasks(tasks: Task[]): Task[] {
+  return [...tasks].sort((a, b) => {
+    const orderA = a.sortOrder ?? 0;
+    const orderB = b.sortOrder ?? 0;
+    if (orderA !== orderB) return orderA - orderB;
+    return a.title.localeCompare(b.title);
+  });
 }
 
 export function isCategoryTaskEverCompleted(
@@ -60,11 +86,32 @@ export function isCategoryTaskEverCompleted(
   return isOnceTaskCompleted(state, taskId);
 }
 
+export function areRegularCategoryTasksComplete(
+  state: AppState,
+  categoryId: string,
+): boolean {
+  const tasks = getRegularCategoryTasks(state, categoryId);
+  if (tasks.length === 0) return true;
+  return tasks.every((t) => isCategoryTaskEverCompleted(state, t.id));
+}
+
+/** Tasks that count toward visible category progress (exam tasks unlock after regular tasks). */
+export function getCountableCategoryTasks(
+  state: AppState,
+  categoryId: string,
+): Task[] {
+  const regular = getRegularCategoryTasks(state, categoryId);
+  if (!areRegularCategoryTasksComplete(state, categoryId)) {
+    return regular;
+  }
+  return [...regular, ...getExamCategoryTasks(state, categoryId)];
+}
+
 export function getCategoryCompletionStats(
   state: AppState,
   categoryId: string,
 ): { completed: number; total: number; percent: number } {
-  const tasks = getCategoryTasks(state, categoryId);
+  const tasks = getCountableCategoryTasks(state, categoryId);
   if (tasks.length === 0) {
     return { completed: 0, total: 0, percent: 0 };
   }
@@ -89,19 +136,53 @@ export function isCategoryFullyComplete(
   state: AppState,
   categoryId: string,
 ): boolean {
-  const { total, percent } = getCategoryCompletionStats(state, categoryId);
-  if (total === 0) return false;
-  return percent >= 100;
+  const regular = getRegularCategoryTasks(state, categoryId);
+  const exams = getExamCategoryTasks(state, categoryId);
+  if (regular.length === 0 && exams.length === 0) return false;
+
+  const regularDone = regular.every((t) =>
+    isCategoryTaskEverCompleted(state, t.id),
+  );
+  if (!regularDone) return false;
+  if (exams.length === 0) return true;
+  return exams.every((t) => isCategoryTaskEverCompleted(state, t.id));
+}
+
+export function getTierGroupStats(
+  state: AppState,
+  group: CategoryGroup,
+): { completed: number; total: number; percent: number } {
+  const cats = state.categories.filter((c) => getCategoryGroup(c) === group);
+  if (cats.length === 0) {
+    return { completed: 0, total: 0, percent: 0 };
+  }
+  const completed = cats.filter((c) =>
+    isCategoryFullyComplete(state, c.id),
+  ).length;
+  return {
+    completed,
+    total: cats.length,
+    percent: Math.round((completed / cats.length) * 100),
+  };
+}
+
+export function getTierUnlockProgressLabel(
+  state: AppState,
+  group: CategoryGroup,
+): string | null {
+  const prev = getPreviousTierGroup(group);
+  if (!prev) return null;
+  const stats = getTierGroupStats(state, prev);
+  if (stats.total === 0) return null;
+  const need = TIER_UNLOCK_PERCENT;
+  return `${stats.percent}% of ${CATEGORY_GROUP_LABELS[prev]} categories completed (need ${need}% to unlock ${CATEGORY_GROUP_LABELS[group]})`;
 }
 
 export function hasCompletedCategoryInGroup(
   state: AppState,
   group: CategoryGroup,
 ): boolean {
-  return state.categories.some(
-    (c) =>
-      getCategoryGroup(c) === group && isCategoryFullyComplete(state, c.id),
-  );
+  return getTierGroupStats(state, group).percent >= TIER_UNLOCK_PERCENT;
 }
 
 export function getPreviousTierGroup(
@@ -131,9 +212,7 @@ export function isCategoryUnlocked(state: AppState, category: Category): boolean
   const group = getCategoryGroup(category);
   if (group === 'all' || group === 'beginner') return true;
 
-  const prev = getPreviousTierGroup(group);
-  if (!prev) return true;
-  return hasCompletedCategoryInGroup(state, prev);
+  return isTierGroupUnlocked(state, group);
 }
 
 export function getCategoryUnlockBlockReason(
@@ -154,10 +233,52 @@ export function getCategoryUnlockBlockReason(
   const group = getCategoryGroup(category);
   const prev = getPreviousTierGroup(group);
   if (prev) {
-    return `Complete any ${CATEGORY_GROUP_LABELS[prev]} category first.`;
+    const stats = getTierGroupStats(state, prev);
+    return `Complete at least ${TIER_UNLOCK_PERCENT}% of ${CATEGORY_GROUP_LABELS[prev]} categories first (${stats.percent}% done).`;
   }
 
   return 'This category is locked.';
+}
+
+export function isTaskPrerequisiteMet(state: AppState, task: Task): boolean {
+  if (!task.prerequisiteTaskId) return true;
+  return isCategoryTaskEverCompleted(state, task.prerequisiteTaskId);
+}
+
+export function isExamTaskUnlocked(
+  state: AppState,
+  task: Task,
+  categoryId: string,
+): boolean {
+  if (!task.isExamTask) return true;
+  return areRegularCategoryTasksComplete(state, categoryId);
+}
+
+export function isCategoryTaskAvailable(
+  state: AppState,
+  task: Task,
+  categoryId: string,
+): boolean {
+  if (!isCategoryScopeTask(task, categoryId)) return false;
+  if (!isExamTaskUnlocked(state, task, categoryId)) return false;
+  return isTaskPrerequisiteMet(state, task);
+}
+
+export function getCategoryTaskBlockReason(
+  state: AppState,
+  task: Task,
+  categoryId: string,
+): string {
+  if (task.isExamTask && !areRegularCategoryTasksComplete(state, categoryId)) {
+    return 'Complete all regular tasks to unlock exam tasks.';
+  }
+  if (task.prerequisiteTaskId && !isTaskPrerequisiteMet(state, task)) {
+    const prereq = state.tasks.find((t) => t.id === task.prerequisiteTaskId);
+    return prereq
+      ? `Complete "${prereq.title}" first.`
+      : 'Complete the required task first.';
+  }
+  return 'This task is locked.';
 }
 
 export function joinRequirementMessage(category: Category): string {

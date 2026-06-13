@@ -1,7 +1,7 @@
 import { getSupabase } from './supabase';
 
 const MIGRATION_HINT =
-  'Category task completion limits are not set up yet. In Supabase SQL Editor, run supabase/migrations/069_daily_task_completions.sql and 070_refine_daily_task_limit_category_only.sql, then retry.';
+  'Category membership and task limits are not set up yet. In Supabase SQL Editor, run supabase/migrations/069_daily_task_completions.sql, 070_refine_daily_task_limit_category_only.sql, and 086_category_membership_exam_prerequisites.sql, then retry.';
 
 export const DAILY_TASK_COMPLETION_LIMIT = 3;
 
@@ -12,7 +12,7 @@ export interface DailyTaskCompletionStatus {
   remaining: number | null;
   unlimited: boolean;
   canComplete: boolean;
-  error?: 'daily_limit_reached' | 'task_not_found';
+  error?: 'daily_limit_reached' | 'task_not_found' | 'not_category_member';
 }
 
 type RpcStatusRow = {
@@ -53,7 +53,9 @@ export function mapDailyTaskCompletionStatus(
   const canComplete =
     row?.can_complete ?? (unlimited || used < (limit ?? DAILY_TASK_COMPLETION_LIMIT));
   const error =
-    row?.error === 'daily_limit_reached' || row?.error === 'task_not_found'
+    row?.error === 'daily_limit_reached' ||
+    row?.error === 'task_not_found' ||
+    row?.error === 'not_category_member'
       ? row.error
       : undefined;
 
@@ -117,12 +119,16 @@ export async function recordTaskCompletionDb(
   });
 
   if (error) return { ok: false, error: formatDbError(error) };
+
   const row = data as RpcStatusRow | null;
   const status = mapDailyTaskCompletionStatus(row);
   if (row?.ok === false || status.error === 'daily_limit_reached') {
     return {
       ok: false,
-      error: dailyTaskCompletionBlockedMessage(status),
+      error:
+        status.error === 'not_category_member'
+          ? 'Join this category to complete its tasks.'
+          : dailyTaskCompletionBlockedMessage(status),
       status,
     };
   }

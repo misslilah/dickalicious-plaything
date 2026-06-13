@@ -8,6 +8,7 @@ interface CategoryCardProps {
   completionPercent: number;
   completedCount: number;
   isMember?: boolean;
+  isCompleted?: boolean;
   isUnlocked: boolean;
   lockReason?: string | null;
   canJoin?: boolean;
@@ -22,6 +23,7 @@ export function CategoryCard({
   completionPercent,
   completedCount,
   isMember,
+  isCompleted,
   isUnlocked,
   lockReason,
   canJoin,
@@ -59,7 +61,12 @@ export function CategoryCard({
         )}
       </div>
       <div className="category-card__body">
-        <h3 className="category-card__name">{category.name}</h3>
+        <div className="category-card__title-row">
+          <h3 className="category-card__name">{category.name}</h3>
+          {isCompleted && (
+            <span className="tag tag--ok category-card__completed">Completed</span>
+          )}
+        </div>
         <p className="category-card__meta muted">
           {taskCount} {taskCount === 1 ? 'task' : 'tasks'}
           {isMember != null && (
@@ -98,7 +105,7 @@ export function CategoryCard({
               onJoin?.();
             }}
           >
-            {joining ? 'Joining…' : 'Join'}
+            {joining ? 'Joining…' : 'Join category'}
           </button>
         )}
       </div>

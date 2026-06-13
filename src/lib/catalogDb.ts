@@ -65,6 +65,9 @@ type DbTask = {
   linked_video_id: string | null;
   linked_audio_item_id: string | null;
   linked_audio_url: string | null;
+  sort_order: number;
+  prerequisite_task_id: string | null;
+  is_exam_task: boolean;
 };
 
 type DbReward = {
@@ -174,6 +177,9 @@ function mapTask(row: DbTask): Task {
     linkedVideoId: row.linked_video_id ?? undefined,
     linkedAudioItemId: row.linked_audio_item_id ?? undefined,
     linkedAudioUrl: row.linked_audio_url?.trim() || undefined,
+    sortOrder: row.sort_order ?? 0,
+    prerequisiteTaskId: row.prerequisite_task_id ?? null,
+    isExamTask: row.is_exam_task ?? false,
   };
 }
 
@@ -502,6 +508,9 @@ export async function upsertTask(
       task.linkedMediaType === 'audio'
         ? task.linkedAudioUrl?.trim() || null
         : null,
+    sort_order: task.sortOrder ?? 0,
+    prerequisite_task_id: task.prerequisiteTaskId ?? null,
+    is_exam_task: task.isExamTask ?? false,
   };
 
   const { data, error } = task.id

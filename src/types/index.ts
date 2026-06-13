@@ -93,6 +93,12 @@ export interface Task {
   linkedAudioItemId?: string;
   /** External audio URL when linkedMediaType is `audio` (alternative to library track). */
   linkedAudioUrl?: string;
+  /** Display order within the category (lower first). */
+  sortOrder?: number;
+  /** Must complete this task in the same category first. */
+  prerequisiteTaskId?: string | null;
+  /** Exam tasks unlock after all regular category tasks are completed. */
+  isExamTask?: boolean;
 }
 
 export interface UserProgress {

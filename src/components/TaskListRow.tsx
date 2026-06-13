@@ -20,6 +20,8 @@ interface TaskListRowProps {
   categoryId: string;
   status: CategoryTaskStatus;
   disabled?: boolean;
+  locked?: boolean;
+  lockReason?: string | null;
   dailyLimitBlocked?: boolean;
   dailyLimitMessage?: string;
 }
@@ -29,22 +31,28 @@ export function TaskListRow({
   categoryId,
   status,
   disabled = false,
+  locked = false,
+  lockReason,
   dailyLimitBlocked = false,
   dailyLimitMessage,
 }: TaskListRowProps) {
   const to = `/category/${categoryId}/task/${task.id}`;
+  const isBlocked = locked || dailyLimitBlocked;
 
-  if (dailyLimitBlocked && status !== 'done') {
+  if (isBlocked && status !== 'done') {
+    const message =
+      lockReason ??
+      (dailyLimitBlocked ? dailyLimitMessage : 'This task is locked.');
     return (
       <button
         type="button"
-        className={`task-list-row task-list-row--${status} task-list-row--disabled`}
+        className={`task-list-row task-list-row--${status} task-list-row--disabled task-list-row--locked`}
         onClick={() => {
-          if (dailyLimitMessage) window.alert(dailyLimitMessage);
+          if (message) window.alert(message);
         }}
-        aria-label={`${task.title} — category task limit reached`}
+        aria-label={`${task.title} — locked`}
       >
-        <TaskListRowContent task={task} status={status} />
+        <TaskListRowContent task={task} status={status} locked lockReason={message} />
       </button>
     );
   }
@@ -74,16 +82,29 @@ export function TaskListRow({
 function TaskListRowContent({
   task,
   status,
+  locked = false,
+  lockReason,
 }: {
   task: Task;
   status: CategoryTaskStatus;
+  locked?: boolean;
+  lockReason?: string | null;
 }) {
   return (
     <>
       <div className="task-list-row__main">
-        <h3 className="task-list-row__title">{task.title}</h3>
+        <h3 className="task-list-row__title">
+          {locked && <span aria-hidden>🔒 </span>}
+          {task.title}
+          {task.isExamTask && (
+            <span className="tag tag--warn task-list-row__exam">Exam</span>
+          )}
+        </h3>
         {task.description && (
           <p className="task-list-row__desc">{task.description}</p>
+        )}
+        {locked && lockReason && (
+          <p className="task-list-row__lock-reason muted">{lockReason}</p>
         )}
         <div className="task-list-row__meta">
           <span>{frequencyLabels[task.frequency]}</span>
@@ -98,11 +119,13 @@ function TaskListRowContent({
       </div>
       <div className="task-list-row__aside">
         <span className={`task-list-row__status task-list-row__status--${status}`}>
-          {STATUS_LABELS[status]}
+          {locked && status !== 'done' ? 'Locked' : STATUS_LABELS[status]}
         </span>
-        <span className="task-list-row__chevron" aria-hidden>
-          →
-        </span>
+        {!locked && (
+          <span className="task-list-row__chevron" aria-hidden>
+            →
+          </span>
+        )}
       </div>
     </>
   );

@@ -11,7 +11,9 @@ import { useTaskCompletion } from '../hooks/useTaskCompletion';
 import { isCategoryImagePreview } from '../lib/categoryImage';
 import {
   canJoinCategory,
+  getCategoryTaskBlockReason,
   getCategoryUnlockBlockReason,
+  isCategoryTaskAvailable,
   isCategoryUnlocked,
 } from '../lib/categoryProgression';
 import { getTaskPlanEntry } from '../lib/gameLogic';
@@ -136,6 +138,24 @@ export function TaskFocusPage() {
             {joinGate.reason}
           </p>
         )}
+        <Link to={`/category/${categoryId}`} className="btn btn--ghost">
+          Back to category
+        </Link>
+      </div>
+    );
+  }
+
+  if (
+    !isAdmin &&
+    categoryId &&
+    !isCategoryTaskAvailable(state, task, categoryId) &&
+    !completed
+  ) {
+    return (
+      <div className="page">
+        <p className="login-error" role="alert">
+          {getCategoryTaskBlockReason(state, task, categoryId)}
+        </p>
         <Link to={`/category/${categoryId}`} className="btn btn--ghost">
           Back to category
         </Link>

@@ -1,5 +1,5 @@
 import type { AppState, CategoryMemberProgress } from '../types';
-import { getCategoryCompletionStats } from './categoryProgression';
+import { getCategoryCompletionStats, isCategoryFullyComplete } from './categoryProgression';
 import { getSupabase } from './supabase';
 
 type DbMemberRow = {
@@ -8,12 +8,25 @@ type DbMemberRow = {
   marked_complete_at: string | null;
 };
 
+type RpcResult = {
+  ok?: boolean;
+  error?: string;
+};
+
 function mapMemberRow(row: DbMemberRow): CategoryMemberProgress {
   return {
     categoryId: row.category_id,
     tasksCompletedCount: row.tasks_completed_count ?? 0,
     markedCompleteAt: row.marked_complete_at,
   };
+}
+
+function formatRpcError(error: string | undefined): string {
+  if (!error) return 'Request failed.';
+  if (error.includes('3 categories')) {
+    return 'You can only join up to 3 categories at once.';
+  }
+  return error;
 }
 
 export async function fetchCategoryMembers(
@@ -56,14 +69,29 @@ export async function joinCategoryDb(
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
 
-  const { error } = await supabase.from('category_members').upsert({
-    user_id: userId,
-    category_id: categoryId,
-    tasks_completed_count: 0,
-    marked_complete_at: null,
+  const { data, error } = await supabase.rpc('join_category', {
+    p_category_id: categoryId,
   });
 
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    if (error.message.includes('join_category')) {
+      const { error: fallbackError } = await supabase.from('category_members').upsert({
+        user_id: userId,
+        category_id: categoryId,
+        tasks_completed_count: 0,
+        marked_complete_at: null,
+      });
+      if (fallbackError) return { ok: false, error: formatRpcError(fallbackError.message) };
+      return { ok: true };
+    }
+    return { ok: false, error: formatRpcError(error.message) };
+  }
+
+  const row = data as RpcResult | null;
+  if (row?.ok === false) {
+    return { ok: false, error: formatRpcError(row.error) };
+  }
+
   return { ok: true };
 }
 
@@ -74,13 +102,28 @@ export async function leaveCategoryDb(
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
 
-  const { error } = await supabase
-    .from('category_members')
-    .delete()
-    .eq('user_id', userId)
-    .eq('category_id', categoryId);
+  const { data, error } = await supabase.rpc('leave_category', {
+    p_category_id: categoryId,
+  });
 
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    if (error.message.includes('leave_category')) {
+      const { error: fallbackError } = await supabase
+        .from('category_members')
+        .delete()
+        .eq('user_id', userId)
+        .eq('category_id', categoryId);
+      if (fallbackError) return { ok: false, error: fallbackError.message };
+      return { ok: true };
+    }
+    return { ok: false, error: error.message };
+  }
+
+  const row = data as RpcResult | null;
+  if (row?.ok === false) {
+    return { ok: false, error: row.error ?? 'Could not leave category.' };
+  }
+
   return { ok: true };
 }
 
@@ -92,12 +135,10 @@ export async function syncCategoryProgressDb(
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
 
-  const { completed, total, percent } = getCategoryCompletionStats(
-    state,
-    categoryId,
-  );
-  const markedCompleteAt =
-    total > 0 && percent >= 100 ? new Date().toISOString() : null;
+  const { completed } = getCategoryCompletionStats(state, categoryId);
+  const markedCompleteAt = isCategoryFullyComplete(state, categoryId)
+    ? new Date().toISOString()
+    : null;
 
   const { data, error } = await supabase
     .from('category_members')

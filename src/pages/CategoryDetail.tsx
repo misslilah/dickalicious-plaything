@@ -4,10 +4,17 @@ import { CategoryImagePicker } from '../components/CategoryImagePicker';
 import { TaskListRow } from '../components/TaskListRow';
 import { useAppStore } from '../hooks/useAppStore';
 import {
+  areRegularCategoryTasksComplete,
   canJoinCategory,
   getCategoryCompletionStats,
+  getCategoryTaskBlockReason,
   getCategoryUnlockBlockReason,
+  getExamCategoryTasks,
+  getRegularCategoryTasks,
+  isCategoryFullyComplete,
+  isCategoryTaskAvailable,
   isCategoryUnlocked,
+  sortCategoryTasks,
 } from '../lib/categoryProgression';
 import {
   isCategoryImagePreview,
@@ -80,18 +87,36 @@ export function CategoryDetail() {
   const completion = category
     ? getCategoryCompletionStats(state, category.id)
     : { completed: 0, total: 0, percent: 0 };
+  const categoryComplete =
+    category != null && isCategoryFullyComplete(state, category.id);
 
-  const categoryTasks = useMemo(
+  const regularTasks = useMemo(
     () =>
-      state.tasks.filter(
-        (t) => categoryId != null && isCategoryScopeTask(t, categoryId),
-      ),
-    [state.tasks, categoryId],
+      categoryId != null
+        ? sortCategoryTasks(getRegularCategoryTasks(state, categoryId))
+        : [],
+    [state, categoryId],
   );
 
-  const grouped = useMemo(() => {
+  const examTasks = useMemo(
+    () =>
+      categoryId != null
+        ? sortCategoryTasks(getExamCategoryTasks(state, categoryId))
+        : [],
+    [state, categoryId],
+  );
+
+  const examUnlocked =
+    categoryId != null && areRegularCategoryTasksComplete(state, categoryId);
+
+  const categoryTasks = useMemo(
+    () => [...regularTasks, ...examTasks],
+    [regularTasks, examTasks],
+  );
+
+  const groupedRegular = useMemo(() => {
     const map = new Map<TaskUserStage, Task[]>();
-    for (const t of categoryTasks) {
+    for (const t of regularTasks) {
       const key = t.userStage ?? 'any';
       const list = map.get(key) ?? [];
       list.push(t);
@@ -100,7 +125,20 @@ export function CategoryDetail() {
     return STAGE_GROUP_ORDER.filter((stage) => map.has(stage)).map(
       (stage) => [stage, map.get(stage)!] as const,
     );
-  }, [categoryTasks]);
+  }, [regularTasks]);
+
+  const groupedExam = useMemo(() => {
+    const map = new Map<TaskUserStage, Task[]>();
+    for (const t of examTasks) {
+      const key = t.userStage ?? 'any';
+      const list = map.get(key) ?? [];
+      list.push(t);
+      map.set(key, list);
+    }
+    return STAGE_GROUP_ORDER.filter((stage) => map.has(stage)).map(
+      (stage) => [stage, map.get(stage)!] as const,
+    );
+  }, [examTasks]);
 
   const [imageUrlInput, setImageUrlInput] = useState(
     () => category?.imageUrl?.startsWith('http') ? category.imageUrl : '',
@@ -125,6 +163,9 @@ export function CategoryDetail() {
     pointsReward: 0,
     frequency: 'daily',
     malusPointsOnFail: 0,
+    sortOrder: 0,
+    prerequisiteTaskId: null,
+    isExamTask: false,
   });
   const [taskMessage, setTaskMessage] = useState('');
 
@@ -137,6 +178,28 @@ export function CategoryDetail() {
   }, [isAdmin]);
 
   const taskScope = taskDraft.taskScope ?? 'category';
+
+  const renderTaskRow = (task: Task) => {
+    const available =
+      isAdmin ||
+      !categoryId ||
+      isCategoryTaskAvailable(state, task, categoryId);
+    const lockReason =
+      !available && categoryId
+        ? getCategoryTaskBlockReason(state, task, categoryId)
+        : null;
+    return (
+      <TaskListRow
+        task={task}
+        categoryId={category.id}
+        status={getCategoryTaskStatus(state, task.id)}
+        dailyLimitBlocked={atDailyTaskLimit}
+        dailyLimitMessage={dailyTaskLimitMessage}
+        locked={!isAdmin && !available}
+        lockReason={lockReason}
+      />
+    );
+  };
 
   if (!category) {
     return (
@@ -167,7 +230,7 @@ export function CategoryDetail() {
     if (!categoryId) return;
     if (
       !window.confirm(
-        'Leave this category? Progress is kept but tasks will be hidden.',
+        'Leave this category? All progress and completions for this category will be reset.',
       )
     ) {
       return;
@@ -242,6 +305,9 @@ export function CategoryDetail() {
       pointsReward: 0,
       frequency: 'daily',
       malusPointsOnFail: 0,
+      sortOrder: 0,
+      prerequisiteTaskId: null,
+      isExamTask: false,
     });
     setTaskMessage('Task saved.');
   };
@@ -262,6 +328,9 @@ export function CategoryDetail() {
         pointsReward: 0,
         frequency: 'daily',
         malusPointsOnFail: 0,
+        sortOrder: 0,
+        prerequisiteTaskId: null,
+        isExamTask: false,
       });
     }
     setTaskMessage('Task deleted.');
@@ -291,7 +360,12 @@ export function CategoryDetail() {
           )}
         </div>
         <div className="category-detail__header-text">
-          <h2>{category.name}</h2>
+          <div className="category-detail__title-row">
+            <h2>{category.name}</h2>
+            {categoryComplete && (
+              <span className="tag tag--ok">Completed</span>
+            )}
+          </div>
           {category.description && (
             <p className="muted">{category.description}</p>
           )}
@@ -395,7 +469,7 @@ export function CategoryDetail() {
       )}
 
       {isMember && !categoryLocked ? (
-        grouped.length === 0 ? (
+        groupedRegular.length === 0 && examTasks.length === 0 ? (
           <section className="card">
             <p className="muted">
               No tasks in this category yet.
@@ -403,29 +477,55 @@ export function CategoryDetail() {
             </p>
           </section>
         ) : (
-          grouped.map(([stage, tasks]) => (
-            <section key={stage} className="library-section">
-              <h3 className="library-level">{getStageLabel(stage)}</h3>
-              <ul className="task-list">
-                {tasks.map((task) => (
-                  <li key={task.id}>
-                    <TaskListRow
-                      task={task}
-                      categoryId={category.id}
-                      status={getCategoryTaskStatus(state, task.id)}
-                      dailyLimitBlocked={atDailyTaskLimit}
-                      dailyLimitMessage={dailyTaskLimitMessage}
-                    />
-                    {(task.malusPointsOnFail ?? 0) > 0 && (
-                      <p className="muted task-malus-hint">
-                        +{task.malusPointsOnFail} malus if started and not completed today
-                      </p>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))
+          <>
+            {groupedRegular.map(([stage, tasks]) => (
+              <section key={stage} className="library-section">
+                <h3 className="library-level">{getStageLabel(stage)}</h3>
+                <ul className="task-list">
+                  {tasks.map((task) => (
+                    <li key={task.id}>
+                      {renderTaskRow(task)}
+                      {(task.malusPointsOnFail ?? 0) > 0 && (
+                        <p className="muted task-malus-hint">
+                          +{task.malusPointsOnFail} malus if started and not completed today
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+
+            {examTasks.length > 0 && (
+              <section className="library-section library-section--exam">
+                <h3 className="library-level">Exam mode</h3>
+                {!examUnlocked && !isAdmin ? (
+                  <p className="muted">
+                    Complete all regular tasks to unlock exam tasks.
+                  </p>
+                ) : groupedExam.length === 0 ? (
+                  <p className="muted">No exam tasks in this section.</p>
+                ) : (
+                  groupedExam.map(([stage, tasks]) => (
+                    <div key={`exam-${stage}`}>
+                      {groupedExam.length > 1 && (
+                        <h4 className="library-level library-level--sub">
+                          {getStageLabel(stage)}
+                        </h4>
+                      )}
+                      <ul className="task-list">
+                        {tasks.map((task) => (
+                          <li key={task.id}>
+                            {renderTaskRow(task)}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))
+                )}
+              </section>
+            )}
+          </>
         )
       ) : (
         !isAdmin && (
@@ -629,6 +729,52 @@ export function CategoryDetail() {
               </select>
               <input
                 type="number"
+                min={0}
+                aria-label="Sort order"
+                placeholder="Sort order"
+                value={taskDraft.sortOrder ?? 0}
+                onChange={(e) =>
+                  setTaskDraft({
+                    ...taskDraft,
+                    sortOrder: Number(e.target.value) || 0,
+                  })
+                }
+              />
+              <select
+                aria-label="Prerequisite task"
+                value={taskDraft.prerequisiteTaskId ?? ''}
+                onChange={(e) =>
+                  setTaskDraft({
+                    ...taskDraft,
+                    prerequisiteTaskId: e.target.value || null,
+                  })
+                }
+              >
+                <option value="">No prerequisite</option>
+                {categoryTasks
+                  .filter((t) => t.id !== taskDraft.id)
+                  .map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.isExamTask ? '[Exam] ' : ''}
+                      {t.title}
+                    </option>
+                  ))}
+              </select>
+              <label className="form-grid__checkbox">
+                <input
+                  type="checkbox"
+                  checked={taskDraft.isExamTask ?? false}
+                  onChange={(e) =>
+                    setTaskDraft({
+                      ...taskDraft,
+                      isExamTask: e.target.checked,
+                    })
+                  }
+                />
+                Exam task (unlocks after regular tasks)
+              </label>
+              <input
+                type="number"
                 min={1}
                 placeholder="Duration (minutes, optional)"
                 value={taskDraft.durationMinutes ?? ''}
@@ -772,6 +918,27 @@ export function CategoryDetail() {
               {taskDraft.id ? 'Update task' : 'Add task'}
             </button>
           </section>
+
+          {groupedRegular.map(([stage, tasks]) => (
+            <section key={`admin-preview-${stage}`} className="library-section">
+              <h3 className="library-level">{getStageLabel(stage)} (preview)</h3>
+              <ul className="task-list">
+                {tasks.map((task) => (
+                  <li key={task.id}>{renderTaskRow(task)}</li>
+                ))}
+              </ul>
+            </section>
+          ))}
+          {examTasks.length > 0 && (
+            <section className="library-section library-section--exam">
+              <h3 className="library-level">Exam mode (preview)</h3>
+              <ul className="task-list">
+                {examTasks.map((task) => (
+                  <li key={task.id}>{renderTaskRow(task)}</li>
+                ))}
+              </ul>
+            </section>
+          )}
         </>
       )}
     </div>
