@@ -29,7 +29,7 @@ import {
 import { getCategoryTaskStatus } from '../lib/gameLogic';
 import { dailyTaskCompletionBlockedMessage, dailyTaskCompletionRemainingLabel } from '../lib/dailyTaskCompletions';
 import type { Task, TaskFrequency, TaskScope } from '../types';
-import { isCategoryScopeTask, TASK_SCOPE_OPTIONS } from '../lib/taskScope';
+import { TASK_SCOPE_OPTIONS } from '../lib/taskScope';
 import {
   fetchAdminProfiles,
   type AdminProfileRow,
@@ -179,6 +179,17 @@ export function CategoryDetail() {
 
   const taskScope = taskDraft.taskScope ?? 'category';
 
+  if (!category) {
+    return (
+      <div className="page">
+        <p className="muted">Category not found.</p>
+        <Link to="/" className="btn btn--ghost">
+          Back to home
+        </Link>
+      </div>
+    );
+  }
+
   const renderTaskRow = (task: Task) => {
     const available =
       isAdmin ||
@@ -200,17 +211,6 @@ export function CategoryDetail() {
       />
     );
   };
-
-  if (!category) {
-    return (
-      <div className="page">
-        <p className="muted">Category not found.</p>
-        <Link to="/" className="btn btn--ghost">
-          Back to home
-        </Link>
-      </div>
-    );
-  }
 
   const handleJoin = async () => {
     if (!categoryId) return;
