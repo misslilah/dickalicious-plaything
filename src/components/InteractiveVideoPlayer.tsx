@@ -148,7 +148,7 @@ export function InteractiveVideoPlayer({
   playlistProgress,
   onExitPlaylist,
 }: InteractiveVideoPlayerProps) {
-  const { session, isEffectiveAdmin } = useAppStore();
+  const { isEffectiveAdmin } = useAppStore();
   const audio = useOptionalAudioPlayer();
   const globalVideo = useOptionalVideoPlayer();
   const isAdmin = isEffectiveAdmin;

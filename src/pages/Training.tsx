@@ -5,6 +5,7 @@ import { TrainingGate } from '../components/TrainingGate';
 import { TrainingTaskCard } from '../components/TrainingTaskCard';
 import { useAppStore } from '../hooks/useAppStore';
 import { getPatreonPageUrl } from '../lib/patreon';
+import { tierLabel } from '../lib/tiers';
 import { canAccessTraining } from '../lib/trainingAccess';
 import {
   completeTrainingTask,

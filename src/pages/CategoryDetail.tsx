@@ -52,7 +52,6 @@ export function CategoryDetail() {
   const { categoryId } = useParams<{ categoryId: string }>();
   const {
     state,
-    session,
     updateCategory,
     addTask,
     updateTask,

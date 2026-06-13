@@ -11,7 +11,6 @@ import {
 } from '../lib/videoAccess';
 import {
   fetchUserVideoPlaylists,
-  itemsForVideoPlaylist,
   videoIdsForPlaylist,
 } from '../lib/videoPlaylistDb';
 

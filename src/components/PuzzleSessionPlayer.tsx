@@ -33,7 +33,7 @@ export function PuzzleSessionPlayer({
   onRegisterQuitHandler,
   onAttemptStatusChange,
 }: PuzzleSessionPlayerProps) {
-  const { session, isEffectiveAdmin } = useAppStore();
+  const { isEffectiveAdmin } = useAppStore();
   const isAdmin = isEffectiveAdmin;
   const [currentPuzzle, setCurrentPuzzle] = useState<PuzzleGame | null>(() =>
     pickRandomPuzzle(puzzles),

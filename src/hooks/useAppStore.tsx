@@ -313,7 +313,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   );
   const effectiveAdmin = isEffectiveAdmin(session, adminUserPreview);
 
-  const blockUserPreviewMutation = useCallback((): MutateResult | null => {
+  const blockUserPreviewMutation = useCallback((): { ok: false; error: string } | null => {
     if (previewActive) {
       return { ok: false, error: USER_PREVIEW_PROGRESS_BLOCKED };
     }

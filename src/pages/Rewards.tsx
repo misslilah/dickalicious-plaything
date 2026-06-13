@@ -53,7 +53,6 @@ function ShopPurchaseToast({
 export function Rewards() {
   const {
     state,
-    session,
     purchaseReward,
     purchaseVideo,
     purchaseTierShopVideo,
