@@ -1,19 +1,29 @@
 import type { CSSProperties } from 'react';
 import { TaskCard } from './TaskCard';
 import { useAppStore } from '../hooks/useAppStore';
-import { completionStats, getResetHour, getTodayPlan } from '../lib/gameLogic';
+import {
+  filterHomePlanEntries,
+  getResetHour,
+  getTodayPlan,
+  homePlanCompletionStats,
+} from '../lib/gameLogic';
 import { formatDisplayDate, todayKey } from '../lib/dates';
 
 export function DailyTasksSection() {
   const {
     state,
+    session,
     completeTask,
     uncompleteTask,
     markTaskStarted,
     closeDay,
   } = useAppStore();
+  const userId = session?.userId ?? null;
   const plan = getTodayPlan(state);
-  const stats = completionStats(plan);
+  const homeEntries = plan
+    ? filterHomePlanEntries(state, plan.tasks, userId)
+    : [];
+  const stats = homePlanCompletionStats(state, plan, userId);
   const dateKey = todayKey(getResetHour(state));
 
   if (!plan) {
@@ -25,7 +35,7 @@ export function DailyTasksSection() {
     );
   }
 
-  const earnedXp = plan.tasks
+  const earnedXp = homeEntries
     .filter((t) => t.completed)
     .reduce((sum, entry) => {
       const task = state.tasks.find((x) => x.id === entry.taskId);
@@ -39,7 +49,7 @@ export function DailyTasksSection() {
           <h2 className="section-title">Daily tasks</h2>
           <p className="muted">{formatDisplayDate(dateKey)}</p>
         </div>
-        {plan.tasks.length > 0 && (
+        {homeEntries.length > 0 && (
           <div
             className="progress-ring progress-ring--sm"
             style={{ '--p': stats.percent } as CSSProperties}
@@ -49,14 +59,14 @@ export function DailyTasksSection() {
         )}
       </header>
 
-      {plan.tasks.length > 0 && (
+      {homeEntries.length > 0 && (
         <p className="daily-tasks__summary muted">
           <strong>{stats.completed}</strong> / {stats.total} done · +{earnedXp} XP today
         </p>
       )}
 
       <ul className="task-list">
-        {plan.tasks.map((entry) => {
+        {homeEntries.map((entry) => {
           const task = state.tasks.find((t) => t.id === entry.taskId);
           if (!task) return null;
           const category = task.categoryId
@@ -80,7 +90,7 @@ export function DailyTasksSection() {
         })}
       </ul>
 
-      {plan.tasks.length === 0 && (
+      {homeEntries.length === 0 && (
         <p className="muted">
           {state.tasks.length === 0
             ? 'No tasks configured yet. Ask an admin to add daily or personal tasks.'
@@ -88,7 +98,7 @@ export function DailyTasksSection() {
         </p>
       )}
 
-      {!plan.closed && plan.tasks.length > 0 && (
+      {!plan.closed && homeEntries.length > 0 && (
         <button type="button" className="btn btn--primary btn--block" onClick={closeDay}>
           Close the day
         </button>

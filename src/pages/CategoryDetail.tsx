@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { CategoryImagePicker } from '../components/CategoryImagePicker';
+import { CategoryTaskDetailModal } from '../components/CategoryTaskDetailModal';
 import { TaskListRow } from '../components/TaskListRow';
 import { useAppStore } from '../hooks/useAppStore';
 import {
@@ -59,8 +60,9 @@ export function CategoryDetail() {
     joinCategory,
     leaveCategory,
     dailyTaskCompletionStatus,
+    isEffectiveAdmin,
   } = useAppStore();
-  const isAdmin = session?.role === 'admin';
+  const isAdmin = isEffectiveAdmin;
   const atDailyTaskLimit =
     !isAdmin &&
     dailyTaskCompletionStatus != null &&
@@ -168,6 +170,11 @@ export function CategoryDetail() {
     isExamTask: false,
   });
   const [taskMessage, setTaskMessage] = useState('');
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+
+  const selectedTask = selectedTaskId
+    ? categoryTasks.find((t) => t.id === selectedTaskId) ?? null
+    : null;
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -208,6 +215,11 @@ export function CategoryDetail() {
         dailyLimitMessage={dailyTaskLimitMessage}
         locked={!isAdmin && !available}
         lockReason={lockReason}
+        onOpen={
+          isMember && !categoryLocked
+            ? () => setSelectedTaskId(task.id)
+            : undefined
+        }
       />
     );
   };
@@ -940,6 +952,17 @@ export function CategoryDetail() {
             </section>
           )}
         </>
+      )}
+      {selectedTask && categoryId && (
+        <CategoryTaskDetailModal
+          open={selectedTaskId != null}
+          task={selectedTask}
+          category={category}
+          categoryId={categoryId}
+          isAdmin={isAdmin}
+          isMember={isMember}
+          onClose={() => setSelectedTaskId(null)}
+        />
       )}
     </div>
   );

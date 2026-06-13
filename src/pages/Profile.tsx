@@ -6,7 +6,7 @@ import { updateProfileUsername } from '../lib/profileDb';
 import { tierLabel } from '../lib/tiers';
 
 export function Profile() {
-  const { state, session, refreshProfile } = useAppStore();
+  const { state, session, effectiveSession, refreshProfile } = useAppStore();
   const { progress, unlockedBadgeIds } = state;
 
   const [username, setUsername] = useState(session?.username ?? '');
@@ -17,8 +17,8 @@ export function Profile() {
   const stage = getUserStage(progress.currentLevel);
 
   const patreonTierLabel =
-    session?.patreonStatus === 'active' && session.patreonTier
-      ? tierLabel(session.patreonTier)
+    effectiveSession?.patreonStatus === 'active' && effectiveSession.patreonTier
+      ? tierLabel(effectiveSession.patreonTier)
       : 'None';
 
   useEffect(() => {

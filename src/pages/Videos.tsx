@@ -20,7 +20,7 @@ import { InteractiveVideos } from './InteractiveVideos';
 import { VideoPlaylistSection } from '../components/VideoPlaylistSection';
 
 export function Videos() {
-  const { state, session } = useAppStore();
+  const { state, effectiveSession, isEffectiveAdmin } = useAppStore();
   const [tab, setTab] = useState<MediaPageTab>(() => loadMediaPageTab());
   const setMediaTab = (next: MediaPageTab) => {
     setTab(next);
@@ -28,7 +28,7 @@ export function Videos() {
   };
   const [search, setSearch] = useState('');
   const [lockMessage, setLockMessage] = useState<string | null>(null);
-  const isAdmin = session?.role === 'admin';
+  const isAdmin = isEffectiveAdmin;
 
   useEffect(() => {
     if (tab === 'watch-log' && !isAdmin) {
@@ -38,14 +38,14 @@ export function Videos() {
 
   const videoAccessCtx: VideoAccessContext = useMemo(
     () => ({
-      patreonTier: session?.patreonTier,
-      patreonStatus: session?.patreonStatus,
+      patreonTier: effectiveSession?.patreonTier,
+      patreonStatus: effectiveSession?.patreonStatus,
       isAdmin,
       purchasedVideoIds: state.purchasedVideoIds,
     }),
     [
-      session?.patreonTier,
-      session?.patreonStatus,
+      effectiveSession?.patreonTier,
+      effectiveSession?.patreonStatus,
       isAdmin,
       state.purchasedVideoIds,
     ],
@@ -90,8 +90,8 @@ export function Videos() {
   const showCategoryLockMessage = (category: VideoCategory) => {
     const message = getVideoCategoryLockMessage(
       category.requiredTier,
-      session?.patreonTier,
-      session?.patreonStatus,
+      effectiveSession?.patreonTier,
+      effectiveSession?.patreonStatus,
       isAdmin,
     );
     if (message) {

@@ -21,6 +21,8 @@ export function Settings() {
     lastSaveError,
     clearSaveError,
     refreshPatreonProfile,
+    adminUserPreview,
+    setAdminUserPreview,
   } = useAppStore();
   const bubblesEnabled = areBubblesEnabled(state.settings);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -203,9 +205,26 @@ export function Settings() {
       {session?.role === 'admin' && (
         <section className="card">
           <h3 className="section-title">Admin</h3>
-          <Link to="/admin" className="btn btn--primary btn--block">
-            Open admin panel
-          </Link>
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={adminUserPreview}
+              onChange={(e) => setAdminUserPreview(e.target.checked)}
+            />
+            <span>
+              <strong>View as user</strong>
+              <br />
+              <span className="muted">
+                Preview the app as a new member. Your real progress is hidden until
+                you turn this off.
+              </span>
+            </span>
+          </label>
+          {!adminUserPreview && (
+            <Link to="/admin" className="btn btn--primary btn--block">
+              Open admin panel
+            </Link>
+          )}
         </section>
       )}
 
@@ -256,12 +275,13 @@ export function Settings() {
             disabled={patreonConnecting}
             onClick={() => void handleConnectPatreon()}
           >
-            {patreonConnecting ? 'Connecting…' : 'Connect Patreon'}
+            {patreonConnecting ? 'Checking Patreon…' : 'Connect Patreon'}
           </button>
         ) : (
           <p className="muted">
-            Patreon OAuth is not configured. An admin can set your tier manually
-            until OAuth is enabled.
+            Patreon OAuth requires <code>VITE_SUPABASE_URL</code> in <code>.env</code>.
+            Deploy Edge Functions on Supabase before connecting (see README). An admin
+            can set your tier manually until then.
           </p>
         )}
       </section>

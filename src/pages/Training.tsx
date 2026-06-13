@@ -14,7 +14,7 @@ import {
   fetchUserTrainingCompletions,
   trainingTaskNeedsProof,
 } from '../lib/trainingDb';
-import { tierLabel } from '../lib/tiers';
+import { USER_PREVIEW_PROGRESS_BLOCKED } from '../lib/adminUserMode';
 import { getSupabase } from '../lib/supabase';
 import { fetchUserThronePending } from '../lib/throneDb';
 import type {
@@ -25,13 +25,13 @@ import type {
 } from '../types';
 
 export function Training() {
-  const { session } = useAppStore();
+  const { session, effectiveSession, isEffectiveAdmin, adminUserPreview } = useAppStore();
   const navigate = useNavigate();
-  const isAdmin = session?.role === 'admin';
+  const isAdmin = isEffectiveAdmin;
   const userId = session?.userId;
   const hasAccess = canAccessTraining(
-    session?.patreonTier,
-    session?.patreonStatus,
+    effectiveSession?.patreonTier,
+    effectiveSession?.patreonStatus,
     isAdmin,
   );
   const [certified, setCertified] = useState(false);
@@ -97,9 +97,9 @@ export function Training() {
     setLoadError(null);
     setBlackmail(blackmailResult.profile);
     setTasks(tasksResult.tasks);
-    setCompletions(completionsResult.completions);
+    setCompletions(adminUserPreview ? [] : completionsResult.completions);
     setThronePending(pendingResult.pending);
-  }, [userId]);
+  }, [userId, adminUserPreview]);
 
   useEffect(() => {
     const supabase = getSupabase();
@@ -163,6 +163,9 @@ export function Training() {
     proofPhotoPath: string | null,
   ): Promise<{ ok: true } | { ok: false; error: string }> => {
     if (!userId) return { ok: false, error: 'Not signed in.' };
+    if (adminUserPreview) {
+      return { ok: false, error: USER_PREVIEW_PROGRESS_BLOCKED };
+    }
     const needsProof = trainingTaskNeedsProof(task, blackmail.enabled);
     const result = await completeTrainingTask(
       userId,

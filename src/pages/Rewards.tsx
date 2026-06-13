@@ -58,6 +58,8 @@ export function Rewards() {
     purchaseVideo,
     purchaseTierShopVideo,
     reorderBadges,
+    isEffectiveAdmin,
+    effectiveSession,
   } = useAppStore();
   const { progress, unlockedRewardIds, unlockedBadgeIds } = state;
   const [tab, setTab] = useState<RewardsTab>('badges');
@@ -67,7 +69,7 @@ export function Rewards() {
   const [badgeReorderBusy, setBadgeReorderBusy] = useState(false);
   const [badgeReorderError, setBadgeReorderError] = useState('');
 
-  const isAdmin = session?.role === 'admin';
+  const isAdmin = isEffectiveAdmin;
 
   const sortedBadgeIds = useMemo(
     () =>
@@ -96,14 +98,14 @@ export function Rewards() {
 
   const videoAccessCtx: VideoAccessContext = useMemo(
     () => ({
-      patreonTier: session?.patreonTier,
-      patreonStatus: session?.patreonStatus,
+      patreonTier: effectiveSession?.patreonTier,
+      patreonStatus: effectiveSession?.patreonStatus,
       isAdmin,
       purchasedVideoIds: state.purchasedVideoIds,
     }),
     [
-      session?.patreonTier,
-      session?.patreonStatus,
+      effectiveSession?.patreonTier,
+      effectiveSession?.patreonStatus,
       isAdmin,
       state.purchasedVideoIds,
     ],

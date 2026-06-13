@@ -30,10 +30,10 @@ interface VideoPlaylistSectionProps {
 
 export function VideoPlaylistSection({ type }: VideoPlaylistSectionProps) {
   const navigate = useNavigate();
-  const { state, session } = useAppStore();
+  const { state, effectiveSession, isEffectiveAdmin } = useAppStore();
   const videoPlayer = useVideoPlayer();
   const playlistPlayback = useVideoPlaylistPlayback();
-  const isAdmin = session?.role === 'admin';
+  const isAdmin = isEffectiveAdmin;
 
   const [library, setLibrary] = useState<VideoPlaylistLibrary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,14 +71,14 @@ export function VideoPlaylistSection({ type }: VideoPlaylistSectionProps) {
 
   const videoAccessCtx: VideoAccessContext = useMemo(
     () => ({
-      patreonTier: session?.patreonTier,
-      patreonStatus: session?.patreonStatus,
+      patreonTier: effectiveSession?.patreonTier,
+      patreonStatus: effectiveSession?.patreonStatus,
       isAdmin,
       purchasedVideoIds: state.purchasedVideoIds,
     }),
     [
-      session?.patreonTier,
-      session?.patreonStatus,
+      effectiveSession?.patreonTier,
+      effectiveSession?.patreonStatus,
       isAdmin,
       state.purchasedVideoIds,
     ],

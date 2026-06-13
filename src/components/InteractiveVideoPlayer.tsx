@@ -148,10 +148,10 @@ export function InteractiveVideoPlayer({
   playlistProgress,
   onExitPlaylist,
 }: InteractiveVideoPlayerProps) {
-  const { session } = useAppStore();
+  const { session, isEffectiveAdmin } = useAppStore();
   const audio = useOptionalAudioPlayer();
   const globalVideo = useOptionalVideoPlayer();
-  const isAdmin = session?.role === 'admin';
+  const isAdmin = isEffectiveAdmin;
 
   const onSessionCompleteRef = useRef(onSessionComplete);
   useEffect(() => {

@@ -189,7 +189,7 @@ function AdminConversationList({
 }
 
 export function CommunityChatBubble() {
-  const { session } = useAppStore();
+  const { session, effectiveSession, adminUserPreview } = useAppStore();
   const { pathname } = useLocation();
   const audio = useOptionalAudioPlayer();
   const [open, setOpen] = useState(false);
@@ -203,7 +203,7 @@ export function CommunityChatBubble() {
   const hasNav = !pathname.startsWith('/admin');
   const hasPlayer = hasNav && audio?.currentTrack != null;
 
-  const isAdmin = isCommunityAdmin(session);
+  const isAdmin = isCommunityAdmin(session, adminUserPreview);
   const activeChannel = isChannelView(activeView) ? activeView : 'global';
   const isAdminContact = activeView === 'admin-contact';
   const isAdminThread = isAdmin && isAdminContact && adminThreadUserId != null;
@@ -211,8 +211,8 @@ export function CommunityChatBubble() {
 
   const canAccess = canAccessCommunityChannel(
     activeChannel,
-    session?.patreonTier,
-    session?.patreonStatus,
+    effectiveSession?.patreonTier,
+    effectiveSession?.patreonStatus,
     isAdmin,
   );
   const canPost =
@@ -449,8 +449,8 @@ export function CommunityChatBubble() {
               {COMMUNITY_CHANNELS.map((ch) => {
                 const accessible = canAccessCommunityChannel(
                   ch.id,
-                  session?.patreonTier,
-                  session?.patreonStatus,
+                  effectiveSession?.patreonTier,
+                  effectiveSession?.patreonStatus,
                   isAdmin,
                 );
                 const tabUnread = getUnreadCountForChannelTab(

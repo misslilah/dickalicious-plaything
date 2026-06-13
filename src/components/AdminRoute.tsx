@@ -2,7 +2,7 @@ import { Navigate, Outlet } from 'react-router-dom';
 import { useAppStore } from '../hooks/useAppStore';
 
 export function AdminRoute() {
-  const { session, authReady } = useAppStore();
+  const { session, authReady, isEffectiveAdmin } = useAppStore();
 
   if (!authReady) {
     return (
@@ -16,7 +16,7 @@ export function AdminRoute() {
     return <Navigate to="/login" replace />;
   }
 
-  if (session.role !== 'admin') {
+  if (!isEffectiveAdmin) {
     return <Navigate to="/" replace />;
   }
 

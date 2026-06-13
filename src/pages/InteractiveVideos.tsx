@@ -20,19 +20,23 @@ interface InteractiveVideosProps {
 }
 
 export function InteractiveVideos({ embedded = false }: InteractiveVideosProps) {
-  const { session } = useAppStore();
+  const { effectiveSession, isEffectiveAdmin } = useAppStore();
   const [videos, setVideos] = useState<InteractiveVideoSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const videoAccessCtx: VideoAccessContext = useMemo(
     () => ({
-      patreonTier: session?.patreonTier,
-      patreonStatus: session?.patreonStatus,
-      isAdmin: session?.role === 'admin',
+      patreonTier: effectiveSession?.patreonTier,
+      patreonStatus: effectiveSession?.patreonStatus,
+      isAdmin: isEffectiveAdmin,
       purchasedVideoIds: [],
     }),
-    [session?.patreonTier, session?.patreonStatus, session?.role],
+    [
+      effectiveSession?.patreonTier,
+      effectiveSession?.patreonStatus,
+      isEffectiveAdmin,
+    ],
   );
 
   useEffect(() => {

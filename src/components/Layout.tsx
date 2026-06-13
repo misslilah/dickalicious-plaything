@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { AudioPlayerBar } from './AudioPlayerBar';
 import { AudioPlaylistPreviewModal } from './AudioPlaylistPreviewModal';
 import { ThroneGiftToast } from './ThroneGiftToast';
@@ -20,13 +20,13 @@ const baseNavItems = [
 const adminNavItem = { to: '/admin', label: 'Admin', icon: '🛠️' };
 
 export function Layout() {
-  const { session } = useAppStore();
+  const { session, isEffectiveAdmin, adminUserPreview } = useAppStore();
   const { toast, dismissToast } = useThroneGiftRealtime(session?.userId);
   const { currentTrack } = useAudioPlayer();
   const { pathname } = useLocation();
   const isAdminRoute = pathname.startsWith('/admin');
   const navItems =
-    session?.role === 'admin'
+    isEffectiveAdmin
       ? [...baseNavItems, adminNavItem]
       : baseNavItems;
   const audioBarActive = currentTrack != null;
@@ -50,6 +50,12 @@ export function Layout() {
       </header>
       <main className="app-main">
         <div className="app-content">
+          {adminUserPreview && (
+            <p className="notice user-preview-banner" role="status">
+              User preview mode —{' '}
+              <Link to="/settings">turn off in Settings</Link>
+            </p>
+          )}
           <Outlet />
         </div>
       </main>

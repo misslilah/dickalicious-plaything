@@ -28,7 +28,7 @@ export function TaskLinkedMediaModal({
   open,
   onClose,
 }: TaskLinkedMediaModalProps) {
-  const { state, session } = useAppStore();
+  const { state, effectiveSession, isEffectiveAdmin } = useAppStore();
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
   const playbackStartedRef = useRef(false);
   const completedRef = useRef(false);
@@ -57,12 +57,12 @@ export function TaskLinkedMediaModal({
 
   const videoAccessCtx = useMemo(
     () => ({
-      patreonTier: session?.patreonTier,
-      patreonStatus: session?.patreonStatus,
-      isAdmin: session?.role === 'admin',
+      patreonTier: effectiveSession?.patreonTier,
+      patreonStatus: effectiveSession?.patreonStatus,
+      isAdmin: isEffectiveAdmin,
       purchasedVideoIds: state.purchasedVideoIds ?? [],
     }),
-    [session, state.purchasedVideoIds],
+    [effectiveSession, isEffectiveAdmin, state.purchasedVideoIds],
   );
 
   const videoLocked =

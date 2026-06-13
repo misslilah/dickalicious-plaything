@@ -65,9 +65,9 @@ interface AudioPlayerContextValue {
 const AudioPlayerContext = createContext<AudioPlayerContextValue | null>(null);
 
 export function AudioPlayerProvider({ children }: { children: ReactNode }) {
-  const { session } = useAppStore();
+  const { session, effectiveSession, isEffectiveAdmin } = useAppStore();
   const userId = session?.userId;
-  const isAdmin = session?.role === 'admin';
+  const isAdmin = isEffectiveAdmin;
 
   const [playlists, setPlaylists] = useState<AudioPlaylist[]>([]);
   const [allItems, setAllItems] = useState<AudioPlaylistItem[]>([]);
@@ -203,8 +203,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         playlists,
         trackIdsMap,
         progress.completedTrackIds,
-        session?.patreonTier,
-        session?.patreonStatus,
+        effectiveSession?.patreonTier,
+        effectiveSession?.patreonStatus,
         isAdmin,
       );
     },
@@ -212,8 +212,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       playlists,
       trackIdsMap,
       progress.completedTrackIds,
-      session?.patreonTier,
-      session?.patreonStatus,
+      effectiveSession?.patreonTier,
+      effectiveSession?.patreonStatus,
       isAdmin,
     ],
   );
@@ -235,8 +235,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         playlists,
         trackIdsMap,
         progress.completedTrackIds,
-        session?.patreonTier,
-        session?.patreonStatus,
+        effectiveSession?.patreonTier,
+        effectiveSession?.patreonStatus,
         isAdmin,
       );
     },
@@ -244,8 +244,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       playlists,
       trackIdsMap,
       progress.completedTrackIds,
-      session?.patreonTier,
-      session?.patreonStatus,
+      effectiveSession?.patreonTier,
+      effectiveSession?.patreonStatus,
       isAdmin,
     ],
   );

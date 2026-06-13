@@ -139,25 +139,25 @@ function VideoListItem({
 
 export function VideoCategoryDetail() {
   const { categoryId } = useParams<{ categoryId: string }>();
-  const { state, session } = useAppStore();
+  const { state, effectiveSession, isEffectiveAdmin } = useAppStore();
   const globalVideo = useOptionalVideoPlayer();
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode | null>(null);
   const [forcedSessionActive, setForcedSessionActive] = useState(false);
 
   const category = state.videoCategories.find((c) => c.id === categoryId);
-  const isAdmin = session?.role === 'admin';
+  const isAdmin = isEffectiveAdmin;
 
   const videoAccessCtx: VideoAccessContext = useMemo(
     () => ({
-      patreonTier: session?.patreonTier,
-      patreonStatus: session?.patreonStatus,
+      patreonTier: effectiveSession?.patreonTier,
+      patreonStatus: effectiveSession?.patreonStatus,
       isAdmin,
       purchasedVideoIds: state.purchasedVideoIds,
     }),
     [
-      session?.patreonTier,
-      session?.patreonStatus,
+      effectiveSession?.patreonTier,
+      effectiveSession?.patreonStatus,
       isAdmin,
       state.purchasedVideoIds,
     ],

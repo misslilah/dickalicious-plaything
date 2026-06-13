@@ -24,6 +24,7 @@ interface TaskListRowProps {
   lockReason?: string | null;
   dailyLimitBlocked?: boolean;
   dailyLimitMessage?: string;
+  onOpen?: () => void;
 }
 
 export function TaskListRow({
@@ -35,6 +36,7 @@ export function TaskListRow({
   lockReason,
   dailyLimitBlocked = false,
   dailyLimitMessage,
+  onOpen,
 }: TaskListRowProps) {
   const to = `/category/${categoryId}/task/${task.id}`;
   const isBlocked = locked || dailyLimitBlocked;
@@ -65,6 +67,19 @@ export function TaskListRow({
       >
         <TaskListRowContent task={task} status={status} />
       </div>
+    );
+  }
+
+  if (onOpen) {
+    return (
+      <button
+        type="button"
+        className={`task-list-row task-list-row--${status}`}
+        onClick={onOpen}
+        aria-label={`${task.title} — ${STATUS_LABELS[status]}`}
+      >
+        <TaskListRowContent task={task} status={status} />
+      </button>
     );
   }
 

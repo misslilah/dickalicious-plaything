@@ -70,7 +70,10 @@ export function ensureDailyPlan(
 
   const yesterday = Object.keys(state.dailyPlans).sort().reverse()[0];
   const prevPlan = yesterday ? state.dailyPlans[yesterday] : undefined;
-  const extraIds = prevPlan?.extraTaskIds ?? [];
+  const extraIds = (prevPlan?.extraTaskIds ?? []).filter((id) => {
+    const task = state.tasks.find((t) => t.id === id);
+    return task != null && isHomePlanTask(task, userId);
+  });
 
   const taskIds = [
     ...eligible.map((t) => t.id),
@@ -115,10 +118,44 @@ export function completionStats(plan: DailyPlan | undefined): {
   };
 }
 
-/** All daily plan tasks completed (replaces legacy quota for streak). */
-export function dayFullyCompleted(plan: DailyPlan): boolean {
-  if (plan.tasks.length === 0) return true;
-  return plan.tasks.every((t) => t.completed);
+/** Plan entries that belong on Home (daily + personal), excluding category library tasks. */
+export function filterHomePlanEntries(
+  state: AppState,
+  entries: DailyPlan['tasks'],
+  userId: string | null = null,
+): DailyPlan['tasks'] {
+  return entries.filter((entry) => {
+    const task = state.tasks.find((t) => t.id === entry.taskId);
+    return task != null && isHomePlanTask(task, userId);
+  });
+}
+
+export function homePlanCompletionStats(
+  state: AppState,
+  plan: DailyPlan | undefined,
+  userId: string | null = null,
+): { total: number; completed: number; percent: number } {
+  if (!plan) return { total: 0, completed: 0, percent: 0 };
+  const entries = filterHomePlanEntries(state, plan.tasks, userId);
+  if (entries.length === 0) return { total: 0, completed: 0, percent: 0 };
+  const completed = entries.filter((t) => t.completed).length;
+  const total = entries.length;
+  return {
+    total,
+    completed,
+    percent: Math.round((completed / total) * 100),
+  };
+}
+
+/** All home daily plan tasks completed (replaces legacy quota for streak). */
+export function dayFullyCompleted(
+  plan: DailyPlan,
+  state: AppState,
+  userId: string | null = null,
+): boolean {
+  const entries = filterHomePlanEntries(state, plan.tasks, userId);
+  if (entries.length === 0) return true;
+  return entries.every((t) => t.completed);
 }
 
 function normalizeStartedIds(plan: DailyPlan): string[] {
@@ -393,7 +430,7 @@ export function closeDay(
 
   updated = applyMalus(updated, malusGain);
 
-  if (malusGain === 0 && dayFullyCompleted(plan)) {
+  if (malusGain === 0 && dayFullyCompleted(plan, next, userId)) {
     updated = applyStreakSuccess(updated, date);
   } else if (malusGain > 0) {
     updated = {
@@ -565,7 +602,7 @@ function closeDayForDate(state: AppState, date: string): AppState {
 
   updated = applyMalus(updated, malusGain);
 
-  if (malusGain === 0 && dayFullyCompleted(plan)) {
+  if (malusGain === 0 && dayFullyCompleted(plan, state, null)) {
     updated = applyStreakSuccess(updated, date);
   } else if (malusGain > 0) {
     updated = {

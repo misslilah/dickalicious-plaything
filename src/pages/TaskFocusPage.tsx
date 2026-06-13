@@ -35,9 +35,9 @@ export function TaskFocusPage() {
     taskId: string;
   }>();
   const navigate = useNavigate();
-  const { state, session, markTaskStarted, completeTask } = useAppStore();
+  const { state, session, markTaskStarted, completeTask, isEffectiveAdmin } = useAppStore();
 
-  const isAdmin = session?.role === 'admin';
+  const isAdmin = isEffectiveAdmin;
   const category = state.categories.find((c) => c.id === categoryId);
   const task = state.tasks.find((t) => t.id === taskId);
   const isMember =

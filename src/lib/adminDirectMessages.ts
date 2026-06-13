@@ -36,7 +36,9 @@ type AdminDirectMessageRow = {
 
 export function isCommunityAdmin(
   session: Pick<Session, 'role' | 'username'> | null | undefined,
+  adminUserPreview = false,
 ): boolean {
+  if (adminUserPreview) return false;
   if (!session) return false;
   if (session.role === 'admin') return true;
   return session.username.trim().toLowerCase() === 'dickalicious';

@@ -11,28 +11,29 @@ import {
 } from '../lib/videoAccess';
 import {
   fetchUserVideoPlaylists,
+  itemsForVideoPlaylist,
   videoIdsForPlaylist,
 } from '../lib/videoPlaylistDb';
 
 export function VideoPlaylistPlay() {
   const { playlistId } = useParams<{ playlistId: string }>();
   const navigate = useNavigate();
-  const { state, session } = useAppStore();
+  const { state, effectiveSession, isEffectiveAdmin } = useAppStore();
   const videoPlayer = useVideoPlayer();
   const playlistCtx = useVideoPlaylistPlayback();
-  const isAdmin = session?.role === 'admin';
+  const isAdmin = isEffectiveAdmin;
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const videoAccessCtx: VideoAccessContext = useMemo(
     () => ({
-      patreonTier: session?.patreonTier,
-      patreonStatus: session?.patreonStatus,
+      patreonTier: effectiveSession?.patreonTier,
+      patreonStatus: effectiveSession?.patreonStatus,
       isAdmin,
       purchasedVideoIds: state.purchasedVideoIds,
     }),
     [
-      session?.patreonTier,
-      session?.patreonStatus,
+      effectiveSession?.patreonTier,
+      effectiveSession?.patreonStatus,
       isAdmin,
       state.purchasedVideoIds,
     ],

@@ -41,7 +41,7 @@ const GAME_TYPE_BY_ACTIVE: Record<NonNullable<ActiveGame>['type'], DailyGameType
 };
 
 export function MiniGames() {
-  const { session } = useAppStore();
+  const { session, isEffectiveAdmin, adminUserPreview } = useAppStore();
   const [flashGames, setFlashGames] = useState<FlashWordGameSummary[]>([]);
   const [instinctGames, setInstinctGames] = useState<FollowInstinctGameSummary[]>([]);
   const [puzzleGames, setPuzzleGames] = useState<PuzzleGameSummary[]>([]);
@@ -328,8 +328,8 @@ export function MiniGames() {
                 gameType="flash_cards"
                 gameId={game.id}
                 title={game.title || 'Focus Training'}
-                userId={session?.userId ?? null}
-                isAdmin={session?.role === 'admin'}
+                userId={adminUserPreview ? null : (session?.userId ?? null)}
+                isAdmin={isEffectiveAdmin}
                 refreshKey={leaderboardRefresh}
               />
             ))}
@@ -339,8 +339,8 @@ export function MiniGames() {
                 gameType="follow_instinct"
                 gameId={game.id}
                 title={game.title || 'Follow your instinct'}
-                userId={session?.userId ?? null}
-                isAdmin={session?.role === 'admin'}
+                userId={adminUserPreview ? null : (session?.userId ?? null)}
+                isAdmin={isEffectiveAdmin}
                 refreshKey={leaderboardRefresh}
               />
             ))}

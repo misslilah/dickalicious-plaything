@@ -30,8 +30,8 @@ export function VideoPlaylistManager({
   onClose,
   onSaved,
 }: VideoPlaylistManagerProps) {
-  const { state, session } = useAppStore();
-  const isAdmin = session?.role === 'admin';
+  const { state, effectiveSession, isEffectiveAdmin } = useAppStore();
+  const isAdmin = isEffectiveAdmin;
   const [title, setTitle] = useState(playlist?.title ?? '');
   const [titleTouched, setTitleTouched] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>(initialVideoIds);
@@ -40,14 +40,14 @@ export function VideoPlaylistManager({
 
   const videoAccessCtx: VideoAccessContext = useMemo(
     () => ({
-      patreonTier: session?.patreonTier,
-      patreonStatus: session?.patreonStatus,
+      patreonTier: effectiveSession?.patreonTier,
+      patreonStatus: effectiveSession?.patreonStatus,
       isAdmin,
       purchasedVideoIds: state.purchasedVideoIds,
     }),
     [
-      session?.patreonTier,
-      session?.patreonStatus,
+      effectiveSession?.patreonTier,
+      effectiveSession?.patreonStatus,
       isAdmin,
       state.purchasedVideoIds,
     ],

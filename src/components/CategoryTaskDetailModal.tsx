@@ -1,0 +1,190 @@
+import { useCallback, useEffect } from 'react';
+import { TaskCompletionGate } from './TaskCompletionGate';
+import { useAppStore } from '../hooks/useAppStore';
+import { useTaskCompletion } from '../hooks/useTaskCompletion';
+import { isCategoryImagePreview } from '../lib/categoryImage';
+import {
+  getCategoryTaskBlockReason,
+  isCategoryTaskAvailable,
+} from '../lib/categoryProgression';
+import { getTaskPlanEntry } from '../lib/gameLogic';
+import type { Category, Task } from '../types';
+
+interface CategoryTaskDetailModalProps {
+  open: boolean;
+  task: Task;
+  category: Category;
+  categoryId: string;
+  isAdmin: boolean;
+  isMember: boolean;
+  onClose: () => void;
+}
+
+export function CategoryTaskDetailModal({
+  open,
+  task,
+  category,
+  categoryId,
+  isAdmin,
+  isMember,
+  onClose,
+}: CategoryTaskDetailModalProps) {
+  const { state, markTaskStarted, completeTask } = useAppStore();
+
+  const planEntry = getTaskPlanEntry(state, task.id);
+  const completed = planEntry?.completed ?? false;
+
+  const { phraseChallengeFailed } = useTaskCompletion(task, completed);
+
+  const shouldConfirmClose =
+    open && isMember && !completed && !phraseChallengeFailed;
+
+  useEffect(() => {
+    if (!open || !isMember || completed) return;
+    markTaskStarted(task.id);
+  }, [open, task.id, isMember, completed, markTaskStarted]);
+
+  useEffect(() => {
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  const requestClose = useCallback(() => {
+    if (shouldConfirmClose) {
+      const leave = window.confirm(
+        'This task is in progress. Close anyway? Your timer may reset.',
+      );
+      if (!leave) return;
+    }
+    onClose();
+  }, [shouldConfirmClose, onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') requestClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, requestClose]);
+
+  const handleFinished = useCallback(async () => {
+    const result = await completeTask(task.id);
+    if (!result.ok) return result;
+    onClose();
+    return { ok: true as const };
+  }, [task.id, completeTask, onClose]);
+
+  if (!open) return null;
+
+  const blocked =
+    !isAdmin &&
+    !isCategoryTaskAvailable(state, task, categoryId) &&
+    !completed;
+
+  const imageUrl =
+    category.imageUrl && isCategoryImagePreview(category.imageUrl)
+      ? category.imageUrl
+      : category.imageUrl?.startsWith('http')
+        ? category.imageUrl
+        : null;
+
+  return (
+    <div
+      className="category-task-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="category-task-modal-title"
+    >
+      <button
+        type="button"
+        className="category-task-modal__backdrop"
+        aria-label="Close task"
+        onClick={requestClose}
+      />
+      <div className="category-task-modal__panel">
+        <header className="category-task-modal__header">
+          <div className="category-task-modal__heading">
+            <p className="muted category-task-modal__category">
+              {category.icon} {category.name}
+            </p>
+            <h2 id="category-task-modal-title">{task.title}</h2>
+            {task.isExamTask && (
+              <span className="tag tag--warn">Exam</span>
+            )}
+          </div>
+          <button
+            type="button"
+            className="btn btn--ghost btn--small category-task-modal__close"
+            onClick={requestClose}
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </header>
+
+        <div className="category-task-modal__body">
+          {blocked ? (
+            <p className="login-error" role="alert">
+              {getCategoryTaskBlockReason(state, task, categoryId)}
+            </p>
+          ) : (
+            <div
+              className={`category-task-modal__layout${completed ? ' category-task-modal__layout--completed' : ''}`}
+            >
+              <div className="category-task-modal__info">
+                <div className="category-task-modal__media">
+                  {imageUrl ? (
+                    <img
+                      src={imageUrl}
+                      alt=""
+                      className="category-task-modal__image"
+                    />
+                  ) : (
+                    <div
+                      className="category-task-modal__placeholder"
+                      style={{ background: `${category.color}22` }}
+                    >
+                      <span className="category-task-modal__icon">{category.icon}</span>
+                    </div>
+                  )}
+                </div>
+
+                {task.description && (
+                  <p className="category-task-modal__desc">{task.description}</p>
+                )}
+
+                <div className="category-task-modal__rewards muted">
+                  +{task.xpReward} XP
+                  {(task.pointsReward ?? 0) > 0 && ` · +${task.pointsReward} pts`}
+                </div>
+
+                {completed && (
+                  <p className="notice category-task-modal__done">Task completed.</p>
+                )}
+              </div>
+
+              {!completed && (
+                <div className="category-task-modal__actions">
+                  <TaskCompletionGate
+                    task={task}
+                    completed={completed}
+                    variant="focus"
+                    onStart={() => markTaskStarted(task.id)}
+                    onComplete={handleFinished}
+                  >
+                    {null}
+                  </TaskCompletionGate>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

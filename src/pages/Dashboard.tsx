@@ -27,7 +27,7 @@ import {
 } from '../lib/categoryProgression';
 import { formatLevelDisplay } from '../lib/levels';
 import { clearLockCard, createLockCard } from '../lib/lockCardDb';
-import { completionStats, getTodayPlan } from '../lib/gameLogic';
+import { getTodayPlan, homePlanCompletionStats } from '../lib/gameLogic';
 
 type ComposeTarget =
   | { kind: 'all' }
@@ -36,8 +36,8 @@ type ComposeTarget =
 type LockTarget = { userId: string; username: string };
 
 export function Dashboard() {
-  const { state, session, joinCategory } = useAppStore();
-  const isAdmin = session?.role === 'admin';
+  const { state, session, joinCategory, isEffectiveAdmin } = useAppStore();
+  const isAdmin = isEffectiveAdmin;
   const sendAdminBroadcast = useSendAdminBroadcast(
     session?.userId,
     session?.username,
@@ -62,7 +62,7 @@ export function Dashboard() {
   const [joinError, setJoinError] = useState('');
   const { progress } = state;
   const plan = getTodayPlan(state);
-  const stats = completionStats(plan);
+  const stats = homePlanCompletionStats(state, plan, session?.userId ?? null);
   const malus = state.progress.malusPoints;
 
   const taskCountByCategory = (categoryId: string) =>

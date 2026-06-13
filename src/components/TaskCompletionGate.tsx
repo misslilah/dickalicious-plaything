@@ -42,7 +42,7 @@ export function TaskCompletionGate({
     applyTaskMalus,
     recordBadgeTaskTime,
     dailyTaskCompletionStatus,
-    session,
+    isEffectiveAdmin,
   } = useAppStore();
   const [showPhraseModal, setShowPhraseModal] = useState(false);
   const [showMediaModal, setShowMediaModal] = useState(false);
@@ -50,7 +50,7 @@ export function TaskCompletionGate({
   const [mediaFailNotice, setMediaFailNotice] = useState<string | null>(null);
   const [completionError, setCompletionError] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
-  const isAdmin = session?.role === 'admin';
+  const isAdmin = isEffectiveAdmin;
   const enforceDailyLimit = countsTowardDailyCompletionLimit(task);
   const atDailyLimit =
     enforceDailyLimit &&

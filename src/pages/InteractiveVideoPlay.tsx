@@ -49,7 +49,7 @@ export function InteractiveVideoPlay() {
   const audio = useOptionalAudioPlayer();
   const globalVideo = useOptionalVideoPlayer();
   const playlistCtx = useVideoPlaylistPlayback();
-  const { session } = useAppStore();
+  const { effectiveSession, isEffectiveAdmin } = useAppStore();
   const navigate = useNavigate();
   const { videoId } = useParams<{ videoId: string }>();
   const [searchParams] = useSearchParams();
@@ -61,12 +61,16 @@ export function InteractiveVideoPlay() {
 
   const videoAccessCtx: VideoAccessContext = useMemo(
     () => ({
-      patreonTier: session?.patreonTier,
-      patreonStatus: session?.patreonStatus,
-      isAdmin: session?.role === 'admin',
+      patreonTier: effectiveSession?.patreonTier,
+      patreonStatus: effectiveSession?.patreonStatus,
+      isAdmin: isEffectiveAdmin,
       purchasedVideoIds: [],
     }),
-    [session?.patreonTier, session?.patreonStatus, session?.role],
+    [
+      effectiveSession?.patreonTier,
+      effectiveSession?.patreonStatus,
+      isEffectiveAdmin,
+    ],
   );
 
   useEffect(() => {
