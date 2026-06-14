@@ -9,3 +9,6 @@ verify_jwt = false
 
 [functions.patreon-webhook]
 verify_jwt = false
+
+[functions.patreon-sync-members]
+verify_jwt = true

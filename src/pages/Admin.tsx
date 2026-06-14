@@ -34,6 +34,14 @@ import {
 } from '../lib/badgeImage';
 import { formatBadgeRequirementSummary } from '../lib/badgeRequirementFormat';
 import {
+  formatPatreonLastSynced,
+  formatPatreonSyncSummary,
+  patreonStatusLabel,
+  patreonSyncStatusMessage,
+  probePatreonSync,
+  syncPatreonMembers,
+} from '../lib/patreonSync';
+import {
   ADMIN_LIST_USERS_MIGRATION_HINT,
   ADMIN_USER_TIER_FILTER_OPTIONS,
   countAdminProfilesByTier,
@@ -65,7 +73,12 @@ import {
 } from '../lib/videoStorage';
 import { CategoryImagePicker } from '../components/CategoryImagePicker';
 import { useAppStore } from '../hooks/useAppStore';
-import { CATEGORY_GROUP_LABELS, CATEGORY_GROUP_ORDER } from '../lib/categoryProgression';
+import {
+  CATEGORY_GROUP_LABELS,
+  CATEGORY_GROUP_ORDER,
+  getPrerequisiteTaskLabel,
+  getPrerequisiteTaskOptions,
+} from '../lib/categoryProgression';
 import { getStageLabel, USER_STAGE_OPTIONS, type TaskUserStage } from '../lib/levels';
 import { TASK_SCOPE_LABELS, TASK_SCOPE_OPTIONS } from '../lib/taskScope';
 import {
@@ -333,6 +346,9 @@ function AdminLibraryItem({
   onMoveDown,
   moveUpDisabled,
   moveDownDisabled,
+  onRefresh,
+  refreshDisabled,
+  refreshLabel = 'Refresh',
 }: {
   selected?: boolean;
   title: string;
@@ -345,6 +361,9 @@ function AdminLibraryItem({
   onMoveDown?: () => void;
   moveUpDisabled?: boolean;
   moveDownDisabled?: boolean;
+  onRefresh?: () => void;
+  refreshDisabled?: boolean;
+  refreshLabel?: string;
 }) {
   const main = (
     <>
@@ -404,6 +423,18 @@ function AdminLibraryItem({
             onClick={onEdit}
           >
             Edit
+          </button>
+        )}
+        {onRefresh && (
+          <button
+            type="button"
+            className="btn btn--ghost btn--small"
+            onClick={onRefresh}
+            disabled={refreshDisabled}
+            aria-label={refreshLabel}
+            title={refreshLabel}
+          >
+            ↻
           </button>
         )}
         <button
@@ -955,6 +986,9 @@ function emptyTaskDraft(categoryId: string): Task {
     pointsReward: 0,
     frequency: 'daily',
     malusPointsOnFail: 0,
+    sortOrder: 0,
+    prerequisiteTaskId: null,
+    isExamTask: false,
   };
 }
 
@@ -1029,6 +1063,22 @@ function TaskAdmin() {
     taskScope === 'category'
       ? draft.categoryId || state.categories[0]?.id || ''
       : null;
+
+  const prerequisiteOptions = useMemo(() => {
+    if (taskScope !== 'category' || !resolvedCategoryId) return [];
+    return getPrerequisiteTaskOptions(
+      state.tasks,
+      resolvedCategoryId,
+      draft.id,
+      draft.isExamTask ?? false,
+    );
+  }, [
+    state.tasks,
+    taskScope,
+    resolvedCategoryId,
+    draft.id,
+    draft.isExamTask,
+  ]);
 
   const validate = () => {
     const next: Record<string, string> = {};
@@ -1129,7 +1179,7 @@ function TaskAdmin() {
               key={t.id}
               selected={draft.id === t.id}
               title={t.title}
-              meta={`${TASK_SCOPE_LABELS[t.taskScope ?? 'category']}${(t.taskScope ?? 'category') === 'category' ? ` · ${categoryName(t.categoryId)}` : ''}${(t.taskScope ?? 'category') === 'custom' ? ` · ${profileName(t.assignedUserId)}` : ''} · ${getStageLabel(t.userStage ?? 'any')} · ${t.xpReward} XP · ${t.pointsReward ?? 0} pts · malus ${t.malusPointsOnFail ?? 0} · ${t.frequency}${t.timerSeconds ? ` · timer ${t.timerSeconds}s` : ''}${t.durationSeconds ? ` · duration ${t.durationSeconds}s` : ''}${t.openUrl ? ' · URL' : ''}${t.requiredPhrase ? ` · phrase${(t.requiredPhraseRepeatCount ?? 1) > 1 ? ` ×${t.requiredPhraseRepeatCount}` : ''}` : ''}${(t.linkedMediaType ?? 'none') !== 'none' ? ` · ${t.linkedMediaType}` : ''}`}
+              meta={`${TASK_SCOPE_LABELS[t.taskScope ?? 'category']}${(t.taskScope ?? 'category') === 'category' ? ` · ${categoryName(t.categoryId)}` : ''}${(t.taskScope ?? 'category') === 'custom' ? ` · ${profileName(t.assignedUserId)}` : ''} · ${getStageLabel(t.userStage ?? 'any')} · ${t.xpReward} XP · ${t.pointsReward ?? 0} pts · malus ${t.malusPointsOnFail ?? 0} · ${t.frequency}${t.isExamTask ? ' · exam' : ''}${getPrerequisiteTaskLabel(t, state.tasks) ? ` · after "${getPrerequisiteTaskLabel(t, state.tasks)}"` : ''}${(t.sortOrder ?? 0) > 0 ? ` · order ${t.sortOrder}` : ''}${t.timerSeconds ? ` · timer ${t.timerSeconds}s` : ''}${t.durationSeconds ? ` · duration ${t.durationSeconds}s` : ''}${t.openUrl ? ' · URL' : ''}${t.requiredPhrase ? ` · phrase${(t.requiredPhraseRepeatCount ?? 1) > 1 ? ` ×${t.requiredPhraseRepeatCount}` : ''}` : ''}${(t.linkedMediaType ?? 'none') !== 'none' ? ` · ${t.linkedMediaType}` : ''}`}
               onEdit={() => {
                 setDraft(t);
                 setErrors({});
@@ -1167,6 +1217,10 @@ function TaskAdmin() {
                     : null,
                 assignedUserId:
                   nextScope === 'custom' ? draft.assignedUserId ?? null : null,
+                prerequisiteTaskId:
+                  nextScope === 'category' ? draft.prerequisiteTaskId : null,
+                isExamTask: nextScope === 'category' ? draft.isExamTask : false,
+                sortOrder: nextScope === 'category' ? draft.sortOrder : 0,
               });
               setErrors({});
             }}
@@ -1210,7 +1264,20 @@ function TaskAdmin() {
                 value={resolvedCategoryId ?? ''}
                 disabled={state.categories.length === 0}
                 onChange={(categoryId) => {
-                  setDraft({ ...draft, categoryId });
+                  const prereqValid =
+                    !draft.prerequisiteTaskId ||
+                    state.tasks.some(
+                      (t) =>
+                        t.id === draft.prerequisiteTaskId &&
+                        t.categoryId === categoryId,
+                    );
+                  setDraft({
+                    ...draft,
+                    categoryId,
+                    prerequisiteTaskId: prereqValid
+                      ? draft.prerequisiteTaskId
+                      : null,
+                  });
                   if (errors.categoryId) setErrors((p) => ({ ...p, categoryId: '' }));
                 }}
               />
@@ -1340,6 +1407,85 @@ function TaskAdmin() {
           />
         </Field>
       </FormBlock>
+
+      {taskScope === 'category' && (
+        <FormBlock title="Category order & prerequisites">
+          <p className="muted" style={{ marginTop: 0 }}>
+            Control task order within this category. Players must complete the
+            prerequisite task before this one unlocks. Exam tasks unlock only
+            after all regular tasks in the category are done.
+          </p>
+          <Field
+            label="Sort order"
+            htmlFor="task-sort-order"
+            hint="Lower numbers appear first in the category task list."
+          >
+            <input
+              id="task-sort-order"
+              type="number"
+              min={0}
+              value={draft.sortOrder ?? 0}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  sortOrder: Number(e.target.value) || 0,
+                })
+              }
+            />
+          </Field>
+          <Field
+            label="Must complete first"
+            htmlFor="task-prerequisite"
+            hint={
+              prerequisiteOptions.length === 0
+                ? 'Save other category tasks first, then pick one as a prerequisite.'
+                : 'Another task in the same category that must be finished before this one is available.'
+            }
+          >
+            <select
+              id="task-prerequisite"
+              value={draft.prerequisiteTaskId ?? ''}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  prerequisiteTaskId: e.target.value || null,
+                })
+              }
+            >
+              <option value="">No prerequisite</option>
+              {prerequisiteOptions.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.isExamTask ? '[Exam] ' : ''}
+                  {t.title}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Exam task">
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={draft.isExamTask ?? false}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    isExamTask: e.target.checked,
+                    prerequisiteTaskId: e.target.checked
+                      ? draft.prerequisiteTaskId
+                      : draft.prerequisiteTaskId &&
+                          state.tasks.find(
+                            (t) => t.id === draft.prerequisiteTaskId,
+                          )?.isExamTask
+                        ? null
+                        : draft.prerequisiteTaskId,
+                  })
+                }
+              />
+              <span>Unlock only after all regular category tasks are completed</span>
+            </label>
+          </Field>
+        </FormBlock>
+      )}
 
       <FormBlock title="Completion requirements">
         <p className="muted" style={{ marginTop: 0 }}>
@@ -2507,6 +2653,16 @@ function UserAdmin() {
   const [editTier, setEditTier] = useState<PatreonMemberTier | ''>('');
   const [editStatus, setEditStatus] = useState<PatreonStatus>('none');
   const [tierFilter, setTierFilter] = useState<AdminUserTierFilter>('all');
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncUserId, setSyncUserId] = useState<string | null>(null);
+  const [syncMessage, setSyncMessage] = useState('');
+  const [syncError, setSyncError] = useState('');
+  const [syncConfigHint, setSyncConfigHint] = useState('');
+
+  const linkedProfileCount = useMemo(
+    () => profiles.filter((p) => p.patreonUserId).length,
+    [profiles],
+  );
 
   const tierCounts = useMemo(() => countAdminProfilesByTier(profiles), [profiles]);
   const displayedProfiles = useMemo(
@@ -2541,6 +2697,29 @@ function UserAdmin() {
   useEffect(() => {
     void loadProfiles();
   }, []);
+
+  useEffect(() => {
+    void (async () => {
+      const probe = await probePatreonSync();
+      setSyncConfigHint(patreonSyncStatusMessage(probe) ?? '');
+    })();
+  }, []);
+
+  const runPatreonSync = async (userId?: string | null) => {
+    setSyncError('');
+    setSyncMessage('');
+    setSyncLoading(true);
+    setSyncUserId(userId?.trim() || null);
+    const result = await syncPatreonMembers(userId);
+    setSyncLoading(false);
+    setSyncUserId(null);
+    if (!result.ok) {
+      setSyncError(result.error);
+      return;
+    }
+    setSyncMessage(formatPatreonSyncSummary(result));
+    void loadProfiles();
+  };
 
   const submit = async () => {
     setError('');
@@ -2584,21 +2763,47 @@ function UserAdmin() {
 
   const selectedUser = profiles.find((p) => p.id === selectedUserId) ?? null;
 
+  const formatUserPatreonMeta = (p: AdminProfileRow): string => {
+    const tierPart = p.patreonTier ?? 'none';
+    const statusPart = patreonStatusLabel(p.patreonStatus);
+    const linkedPart = p.patreonUserId ? 'linked' : 'not linked';
+    const syncedPart = formatPatreonLastSynced(p.patreonUpdatedAt);
+    return `Email: ${displayAdminUserEmail(p)} · ${p.role} · Patreon: ${tierPart} (${statusPart}, ${linkedPart}) · Last synced: ${syncedPart}`;
+  };
+
   const list = (
     <AdminListCard
       title="Users & Patreon tiers"
       count={displayedProfiles.length}
-      intro="Assign Sweetie / Princess / Slut manually until OAuth is live. Set status to Active for tier access."
+      intro="Verify linked Patreon accounts against live membership data, or assign tiers manually. Active status is required for tier-gated access."
       search=""
       onSearchChange={() => {}}
       filter={
-        <ChipSelect
-          label="Filter by tier"
-          options={tierFilterOptions}
-          value={tierFilter}
-          onChange={setTierFilter}
-          scroll
-        />
+        <>
+          <ChipSelect
+            label="Filter by tier"
+            options={tierFilterOptions}
+            value={tierFilter}
+            onChange={setTierFilter}
+            scroll
+          />
+          <div className="btn-row" style={{ marginTop: '0.75rem' }}>
+            <button
+              type="button"
+              className="btn btn--secondary"
+              disabled={syncLoading || linkedProfileCount === 0}
+              onClick={() => void runPatreonSync()}
+            >
+              {syncLoading && !syncUserId ? 'Syncing Patreon…' : 'Sync Patreon tiers'}
+            </button>
+            <span className="muted">
+              {linkedProfileCount} linked account{linkedProfileCount === 1 ? '' : 's'}
+            </span>
+          </div>
+          <StatusMessage message={syncConfigHint} />
+          <StatusMessage message={syncError} variant="err" />
+          <StatusMessage message={syncMessage} />
+        </>
       }
     >
       {profilesLoading && <p className="muted">Loading users…</p>}
@@ -2616,12 +2821,19 @@ function UserAdmin() {
             key={p.id}
             selected={selectedUserId === p.id}
             title={p.username}
-            meta={`Email: ${displayAdminUserEmail(p)} · ${p.role} · Patreon: ${p.patreonTier ?? 'none'} (${p.patreonStatus})`}
+            meta={formatUserPatreonMeta(p)}
             onEdit={() => selectUserForTier(p)}
             onDelete={() =>
               window.alert('Remove users from Supabase Dashboard → Authentication.')
             }
             deleteLabel="—"
+            onRefresh={
+              p.patreonUserId
+                ? () => void runPatreonSync(p.id)
+                : undefined
+            }
+            refreshDisabled={syncLoading}
+            refreshLabel={`Verify Patreon for ${p.username}`}
           />
         ))}
       </ul>
@@ -2633,8 +2845,9 @@ function UserAdmin() {
       <section className="card">
         <h3 className="section-title">Manual Patreon tier</h3>
         <p className="muted">
-          Until Patreon OAuth is connected, set each user&apos;s membership tier here.
-          They must sign out and back in (or refresh) to see updated video access.
+          Override a user&apos;s tier manually when Patreon sync is unavailable or for
+          special cases. Use Sync Patreon tiers above to pull live membership status
+          for linked accounts.
         </p>
         <StatusMessage message={tierMessage} />
         {!selectedUserId ? (

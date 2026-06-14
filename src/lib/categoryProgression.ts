@@ -245,6 +245,36 @@ export function isTaskPrerequisiteMet(state: AppState, task: Task): boolean {
   return isCategoryTaskEverCompleted(state, task.prerequisiteTaskId);
 }
 
+/** Same-category tasks eligible as prerequisites (excludes self; regular tasks cannot require exam tasks). */
+export function getPrerequisiteTaskOptions(
+  tasks: Task[],
+  categoryId: string,
+  editingTaskId: string,
+  forExamTask: boolean,
+): Task[] {
+  return tasks
+    .filter(
+      (t) =>
+        t.categoryId === categoryId &&
+        t.id !== editingTaskId &&
+        (forExamTask || !t.isExamTask),
+    )
+    .sort(
+      (a, b) =>
+        (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
+        a.title.localeCompare(b.title),
+    );
+}
+
+export function getPrerequisiteTaskLabel(
+  task: Task,
+  tasks: Task[],
+): string | null {
+  if (!task.prerequisiteTaskId) return null;
+  const prereq = tasks.find((t) => t.id === task.prerequisiteTaskId);
+  return prereq ? prereq.title : null;
+}
+
 export function isExamTaskUnlocked(
   state: AppState,
   task: Task,

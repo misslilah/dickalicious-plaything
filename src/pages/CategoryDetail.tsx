@@ -11,6 +11,8 @@ import {
   getCategoryTaskBlockReason,
   getCategoryUnlockBlockReason,
   getExamCategoryTasks,
+  getPrerequisiteTaskLabel,
+  getPrerequisiteTaskOptions,
   getRegularCategoryTasks,
   isCategoryFullyComplete,
   isCategoryTaskAvailable,
@@ -185,6 +187,19 @@ export function CategoryDetail() {
 
   const taskScope = taskDraft.taskScope ?? 'category';
 
+  const prerequisiteOptions = useMemo(
+    () =>
+      categoryId
+        ? getPrerequisiteTaskOptions(
+            state.tasks,
+            categoryId,
+            taskDraft.id,
+            taskDraft.isExamTask ?? false,
+          )
+        : [],
+    [state.tasks, categoryId, taskDraft.id, taskDraft.isExamTask],
+  );
+
   if (!category) {
     return (
       <div className="page">
@@ -287,7 +302,7 @@ export function CategoryDetail() {
     saveImageUrl(trimmed);
   };
 
-  const submitTask = () => {
+  const submitTask = async () => {
     if (!taskDraft.title.trim()) return;
     const scope = taskDraft.taskScope ?? 'category';
     if (scope === 'category' && !category.id) return;
@@ -302,8 +317,13 @@ export function CategoryDetail() {
       categoryId: scope === 'category' ? category.id : null,
       assignedUserId: scope === 'custom' ? taskDraft.assignedUserId ?? null : null,
     };
-    if (state.tasks.some((t) => t.id === task.id)) updateTask(task);
-    else addTask(task);
+    const result = state.tasks.some((t) => t.id === task.id)
+      ? await updateTask(task)
+      : await addTask(task);
+    if (!result.ok) {
+      setTaskMessage(result.error);
+      return;
+    }
     setTaskDraft({
       id: '',
       title: '',
@@ -603,6 +623,10 @@ export function CategoryDetail() {
                     onClick={() => setTaskDraft(t)}
                   >
                     {getStageLabel(t.userStage ?? 'any')}: {t.title}
+                    {t.isExamTask ? ' [Exam]' : ''}
+                    {getPrerequisiteTaskLabel(t, state.tasks)
+                      ? ` · after "${getPrerequisiteTaskLabel(t, state.tasks)}"`
+                      : ''}
                   </button>
                   <button
                     type="button"
@@ -751,26 +775,27 @@ export function CategoryDetail() {
                   })
                 }
               />
-              <select
-                aria-label="Prerequisite task"
-                value={taskDraft.prerequisiteTaskId ?? ''}
-                onChange={(e) =>
-                  setTaskDraft({
-                    ...taskDraft,
-                    prerequisiteTaskId: e.target.value || null,
-                  })
-                }
-              >
-                <option value="">No prerequisite</option>
-                {categoryTasks
-                  .filter((t) => t.id !== taskDraft.id)
-                  .map((t) => (
+              <label className="form-grid__label form-grid__full">
+                Must complete first
+                <select
+                  aria-label="Prerequisite task"
+                  value={taskDraft.prerequisiteTaskId ?? ''}
+                  onChange={(e) =>
+                    setTaskDraft({
+                      ...taskDraft,
+                      prerequisiteTaskId: e.target.value || null,
+                    })
+                  }
+                >
+                  <option value="">No prerequisite</option>
+                  {prerequisiteOptions.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.isExamTask ? '[Exam] ' : ''}
                       {t.title}
                     </option>
                   ))}
-              </select>
+                </select>
+              </label>
               <label className="form-grid__checkbox">
                 <input
                   type="checkbox"

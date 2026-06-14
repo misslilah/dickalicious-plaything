@@ -21,6 +21,7 @@ export interface AdminProfileRow {
   patreonTier: PatreonMemberTier | null;
   patreonStatus: PatreonStatus;
   patreonUserId: string | null;
+  patreonUpdatedAt: string | null;
 }
 
 type DbProfilePatreon = {
@@ -38,6 +39,7 @@ type DbAdminProfileRow = {
   patreon_user_id?: string | null;
   patreon_tier?: PatreonMemberTier | null;
   patreon_status?: PatreonStatus;
+  patreon_updated_at?: string | null;
 };
 
 type DbAdminListUserRow = {
@@ -48,6 +50,7 @@ type DbAdminListUserRow = {
   patreon_user_id: string | null;
   patreon_tier: PatreonMemberTier | null;
   patreon_status: PatreonStatus;
+  patreon_updated_at?: string | null;
 };
 
 export type FetchAdminProfilesResult =
@@ -128,6 +131,7 @@ function mapAdminProfileRow(row: DbAdminProfileRow): AdminProfileRow {
     patreonUserId: row.patreon_user_id ?? null,
     patreonTier: row.patreon_tier ?? null,
     patreonStatus: row.patreon_status ?? 'none',
+    patreonUpdatedAt: row.patreon_updated_at ?? null,
   };
 }
 
@@ -140,6 +144,7 @@ function mapAdminListUserRow(row: DbAdminListUserRow): AdminProfileRow {
     patreonUserId: row.patreon_user_id ?? null,
     patreonTier: row.patreon_tier ?? null,
     patreonStatus: row.patreon_status ?? 'none',
+    patreonUpdatedAt: row.patreon_updated_at ?? null,
   };
 }
 
@@ -149,7 +154,7 @@ async function fetchAdminProfilesFromTable(): Promise<FetchAdminProfilesResult> 
 
   const withPatreon = await supabase
     .from('profiles')
-    .select('id, username, role, patreon_user_id, patreon_tier, patreon_status')
+    .select('id, username, role, patreon_user_id, patreon_tier, patreon_status, patreon_updated_at')
     .order('username');
 
   let data = withPatreon.data as DbAdminProfileRow[] | null;

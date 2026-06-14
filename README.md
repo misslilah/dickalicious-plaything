@@ -100,6 +100,7 @@ If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the fun
    supabase functions deploy patreon-oauth-callback --no-verify-jwt
    supabase functions deploy patreon-oauth-start --no-verify-jwt
    supabase functions deploy patreon-webhook --no-verify-jwt
+   supabase functions deploy patreon-sync-members
    ```
 
    Config is duplicated on purpose:
@@ -130,6 +131,9 @@ If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the fun
    | `PATREON_CREATOR_CAMPAIGN_ID` | Your campaign ID |
    | `PATREON_REDIRECT_URI` | Optional on hosted Supabase: defaults to `https://<project-ref>.supabase.co/functions/v1/patreon-oauth-callback`. Set explicitly if Patreon app redirect URLs differ. |
    | `PATREON_WEBHOOK_SECRET` | From Patreon webhook settings |
+   | `PATREON_CREATOR_ACCESS_TOKEN` | Creator access token with `campaigns` + `campaigns.members` scopes (for **Admin → Users → Sync Patreon tiers**) |
+   | `PATREON_CREATOR_REFRESH_TOKEN` | Optional alternative to `PATREON_CREATOR_ACCESS_TOKEN`; refreshes via `PATREON_CLIENT_ID` / `PATREON_CLIENT_SECRET` |
+   | `PATREON_TIER_REWARD_IDS` | Optional JSON map, e.g. `{"sweetie":"…","princess":"…","slut":"…"}` — preferred over title matching |
    | `APP_ORIGIN` | e.g. `http://localhost:5173` or your Vercel URL |
 
 5. **Verify**: **Settings** shows admin warnings. Probe:
@@ -146,7 +150,7 @@ If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the fun
 Admins open **Settings → Open admin panel** or `/admin`:
 
 - Categories, tasks, rewards, punishments, video categories, video uploads
-- **Users** — `signUp` via client if enabled in Supabase; otherwise create users in the Dashboard
+- **Users** — create accounts; **Sync Patreon tiers** for linked users (live membership check); assign tier manually when needed
 
 Only users with `profiles.role = 'admin'` can write shared catalog rows (enforced by RLS).
 

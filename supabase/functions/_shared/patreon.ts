@@ -124,6 +124,7 @@ export const PATREON_OAUTH_SCOPES =
   'identity identity[email] identity.memberships';
 
 const PATREON_API_V2 = 'https://www.patreon.com/api/oauth2/v2';
+const PATREON_TOKEN_URL = 'https://www.patreon.com/api/oauth2/token';
 
 /**
  * Patreon v2 /identity query — nested includes per docs.patreon.com.
@@ -982,4 +983,185 @@ export function resolveWebhookProfileUpdate(
   }
 
   return { appTier: null, patreonStatus: 'cancelled' };
+}
+
+/** Creator token scopes for campaign member sync (admin). */
+export const PATREON_CREATOR_SYNC_SCOPES = 'campaigns campaigns.members';
+
+export const PATREON_CAMPAIGN_MEMBER_INCLUDES = 'user,currently_entitled_tiers,campaign';
+
+export type PatreonCampaignMembersPage = {
+  members: PatreonIncludedResource[];
+  included: PatreonIncludedResource[];
+  nextCursor: string | null;
+};
+
+export type PatreonProfileSyncUpdate = {
+  appTier: AppPatreonTier | null;
+  patreonStatus: 'active' | 'cancelled' | 'none';
+};
+
+function extractMemberPatreonUserId(member: PatreonIncludedResource): string | null {
+  const rel = member.relationships?.user as { data?: { id?: string } | null } | undefined;
+  return normalizePatreonId(rel?.data?.id);
+}
+
+/** Resolve tier/status from a campaign member resource (admin sync). */
+export function resolveProfileSyncFromMember(
+  member: PatreonIncludedResource,
+  included: PatreonIncludedResource[],
+): PatreonProfileSyncUpdate {
+  const { appTier, patronStatus } = resolveAppTierFromIncludedMembers(included, {
+    members: [member],
+  });
+  return {
+    appTier,
+    patreonStatus: appTier ? 'active' : patronStatus === 'cancelled' ? 'cancelled' : 'none',
+  };
+}
+
+export function buildCampaignMembersUrl(campaignId: string, cursor?: string | null): string {
+  const params = new URLSearchParams({
+    include: PATREON_CAMPAIGN_MEMBER_INCLUDES,
+    'fields[member]': 'patron_status',
+    'fields[tier]': 'title',
+    'fields[user]': 'email',
+  });
+  if (cursor) params.set('page[cursor]', cursor);
+  return `${PATREON_API_V2}/campaigns/${encodeURIComponent(campaignId)}/members?${params.toString()}`;
+}
+
+export async function fetchCampaignMembersPage(
+  accessToken: string,
+  campaignId: string,
+  cursor?: string | null,
+): Promise<PatreonCampaignMembersPage> {
+  const url = buildCampaignMembersUrl(campaignId, cursor);
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Patreon members fetch failed (${res.status}): ${body.slice(0, 256)}`);
+  }
+
+  const json = await res.json();
+  const members = ((json.data ?? []) as PatreonIncludedResource[]).filter((x) => x.type === 'member');
+  const included = (json.included ?? []) as PatreonIncludedResource[];
+  const nextCursor =
+    typeof json.meta?.pagination?.cursors?.next === 'string'
+      ? json.meta.pagination.cursors.next
+      : null;
+
+  return { members, included, nextCursor };
+}
+
+export async function fetchCampaignMemberByPatreonUserId(
+  accessToken: string,
+  campaignId: string,
+  patreonUserId: string,
+): Promise<{ member: PatreonIncludedResource | null; included: PatreonIncludedResource[] }> {
+  const normalizedUserId = normalizePatreonId(patreonUserId);
+  if (!normalizedUserId) {
+    return { member: null, included: [] };
+  }
+
+  let cursor: string | null = null;
+  do {
+    const page = await fetchCampaignMembersPage(accessToken, campaignId, cursor);
+    const mergedIncluded = mergeIncludedResources(page.included, page.members);
+    for (const member of page.members) {
+      const userId = extractMemberPatreonUserId(member);
+      if (userId === normalizedUserId) {
+        return { member, included: mergedIncluded };
+      }
+    }
+    cursor = page.nextCursor;
+  } while (cursor);
+
+  return { member: null, included: [] };
+}
+
+export async function fetchCampaignMembersByPatreonUserIdMap(
+  accessToken: string,
+  campaignId: string,
+): Promise<Map<string, { member: PatreonIncludedResource; included: PatreonIncludedResource[] }>> {
+  const byUserId = new Map<
+    string,
+    { member: PatreonIncludedResource; included: PatreonIncludedResource[] }
+  >();
+  let cursor: string | null = null;
+
+  do {
+    const page = await fetchCampaignMembersPage(accessToken, campaignId, cursor);
+    const mergedIncluded = mergeIncludedResources(page.included, page.members);
+    for (const member of page.members) {
+      const userId = extractMemberPatreonUserId(member);
+      if (!userId) continue;
+      byUserId.set(userId, { member, included: mergedIncluded });
+    }
+    cursor = page.nextCursor;
+  } while (cursor);
+
+  return byUserId;
+}
+
+export function getPatreonCreatorSyncConfig(): {
+  campaignId: string | null;
+  missingSecrets: string[];
+} {
+  const campaignId = getPatreonCreatorCampaignId();
+  const missingSecrets: string[] = [];
+  if (!campaignId) missingSecrets.push('PATREON_CREATOR_CAMPAIGN_ID');
+
+  const accessToken = Deno.env.get('PATREON_CREATOR_ACCESS_TOKEN')?.trim() ?? '';
+  const refreshToken = Deno.env.get('PATREON_CREATOR_REFRESH_TOKEN')?.trim() ?? '';
+  if (!accessToken && !refreshToken) {
+    missingSecrets.push('PATREON_CREATOR_ACCESS_TOKEN');
+  }
+
+  if (refreshToken) {
+    const { clientId, clientSecret, missingSecrets: oauthMissing } = getPatreonOAuthCallbackConfig();
+    if (!clientId) missingSecrets.push('PATREON_CLIENT_ID');
+    if (!clientSecret) missingSecrets.push('PATREON_CLIENT_SECRET');
+    void oauthMissing;
+  }
+
+  return { campaignId, missingSecrets: [...new Set(missingSecrets)] };
+}
+
+export async function resolveCreatorAccessToken(): Promise<string> {
+  const direct = Deno.env.get('PATREON_CREATOR_ACCESS_TOKEN')?.trim();
+  if (direct) return direct;
+
+  const refreshToken = Deno.env.get('PATREON_CREATOR_REFRESH_TOKEN')?.trim();
+  if (!refreshToken) {
+    throw new Error('PATREON_CREATOR_ACCESS_TOKEN or PATREON_CREATOR_REFRESH_TOKEN is required.');
+  }
+
+  const { clientId, clientSecret, missingSecrets } = getPatreonOAuthCallbackConfig();
+  if (missingSecrets.length > 0) {
+    throw new Error(`Missing Patreon OAuth secrets: ${missingSecrets.join(', ')}`);
+  }
+
+  const tokenRes = await fetch(PATREON_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: clientId,
+      client_secret: clientSecret,
+    }),
+  });
+
+  if (!tokenRes.ok) {
+    const body = await tokenRes.text();
+    throw new Error(`Patreon creator token refresh failed (${tokenRes.status}): ${body.slice(0, 256)}`);
+  }
+
+  const tokenJson = await tokenRes.json();
+  const accessToken = tokenJson.access_token as string | undefined;
+  if (!accessToken) {
+    throw new Error('Patreon creator token refresh returned no access_token.');
+  }
+  return accessToken;
 }
