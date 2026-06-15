@@ -1025,7 +1025,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       addTask: async (task) => {
         const denied = requireAdmin();
         if (denied) return denied;
-        const result = await upsertTask({ ...task, id: '' });
+        const result = await upsertTask(
+          task.id?.trim() ? task : { ...task, id: '' },
+        );
         if (!result.ok) return result;
         setState((s) =>
           ensureDailyPlan(

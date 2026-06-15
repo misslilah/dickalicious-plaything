@@ -9,6 +9,9 @@ export type TaskScope = 'category' | 'daily' | 'custom';
 
 export type TaskLinkedMediaType = 'none' | 'video' | 'audio';
 
+/** Uploaded video or audio file attached to a specific task. */
+export type TaskMediaType = 'video' | 'audio';
+
 export type UserRole = 'user' | 'admin';
 
 export type ContentTier = 'public' | 'sweetie' | 'princess' | 'slut';
@@ -96,6 +99,10 @@ export interface Task {
   linkedAudioItemId?: string;
   /** External audio URL when linkedMediaType is `audio` (alternative to library track). */
   linkedAudioUrl?: string;
+  /** Task-specific uploaded media URL (Supabase task-media bucket). */
+  taskMediaUrl?: string;
+  /** `video` or `audio` for taskMediaUrl. */
+  taskMediaType?: TaskMediaType;
   /** Display order within the category (lower first). */
   sortOrder?: number;
   /** Must complete this task in the same category first. */

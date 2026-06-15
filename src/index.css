@@ -2011,6 +2011,37 @@ a.task-list-row {
   line-height: 1.5;
 }
 
+.category-task-modal__task-media,
+.task-focus__task-media {
+  width: 100%;
+  margin-top: 0.75rem;
+}
+
+.task-media-player,
+.task-media-picker__preview {
+  width: 100%;
+  max-height: 280px;
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--bg-card);
+  border: 1px solid rgba(192, 132, 252, 0.12);
+}
+
+.task-media-picker__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.task-media-picker__hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+}
+
+.task-media-picker--compact .task-media-picker__hint {
+  font-size: 0.8rem;
+}
+
 .category-task-modal__rewards {
   margin: 0;
   font-size: 0.85rem;

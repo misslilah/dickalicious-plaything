@@ -126,6 +126,13 @@ import { MiniGamesAdmin } from '../components/admin/MiniGamesAdmin';
 import { TrainingAdmin } from '../components/admin/TrainingAdmin';
 import { InteractiveVideoAdmin } from '../components/admin/InteractiveVideoAdmin';
 import { UploadProgressBar } from '../components/UploadProgressBar';
+import {
+  emptyTaskMediaPickerValue,
+  TaskMediaPicker,
+  type TaskMediaPickerValue,
+} from '../components/admin/TaskMediaPicker';
+import { resolveTaskMediaForSave } from '../lib/taskMediaAdmin';
+import { taskHasUploadedMedia } from '../lib/taskMediaStorage';
 
 const ADMIN_SECTIONS = [
   {
@@ -1011,6 +1018,10 @@ function TaskAdmin() {
   const [profiles, setProfiles] = useState<AdminProfileRow[]>([]);
   const [audioLibrary, setAudioLibrary] = useState<AudioPlaylistItem[]>([]);
   const [videoMediaSearch, setVideoMediaSearch] = useState('');
+  const [taskMediaPicker, setTaskMediaPicker] = useState<TaskMediaPickerValue>(
+    () => emptyTaskMediaPickerValue(),
+  );
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -1107,20 +1118,40 @@ function TaskAdmin() {
 
   const clearForm = () => {
     setDraft(emptyTaskDraft(state.categories[0]?.id ?? ''));
+    setTaskMediaPicker(emptyTaskMediaPickerValue());
     setErrors({});
   };
 
   const submit = async () => {
     if (!validate()) return;
     setMessage('');
+    setSaving(true);
+
+    const isNew = !draft.id;
+    const taskId = draft.id || crypto.randomUUID();
+    const existingTask = state.tasks.find((t) => t.id === taskId);
+    const mediaResult = await resolveTaskMediaForSave(
+      taskId,
+      existingTask ?? draft,
+      taskMediaPicker,
+    );
+    if (!mediaResult.ok) {
+      setSaving(false);
+      setMessage(mediaResult.error);
+      return;
+    }
+
     const task: Task = {
       ...draft,
-      id: draft.id || '',
+      id: taskId,
       taskScope,
       categoryId: taskScope === 'category' ? resolvedCategoryId : null,
       assignedUserId: taskScope === 'custom' ? draft.assignedUserId ?? null : null,
+      taskMediaUrl: mediaResult.taskMediaUrl,
+      taskMediaType: mediaResult.taskMediaType,
     };
-    const result = draft.id ? await updateTask(task) : await addTask(task);
+    const result = isNew ? await addTask(task) : await updateTask(task);
+    setSaving(false);
     if (!result.ok) {
       setMessage(result.error);
       return;
@@ -1181,9 +1212,10 @@ function TaskAdmin() {
               key={t.id}
               selected={draft.id === t.id}
               title={t.title}
-              meta={`${TASK_SCOPE_LABELS[t.taskScope ?? 'category']}${(t.taskScope ?? 'category') === 'category' ? ` · ${categoryName(t.categoryId)}` : ''}${(t.taskScope ?? 'category') === 'custom' ? ` · ${profileName(t.assignedUserId)}` : ''} · ${getStageLabel(t.userStage ?? 'any')} · ${t.xpReward} XP · ${t.pointsReward ?? 0} pts · malus ${t.malusPointsOnFail ?? 0} · ${t.frequency}${(t.recurrence ?? 'none') !== 'none' ? ` · recur ${t.recurrence}` : ''}${t.isExamTask ? ' · exam' : ''}${getPrerequisiteTaskLabel(t, state.tasks) ? ` · after "${getPrerequisiteTaskLabel(t, state.tasks)}"` : ''}${(t.sortOrder ?? 0) > 0 ? ` · order ${t.sortOrder}` : ''}${t.timerSeconds ? ` · timer ${t.timerSeconds}s` : ''}${t.durationSeconds ? ` · duration ${t.durationSeconds}s` : ''}${t.openUrl ? ' · URL' : ''}${t.requiredPhrase ? ` · phrase${(t.requiredPhraseRepeatCount ?? 1) > 1 ? ` ×${t.requiredPhraseRepeatCount}` : ''}` : ''}${(t.linkedMediaType ?? 'none') !== 'none' ? ` · ${t.linkedMediaType}` : ''}`}
+              meta={`${TASK_SCOPE_LABELS[t.taskScope ?? 'category']}${(t.taskScope ?? 'category') === 'category' ? ` · ${categoryName(t.categoryId)}` : ''}${(t.taskScope ?? 'category') === 'custom' ? ` · ${profileName(t.assignedUserId)}` : ''} · ${getStageLabel(t.userStage ?? 'any')} · ${t.xpReward} XP · ${t.pointsReward ?? 0} pts · malus ${t.malusPointsOnFail ?? 0} · ${t.frequency}${(t.recurrence ?? 'none') !== 'none' ? ` · recur ${t.recurrence}` : ''}${t.isExamTask ? ' · exam' : ''}${getPrerequisiteTaskLabel(t, state.tasks) ? ` · after "${getPrerequisiteTaskLabel(t, state.tasks)}"` : ''}${(t.sortOrder ?? 0) > 0 ? ` · order ${t.sortOrder}` : ''}${t.timerSeconds ? ` · timer ${t.timerSeconds}s` : ''}${t.durationSeconds ? ` · duration ${t.durationSeconds}s` : ''}${t.openUrl ? ' · URL' : ''}${t.requiredPhrase ? ` · phrase${(t.requiredPhraseRepeatCount ?? 1) > 1 ? ` ×${t.requiredPhraseRepeatCount}` : ''}` : ''}${(t.linkedMediaType ?? 'none') !== 'none' ? ` · ${t.linkedMediaType}` : ''}${taskHasUploadedMedia(t) ? ` · task ${t.taskMediaType}` : ''}`}
               onEdit={() => {
                 setDraft(t);
+                setTaskMediaPicker(emptyTaskMediaPickerValue());
                 setErrors({});
               }}
               onDelete={() => remove(t.id)}
@@ -1790,11 +1822,25 @@ function TaskAdmin() {
         )}
       </FormBlock>
 
+      <FormBlock title="Task media">
+        <p className="muted" style={{ marginTop: 0 }}>
+          Optional. Upload a video or audio file shown on the task screen for this task
+          only.
+        </p>
+        <TaskMediaPicker
+          existingUrl={draft.taskMediaUrl}
+          existingType={draft.taskMediaType}
+          value={taskMediaPicker}
+          onChange={setTaskMediaPicker}
+          onError={(message) => setMessage(message)}
+        />
+      </FormBlock>
+
       <FormActions
         editing={!!draft.id}
         entityLabel="task"
         onSubmit={submit}
-        disabled={state.categories.length === 0}
+        disabled={state.categories.length === 0 || saving}
         onClear={() => {
           clearForm();
           setMessage('');

@@ -3,6 +3,11 @@ import { Link, useParams } from 'react-router-dom';
 import { CategoryImagePicker } from '../components/CategoryImagePicker';
 import { CategoryTaskDetailModal } from '../components/CategoryTaskDetailModal';
 import { TaskListRow } from '../components/TaskListRow';
+import {
+  emptyTaskMediaPickerValue,
+  TaskMediaPicker,
+  type TaskMediaPickerValue,
+} from '../components/admin/TaskMediaPicker';
 import { useAppStore } from '../hooks/useAppStore';
 import {
   areRegularCategoryTasksComplete,
@@ -38,6 +43,7 @@ import {
 } from '../lib/recurringCategoryTasks';
 import type { Task, TaskFrequency, TaskRecurrence, TaskScope } from '../types';
 import { TASK_SCOPE_OPTIONS } from '../lib/taskScope';
+import { resolveTaskMediaForSave } from '../lib/taskMediaAdmin';
 import {
   fetchAdminProfiles,
   type AdminProfileRow,
@@ -177,6 +183,10 @@ export function CategoryDetail() {
     recurrence: 'none',
   });
   const [taskMessage, setTaskMessage] = useState('');
+  const [taskMediaPicker, setTaskMediaPicker] = useState<TaskMediaPickerValue>(
+    () => emptyTaskMediaPickerValue(),
+  );
+  const [savingTask, setSavingTask] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   const selectedTask = selectedTaskId
@@ -327,16 +337,34 @@ export function CategoryDetail() {
       setTaskMessage('Select a user for custom tasks.');
       return;
     }
+
+    setSavingTask(true);
+    const taskId = taskDraft.id || newId('task');
+    const existingTask = state.tasks.find((t) => t.id === taskId);
+    const mediaResult = await resolveTaskMediaForSave(
+      taskId,
+      existingTask ?? taskDraft,
+      taskMediaPicker,
+    );
+    if (!mediaResult.ok) {
+      setSavingTask(false);
+      setTaskMessage(mediaResult.error);
+      return;
+    }
+
     const task: Task = {
       ...taskDraft,
-      id: taskDraft.id || newId('task'),
+      id: taskId,
       taskScope: scope,
       categoryId: scope === 'category' ? category.id : null,
       assignedUserId: scope === 'custom' ? taskDraft.assignedUserId ?? null : null,
+      taskMediaUrl: mediaResult.taskMediaUrl,
+      taskMediaType: mediaResult.taskMediaType,
     };
     const result = state.tasks.some((t) => t.id === task.id)
       ? await updateTask(task)
       : await addTask(task);
+    setSavingTask(false);
     if (!result.ok) {
       setTaskMessage(result.error);
       return;
@@ -356,7 +384,9 @@ export function CategoryDetail() {
       sortOrder: 0,
       prerequisiteTaskId: null,
       isExamTask: false,
+      recurrence: 'none',
     });
+    setTaskMediaPicker(emptyTaskMediaPickerValue());
     setTaskMessage('Task saved.');
   };
 
@@ -637,7 +667,10 @@ export function CategoryDetail() {
                   <button
                     type="button"
                     className="edit-list__btn"
-                    onClick={() => setTaskDraft(t)}
+                    onClick={() => {
+                      setTaskDraft(t);
+                      setTaskMediaPicker(emptyTaskMediaPickerValue());
+                    }}
                   >
                     {getStageLabel(t.userStage ?? 'any')}: {t.title}
                     {t.isExamTask ? ' [Exam]' : ''}
@@ -984,8 +1017,24 @@ export function CategoryDetail() {
                   })
                 }
               />
+              <div className="form-grid__full">
+                <span className="muted">Task media</span>
+                <TaskMediaPicker
+                  compact
+                  existingUrl={taskDraft.taskMediaUrl}
+                  existingType={taskDraft.taskMediaType}
+                  value={taskMediaPicker}
+                  onChange={setTaskMediaPicker}
+                  onError={(message) => setTaskMessage(message)}
+                />
+              </div>
             </div>
-            <button type="button" className="btn btn--primary" onClick={submitTask}>
+            <button
+              type="button"
+              className="btn btn--primary"
+              disabled={savingTask}
+              onClick={submitTask}
+            >
               {taskDraft.id ? 'Update task' : 'Add task'}
             </button>
           </section>

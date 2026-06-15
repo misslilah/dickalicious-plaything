@@ -6,6 +6,7 @@ import {
   useParams,
 } from 'react-router-dom';
 import { TaskCompletionGate } from '../components/TaskCompletionGate';
+import { TaskMediaPlayer } from '../components/TaskMediaPlayer';
 import { useAppStore } from '../hooks/useAppStore';
 import { useTaskCompletion } from '../hooks/useTaskCompletion';
 import { isCategoryImagePreview } from '../lib/categoryImage';
@@ -24,6 +25,7 @@ import {
   TASK_RECURRENCE_LABELS,
 } from '../lib/recurringCategoryTasks';
 import { isCategoryScopeTask } from '../lib/taskScope';
+import { taskHasUploadedMedia } from '../lib/taskMediaStorage';
 import type { Task } from '../types';
 
 const EMPTY_TASK: Task = {
@@ -248,6 +250,14 @@ export function TaskFocusPage() {
             )}
             {task.description && (
               <p className="task-focus__desc">{task.description}</p>
+            )}
+            {taskHasUploadedMedia(task) && task.taskMediaUrl && task.taskMediaType && (
+              <div className="task-focus__task-media">
+                <TaskMediaPlayer
+                  url={task.taskMediaUrl}
+                  mediaType={task.taskMediaType}
+                />
+              </div>
             )}
           </header>
 

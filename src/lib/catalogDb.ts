@@ -65,6 +65,8 @@ type DbTask = {
   linked_video_id: string | null;
   linked_audio_item_id: string | null;
   linked_audio_url: string | null;
+  task_media_url: string | null;
+  task_media_type: string | null;
   sort_order: number;
   prerequisite_task_id: string | null;
   is_exam_task: boolean;
@@ -178,6 +180,11 @@ function mapTask(row: DbTask): Task {
     linkedVideoId: row.linked_video_id ?? undefined,
     linkedAudioItemId: row.linked_audio_item_id ?? undefined,
     linkedAudioUrl: row.linked_audio_url?.trim() || undefined,
+    taskMediaUrl: row.task_media_url?.trim() || undefined,
+    taskMediaType:
+      row.task_media_type === 'video' || row.task_media_type === 'audio'
+        ? row.task_media_type
+        : undefined,
     sortOrder: row.sort_order ?? 0,
     prerequisiteTaskId: row.prerequisite_task_id ?? null,
     isExamTask: row.is_exam_task ?? false,
@@ -513,6 +520,8 @@ export async function upsertTask(
       task.linkedMediaType === 'audio'
         ? task.linkedAudioUrl?.trim() || null
         : null,
+    task_media_url: task.taskMediaUrl?.trim() || null,
+    task_media_type: task.taskMediaType ?? null,
     sort_order: task.sortOrder ?? 0,
     prerequisite_task_id: task.prerequisiteTaskId ?? null,
     is_exam_task: task.isExamTask ?? false,

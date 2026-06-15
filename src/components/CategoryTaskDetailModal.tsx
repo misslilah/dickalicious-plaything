@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { TaskCompletionGate } from './TaskCompletionGate';
+import { TaskMediaPlayer } from './TaskMediaPlayer';
 import { useAppStore } from '../hooks/useAppStore';
 import { useTaskCompletion } from '../hooks/useTaskCompletion';
 import { isCategoryImagePreview } from '../lib/categoryImage';
@@ -14,6 +15,7 @@ import {
   isRecurringTaskAccepted,
   TASK_RECURRENCE_LABELS,
 } from '../lib/recurringCategoryTasks';
+import { taskHasUploadedMedia } from '../lib/taskMediaStorage';
 import type { Category, Task } from '../types';
 
 interface CategoryTaskDetailModalProps {
@@ -220,6 +222,15 @@ export function CategoryTaskDetailModal({
 
                 {task.description && (
                   <p className="category-task-modal__desc">{task.description}</p>
+                )}
+
+                {taskHasUploadedMedia(task) && task.taskMediaUrl && task.taskMediaType && (
+                  <div className="category-task-modal__task-media">
+                    <TaskMediaPlayer
+                      url={task.taskMediaUrl}
+                      mediaType={task.taskMediaType}
+                    />
+                  </div>
                 )}
 
                 {recurrenceStatus && (
