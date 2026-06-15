@@ -27,6 +27,8 @@ export function userSliceFromState(state: AppState): Omit<AppState, 'categories'
     unlockedRewardIds: state.unlockedRewardIds,
     purchasedVideoIds: state.purchasedVideoIds,
     unlockedBadgeIds: state.unlockedBadgeIds,
+    acceptedRecurringTaskIds: state.acceptedRecurringTaskIds ?? [],
+    recurringTaskCompletions: state.recurringTaskCompletions ?? [],
   };
 }
 
