@@ -481,8 +481,21 @@ export async function deleteCategoryDb(
   return { ok: true };
 }
 
+function formatTaskSaveError(message: string, inserting: boolean): string {
+  if (/cannot coerce the result to a single json object/i.test(message)) {
+    return inserting
+      ? 'Task could not be saved. Check admin permissions and that migrations through 089_task_media.sql are applied.'
+      : 'Task not found or could not be updated. It may have been deleted.';
+  }
+  if (/task_media_/i.test(message) && /column|schema cache/i.test(message)) {
+    return 'Task media columns are missing. Run supabase/migrations/089_task_media.sql in the Supabase SQL Editor, then retry.';
+  }
+  return message;
+}
+
 export async function upsertTask(
   task: Task,
+  options?: { insert?: boolean },
 ): Promise<{ ok: true; task: Task } | { ok: false; error: string }> {
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
@@ -529,11 +542,25 @@ export async function upsertTask(
       taskScope === 'category' ? task.recurrence ?? 'none' : 'none',
   };
 
-  const { data, error } = task.id
-    ? await supabase.from('tasks').update(row).eq('id', task.id).select().single()
-    : await supabase.from('tasks').insert(row).select().single();
+  const inserting = options?.insert ?? !task.id?.trim();
+  const { data, error } = inserting
+    ? await supabase.from('tasks').insert(row).select().single()
+    : await supabase
+        .from('tasks')
+        .update(row)
+        .eq('id', task.id)
+        .select()
+        .maybeSingle();
 
-  if (error || !data) return { ok: false, error: error?.message ?? 'Save failed.' };
+  if (error) return { ok: false, error: formatTaskSaveError(error.message, inserting) };
+  if (!data) {
+    return {
+      ok: false,
+      error: inserting
+        ? 'Task could not be saved. Check admin permissions and database migrations.'
+        : 'Task not found or could not be updated. It may have been deleted.',
+    };
+  }
   return { ok: true, task: mapTask(data as DbTask) };
 }
 
