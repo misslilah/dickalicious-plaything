@@ -198,8 +198,8 @@ export function CategoryTaskDetailModal({
       <div className="category-task-modal__panel">
         {showAmbientMedia && (
           <TaskAmbientMedia
-            url={task.taskMediaUrl}
-            mediaType={task.taskMediaType}
+            url={task.taskMediaUrl!}
+            mediaType={task.taskMediaType!}
             playing={ambientPlaying}
             onEnded={() => setMediaFinished(true)}
           />

@@ -53,7 +53,7 @@ import {
   type AdminProfileRow,
   type AdminUserTierFilter,
 } from '../lib/profileDb';
-import { adminResetUserMalus } from '../lib/userProgressDb';
+import { adminResetAllMalus, adminResetUserMalus } from '../lib/userProgressDb';
 import {
   AUDIO_PLAYLIST_TIER_OPTIONS,
   PATREON_MEMBER_TIER_OPTIONS,
@@ -2753,9 +2753,16 @@ function UserAdmin() {
   const [syncConfigHint, setSyncConfigHint] = useState('');
   const [malusResetMessage, setMalusResetMessage] = useState('');
   const [malusResetLoading, setMalusResetLoading] = useState(false);
+  const [allMalusResetMessage, setAllMalusResetMessage] = useState('');
+  const [allMalusResetLoading, setAllMalusResetLoading] = useState(false);
 
   const linkedProfileCount = useMemo(
     () => profiles.filter((p) => p.patreonUserId).length,
+    [profiles],
+  );
+
+  const usersWithMalusCount = useMemo(
+    () => profiles.filter((p) => (p.malusPoints ?? 0) > 0).length,
     [profiles],
   );
 
@@ -2864,6 +2871,24 @@ function UserAdmin() {
     void loadProfiles();
   };
 
+  const resetAllMalus = async () => {
+    const confirmed = window.confirm(
+      'Reset malus for all users? This cannot be undone.',
+    );
+    if (!confirmed) return;
+
+    setAllMalusResetMessage('');
+    setAllMalusResetLoading(true);
+    const result = await adminResetAllMalus();
+    setAllMalusResetLoading(false);
+    if (!result.ok) {
+      setAllMalusResetMessage(result.error);
+      return;
+    }
+    setAllMalusResetMessage(`Reset malus for ${result.usersReset} users.`);
+    void loadProfiles();
+  };
+
   const savePatreonTier = async () => {
     if (!selectedUserId) return;
     setTierMessage('');
@@ -2918,13 +2943,25 @@ function UserAdmin() {
             >
               {syncLoading && !syncUserId ? 'Syncing Patreon…' : 'Sync Patreon tiers'}
             </button>
+            <button
+              type="button"
+              className="btn btn--secondary"
+              disabled={allMalusResetLoading || usersWithMalusCount === 0}
+              onClick={() => void resetAllMalus()}
+            >
+              {allMalusResetLoading ? 'Resetting all malus…' : 'Reset all malus'}
+            </button>
             <span className="muted">
               {linkedProfileCount} linked account{linkedProfileCount === 1 ? '' : 's'}
+              {usersWithMalusCount > 0
+                ? ` · ${usersWithMalusCount} with malus`
+                : ''}
             </span>
           </div>
           <StatusMessage message={syncConfigHint} />
           <StatusMessage message={syncError} variant="err" />
           <StatusMessage message={syncMessage} />
+          <StatusMessage message={allMalusResetMessage} />
         </>
       }
     >

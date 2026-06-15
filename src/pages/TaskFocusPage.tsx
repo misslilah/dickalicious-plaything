@@ -269,8 +269,8 @@ export function TaskFocusPage() {
       <div className="task-focus__layout task-focus__layout--with-ambient">
         {showAmbientMedia && (
           <TaskAmbientMedia
-            url={task.taskMediaUrl}
-            mediaType={task.taskMediaType}
+            url={task.taskMediaUrl!}
+            mediaType={task.taskMediaType!}
             playing={ambientPlaying}
             onEnded={() => setMediaFinished(true)}
           />

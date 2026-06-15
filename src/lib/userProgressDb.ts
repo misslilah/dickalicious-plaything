@@ -136,3 +136,30 @@ export async function adminResetUserMalus(
 
   return { ok: true, previousMalus: typeof data === 'number' ? data : 0 };
 }
+
+export async function adminResetAllMalus(): Promise<
+  { ok: true; usersReset: number } | { ok: false; error: string }
+> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const { data, error } = await supabase.rpc('admin_reset_all_malus');
+
+  if (error) {
+    const missingRpc =
+      error.code === 'PGRST202' ||
+      error.code === '42883' ||
+      /admin_reset_all_malus/i.test(error.message ?? '') ||
+      /function.*does not exist/i.test(error.message ?? '');
+    if (missingRpc) {
+      return {
+        ok: false,
+        error:
+          'Batch malus reset requires supabase/migrations/093_admin_reset_all_malus.sql. Run it in the Supabase SQL Editor, then retry.',
+      };
+    }
+    return { ok: false, error: error.message };
+  }
+
+  return { ok: true, usersReset: typeof data === 'number' ? data : 0 };
+}
