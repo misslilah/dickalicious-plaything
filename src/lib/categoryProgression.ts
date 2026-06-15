@@ -1,5 +1,9 @@
 import type { AppState, Category, CategoryGroup, Task } from '../types';
 import { getUserStage } from './levels';
+import {
+  isRecurringCategoryTask,
+  isRecurringTaskAccepted,
+} from './recurringCategoryTasks';
 import { isOnceTaskCompleted } from './taskScope';
 import { isCategoryScopeTask } from './taskScope';
 
@@ -83,6 +87,11 @@ export function isCategoryTaskEverCompleted(
   state: AppState,
   taskId: string,
 ): boolean {
+  const task = state.tasks.find((t) => t.id === taskId);
+  if (task && isRecurringCategoryTask(task)) {
+    if (!isRecurringTaskAccepted(state, taskId)) return false;
+    return (state.recurringTaskCompletions ?? []).some((entry) => entry.taskId === taskId);
+  }
   return isOnceTaskCompleted(state, taskId);
 }
 

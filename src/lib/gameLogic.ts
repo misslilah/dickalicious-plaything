@@ -14,6 +14,13 @@ import {
   isCategoryScopeTask,
   isHomePlanTask,
 } from './taskScope';
+import {
+  clearRecurringDataForTasks,
+  getRecurringPeriodKey,
+  isRecurringCategoryTask,
+  isRecurringPeriodComplete,
+  isRecurringTaskAccepted,
+} from './recurringCategoryTasks';
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -207,6 +214,15 @@ export function getCategoryTaskStatus(
   state: AppState,
   taskId: string,
 ): CategoryTaskStatus {
+  const task = state.tasks.find((t) => t.id === taskId);
+  if (task && isRecurringCategoryTask(task)) {
+    if (!isRecurringTaskAccepted(state, taskId)) return 'not_started';
+    const periodKey = getRecurringPeriodKey(task, getResetHour(state));
+    if (isRecurringPeriodComplete(state, taskId, periodKey)) return 'done';
+    if (isTaskStartedToday(state, taskId)) return 'in_progress';
+    return 'not_started';
+  }
+
   const entry = getTaskPlanEntry(state, taskId);
   if (entry?.completed) return 'done';
   if (isTaskStartedToday(state, taskId)) return 'in_progress';
@@ -249,9 +265,11 @@ export function clearCategoryAccomplishments(
   }
 
   const nextXp = Math.max(0, state.progress.totalXp - xpLoss);
+  const recurringCleared = clearRecurringDataForTasks(state, taskIds);
   return {
     ...state,
     dailyPlans,
+    ...recurringCleared,
     progress: {
       ...state.progress,
       totalXp: nextXp,

@@ -22,6 +22,7 @@ import type {
   Task,
   TaskFrequency,
   TaskLinkedMediaType,
+  TaskRecurrence,
   TaskScope,
   Video,
   VideoCategory,
@@ -989,6 +990,7 @@ function emptyTaskDraft(categoryId: string): Task {
     sortOrder: 0,
     prerequisiteTaskId: null,
     isExamTask: false,
+    recurrence: 'none',
   };
 }
 
@@ -1179,7 +1181,7 @@ function TaskAdmin() {
               key={t.id}
               selected={draft.id === t.id}
               title={t.title}
-              meta={`${TASK_SCOPE_LABELS[t.taskScope ?? 'category']}${(t.taskScope ?? 'category') === 'category' ? ` · ${categoryName(t.categoryId)}` : ''}${(t.taskScope ?? 'category') === 'custom' ? ` · ${profileName(t.assignedUserId)}` : ''} · ${getStageLabel(t.userStage ?? 'any')} · ${t.xpReward} XP · ${t.pointsReward ?? 0} pts · malus ${t.malusPointsOnFail ?? 0} · ${t.frequency}${t.isExamTask ? ' · exam' : ''}${getPrerequisiteTaskLabel(t, state.tasks) ? ` · after "${getPrerequisiteTaskLabel(t, state.tasks)}"` : ''}${(t.sortOrder ?? 0) > 0 ? ` · order ${t.sortOrder}` : ''}${t.timerSeconds ? ` · timer ${t.timerSeconds}s` : ''}${t.durationSeconds ? ` · duration ${t.durationSeconds}s` : ''}${t.openUrl ? ' · URL' : ''}${t.requiredPhrase ? ` · phrase${(t.requiredPhraseRepeatCount ?? 1) > 1 ? ` ×${t.requiredPhraseRepeatCount}` : ''}` : ''}${(t.linkedMediaType ?? 'none') !== 'none' ? ` · ${t.linkedMediaType}` : ''}`}
+              meta={`${TASK_SCOPE_LABELS[t.taskScope ?? 'category']}${(t.taskScope ?? 'category') === 'category' ? ` · ${categoryName(t.categoryId)}` : ''}${(t.taskScope ?? 'category') === 'custom' ? ` · ${profileName(t.assignedUserId)}` : ''} · ${getStageLabel(t.userStage ?? 'any')} · ${t.xpReward} XP · ${t.pointsReward ?? 0} pts · malus ${t.malusPointsOnFail ?? 0} · ${t.frequency}${(t.recurrence ?? 'none') !== 'none' ? ` · recur ${t.recurrence}` : ''}${t.isExamTask ? ' · exam' : ''}${getPrerequisiteTaskLabel(t, state.tasks) ? ` · after "${getPrerequisiteTaskLabel(t, state.tasks)}"` : ''}${(t.sortOrder ?? 0) > 0 ? ` · order ${t.sortOrder}` : ''}${t.timerSeconds ? ` · timer ${t.timerSeconds}s` : ''}${t.durationSeconds ? ` · duration ${t.durationSeconds}s` : ''}${t.openUrl ? ' · URL' : ''}${t.requiredPhrase ? ` · phrase${(t.requiredPhraseRepeatCount ?? 1) > 1 ? ` ×${t.requiredPhraseRepeatCount}` : ''}` : ''}${(t.linkedMediaType ?? 'none') !== 'none' ? ` · ${t.linkedMediaType}` : ''}`}
               onEdit={() => {
                 setDraft(t);
                 setErrors({});
@@ -1483,6 +1485,26 @@ function TaskAdmin() {
               />
               <span>Unlock only after all regular category tasks are completed</span>
             </label>
+          </Field>
+          <Field
+            label="Category recurrence"
+            htmlFor="task-recurrence"
+            hint="Daily or weekly obligations after the player accepts the task. Stays in the category only (not Home daily tasks)."
+          >
+            <select
+              id="task-recurrence"
+              value={draft.recurrence ?? 'none'}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  recurrence: e.target.value as TaskRecurrence,
+                })
+              }
+            >
+              <option value="none">None (one-time)</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+            </select>
           </Field>
         </FormBlock>
       )}

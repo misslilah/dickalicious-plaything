@@ -1,3 +1,4 @@
+import { mapRecurringCompletionRpcError } from './recurringCategoryTasksDb';
 import { getSupabase } from './supabase';
 
 const MIGRATION_HINT =
@@ -12,7 +13,7 @@ export interface DailyTaskCompletionStatus {
   remaining: number | null;
   unlimited: boolean;
   canComplete: boolean;
-  error?: 'daily_limit_reached' | 'task_not_found' | 'not_category_member';
+  error?: 'daily_limit_reached' | 'task_not_found' | 'not_category_member' | 'recurring_not_accepted' | 'recurring_period_complete';
 }
 
 type RpcStatusRow = {
@@ -55,7 +56,9 @@ export function mapDailyTaskCompletionStatus(
   const error =
     row?.error === 'daily_limit_reached' ||
     row?.error === 'task_not_found' ||
-    row?.error === 'not_category_member'
+    row?.error === 'not_category_member' ||
+    row?.error === 'recurring_not_accepted' ||
+    row?.error === 'recurring_period_complete'
       ? row.error
       : undefined;
 
@@ -128,7 +131,10 @@ export async function recordTaskCompletionDb(
       error:
         status.error === 'not_category_member'
           ? 'Join this category to complete its tasks.'
-          : dailyTaskCompletionBlockedMessage(status),
+          : status.error === 'recurring_not_accepted' ||
+              status.error === 'recurring_period_complete'
+            ? mapRecurringCompletionRpcError(status.error)
+            : dailyTaskCompletionBlockedMessage(status),
       status,
     };
   }

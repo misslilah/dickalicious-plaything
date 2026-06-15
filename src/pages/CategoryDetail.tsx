@@ -31,7 +31,12 @@ import {
 } from '../lib/levels';
 import { getCategoryTaskStatus } from '../lib/gameLogic';
 import { dailyTaskCompletionBlockedMessage, dailyTaskCompletionRemainingLabel } from '../lib/dailyTaskCompletions';
-import type { Task, TaskFrequency, TaskScope } from '../types';
+import {
+  getRecurringTaskStatusLabel,
+  isRecurringCategoryTask,
+  isRecurringTaskAccepted,
+} from '../lib/recurringCategoryTasks';
+import type { Task, TaskFrequency, TaskRecurrence, TaskScope } from '../types';
 import { TASK_SCOPE_OPTIONS } from '../lib/taskScope';
 import {
   fetchAdminProfiles,
@@ -169,6 +174,7 @@ export function CategoryDetail() {
     sortOrder: 0,
     prerequisiteTaskId: null,
     isExamTask: false,
+    recurrence: 'none',
   });
   const [taskMessage, setTaskMessage] = useState('');
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -220,15 +226,26 @@ export function CategoryDetail() {
       !available && categoryId
         ? getCategoryTaskBlockReason(state, task, categoryId)
         : null;
+    const recurring = isRecurringCategoryTask(task);
+    const pendingAccept =
+      recurring &&
+      isMember &&
+      !isAdmin &&
+      !isRecurringTaskAccepted(state, task.id);
+    const recurrenceStatus = recurring
+      ? getRecurringTaskStatusLabel(state, task)
+      : null;
     return (
       <TaskListRow
         task={task}
         categoryId={category.id}
         status={getCategoryTaskStatus(state, task.id)}
-        dailyLimitBlocked={atDailyTaskLimit}
+        dailyLimitBlocked={atDailyTaskLimit && !pendingAccept}
         dailyLimitMessage={dailyTaskLimitMessage}
         locked={!isAdmin && !available}
         lockReason={lockReason}
+        pendingAccept={pendingAccept}
+        recurrenceStatus={recurrenceStatus}
         onOpen={
           isMember && !categoryLocked
             ? () => setSelectedTaskId(task.id)
@@ -624,6 +641,9 @@ export function CategoryDetail() {
                   >
                     {getStageLabel(t.userStage ?? 'any')}: {t.title}
                     {t.isExamTask ? ' [Exam]' : ''}
+                    {(t.recurrence ?? 'none') !== 'none'
+                      ? ` [${(t.recurrence ?? 'none').charAt(0).toUpperCase()}${(t.recurrence ?? 'none').slice(1)}]`
+                      : ''}
                     {getPrerequisiteTaskLabel(t, state.tasks)
                       ? ` · after "${getPrerequisiteTaskLabel(t, state.tasks)}"`
                       : ''}
@@ -761,6 +781,21 @@ export function CategoryDetail() {
                 <option value="daily">Daily</option>
                 <option value="weekly">Weekly</option>
                 <option value="once">One-time</option>
+              </select>
+              <select
+                value={taskDraft.recurrence ?? 'none'}
+                onChange={(e) =>
+                  setTaskDraft({
+                    ...taskDraft,
+                    recurrence: e.target.value as TaskRecurrence,
+                  })
+                }
+                aria-label="Category recurrence"
+                title="Recurring category tasks must be accepted, then completed each day or week"
+              >
+                <option value="none">Recurrence: None</option>
+                <option value="daily">Recurrence: Daily</option>
+                <option value="weekly">Recurrence: Weekly</option>
               </select>
               <input
                 type="number"

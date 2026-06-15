@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom';
 import { getStageLabel } from '../lib/levels';
 import type { CategoryTaskStatus } from '../lib/gameLogic';
-import type { Task } from '../types';
+import { TASK_RECURRENCE_LABELS } from '../lib/recurringCategoryTasks';
+import type { Task, TaskRecurrence } from '../types';
 
 const STATUS_LABELS: Record<CategoryTaskStatus, string> = {
   not_started: 'Not started',
@@ -24,6 +25,8 @@ interface TaskListRowProps {
   lockReason?: string | null;
   dailyLimitBlocked?: boolean;
   dailyLimitMessage?: string;
+  pendingAccept?: boolean;
+  recurrenceStatus?: string | null;
   onOpen?: () => void;
 }
 
@@ -36,12 +39,20 @@ export function TaskListRow({
   lockReason,
   dailyLimitBlocked = false,
   dailyLimitMessage,
+  pendingAccept = false,
+  recurrenceStatus,
   onOpen,
 }: TaskListRowProps) {
   const to = `/category/${categoryId}/task/${task.id}`;
   const isBlocked = locked || dailyLimitBlocked;
+  const displayStatus = pendingAccept ? 'not_started' : status;
+  const statusLabel = pendingAccept
+    ? 'Accept'
+    : locked && status !== 'done'
+      ? 'Locked'
+      : STATUS_LABELS[displayStatus];
 
-  if (isBlocked && status !== 'done') {
+  if (isBlocked && status !== 'done' && !pendingAccept) {
     const message =
       lockReason ??
       (dailyLimitBlocked ? dailyLimitMessage : 'This task is locked.');
@@ -54,7 +65,13 @@ export function TaskListRow({
         }}
         aria-label={`${task.title} — locked`}
       >
-        <TaskListRowContent task={task} status={status} locked lockReason={message} />
+        <TaskListRowContent
+          task={task}
+          status={status}
+          locked
+          lockReason={message}
+          recurrenceStatus={recurrenceStatus}
+        />
       </button>
     );
   }
@@ -65,7 +82,12 @@ export function TaskListRow({
         className={`task-list-row task-list-row--${status} task-list-row--disabled`}
         aria-disabled
       >
-        <TaskListRowContent task={task} status={status} />
+        <TaskListRowContent
+          task={task}
+          status={status}
+          recurrenceStatus={recurrenceStatus}
+          pendingAccept={pendingAccept}
+        />
       </div>
     );
   }
@@ -74,11 +96,16 @@ export function TaskListRow({
     return (
       <button
         type="button"
-        className={`task-list-row task-list-row--${status}`}
+        className={`task-list-row task-list-row--${displayStatus}${pendingAccept ? ' task-list-row--pending-accept' : ''}`}
         onClick={onOpen}
-        aria-label={`${task.title} — ${STATUS_LABELS[status]}`}
+        aria-label={`${task.title} — ${statusLabel}`}
       >
-        <TaskListRowContent task={task} status={status} />
+        <TaskListRowContent
+          task={task}
+          status={displayStatus}
+          recurrenceStatus={recurrenceStatus}
+          pendingAccept={pendingAccept}
+        />
       </button>
     );
   }
@@ -86,10 +113,15 @@ export function TaskListRow({
   return (
     <Link
       to={to}
-      className={`task-list-row task-list-row--${status}`}
-      aria-label={`${task.title} — ${STATUS_LABELS[status]}`}
+      className={`task-list-row task-list-row--${displayStatus}`}
+      aria-label={`${task.title} — ${statusLabel}`}
     >
-      <TaskListRowContent task={task} status={status} />
+      <TaskListRowContent
+        task={task}
+        status={displayStatus}
+        recurrenceStatus={recurrenceStatus}
+        pendingAccept={pendingAccept}
+      />
     </Link>
   );
 }
@@ -99,12 +131,22 @@ function TaskListRowContent({
   status,
   locked = false,
   lockReason,
+  recurrenceStatus,
+  pendingAccept = false,
 }: {
   task: Task;
   status: CategoryTaskStatus;
   locked?: boolean;
   lockReason?: string | null;
+  recurrenceStatus?: string | null;
+  pendingAccept?: boolean;
 }) {
+  const recurrence = task.recurrence ?? 'none';
+  const recurrenceBadge =
+    recurrence !== 'none'
+      ? TASK_RECURRENCE_LABELS[recurrence as TaskRecurrence]
+      : null;
+
   return (
     <>
       <div className="task-list-row__main">
@@ -114,9 +156,17 @@ function TaskListRowContent({
           {task.isExamTask && (
             <span className="tag tag--warn task-list-row__exam">Exam</span>
           )}
+          {recurrenceBadge && (
+            <span className="tag tag--info task-list-row__recurrence">
+              {recurrenceBadge}
+            </span>
+          )}
         </h3>
         {task.description && (
           <p className="task-list-row__desc">{task.description}</p>
+        )}
+        {recurrenceStatus && (
+          <p className="task-list-row__recurrence-status muted">{recurrenceStatus}</p>
         )}
         {locked && lockReason && (
           <p className="task-list-row__lock-reason muted">{lockReason}</p>
@@ -133,8 +183,10 @@ function TaskListRowContent({
         </div>
       </div>
       <div className="task-list-row__aside">
-        <span className={`task-list-row__status task-list-row__status--${status}`}>
-          {locked && status !== 'done' ? 'Locked' : STATUS_LABELS[status]}
+        <span
+          className={`task-list-row__status task-list-row__status--${status}${pendingAccept ? ' task-list-row__status--accept' : ''}`}
+        >
+          {pendingAccept ? 'Accept' : locked && status !== 'done' ? 'Locked' : STATUS_LABELS[status]}
         </span>
         {!locked && (
           <span className="task-list-row__chevron" aria-hidden>

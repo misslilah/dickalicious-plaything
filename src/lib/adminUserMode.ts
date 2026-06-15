@@ -75,6 +75,8 @@ export function maskStateForUserPreview(state: AppState): AppState {
     progress: { ...FRESH_PROGRESS },
     joinedCategoryIds: [],
     categoryMemberProgress: [],
+    acceptedRecurringTaskIds: [],
+    recurringTaskCompletions: [],
     unlockedBadgeIds: [],
     unlockedRewardIds: [],
     purchasedVideoIds: [],

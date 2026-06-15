@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import {
   Link,
   useBlocker,
@@ -16,7 +16,13 @@ import {
   isCategoryTaskAvailable,
   isCategoryUnlocked,
 } from '../lib/categoryProgression';
-import { getTaskPlanEntry } from '../lib/gameLogic';
+import { getCategoryTaskStatus } from '../lib/gameLogic';
+import {
+  getRecurringTaskStatusLabel,
+  isRecurringCategoryTask,
+  isRecurringTaskAccepted,
+  TASK_RECURRENCE_LABELS,
+} from '../lib/recurringCategoryTasks';
 import { isCategoryScopeTask } from '../lib/taskScope';
 import type { Task } from '../types';
 
@@ -35,7 +41,7 @@ export function TaskFocusPage() {
     taskId: string;
   }>();
   const navigate = useNavigate();
-  const { state, markTaskStarted, completeTask, isEffectiveAdmin } = useAppStore();
+  const { state, markTaskStarted, completeTask, acceptRecurringCategoryTask, isEffectiveAdmin } = useAppStore();
 
   const isAdmin = isEffectiveAdmin;
   const category = state.categories.find((c) => c.id === categoryId);
@@ -44,11 +50,13 @@ export function TaskFocusPage() {
     isAdmin ||
     (categoryId != null && state.joinedCategoryIds.includes(categoryId));
 
-  const planEntry = useMemo(
-    () => (taskId ? getTaskPlanEntry(state, taskId) : undefined),
-    [state, taskId],
-  );
-  const completed = planEntry?.completed ?? false;
+  const recurring = task != null && isRecurringCategoryTask(task);
+  const accepted = !recurring || (taskId != null && isRecurringTaskAccepted(state, taskId));
+  const recurrenceStatus =
+    task && recurring ? getRecurringTaskStatusLabel(state, task) : null;
+  const completed = taskId
+    ? getCategoryTaskStatus(state, taskId) === 'done'
+    : false;
 
   const validTask =
     task != null &&
@@ -64,12 +72,12 @@ export function TaskFocusPage() {
   }, [taskId]);
 
   useEffect(() => {
-    if (!taskId || !validTask || completed) return;
+    if (!taskId || !validTask || completed || !accepted) return;
     markTaskStarted(taskId);
-  }, [taskId, validTask, completed, markTaskStarted]);
+  }, [taskId, validTask, completed, accepted, markTaskStarted]);
 
   const shouldBlockNavigation =
-    validTask && isMember && !completed && !phraseChallengeFailed;
+    validTask && isMember && accepted && !completed && !phraseChallengeFailed;
 
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
@@ -163,6 +171,28 @@ export function TaskFocusPage() {
     );
   }
 
+  if (recurring && !isAdmin && !accepted) {
+    return (
+      <div className="page">
+        <h2>{task.title}</h2>
+        <p className="muted">
+          This is a {task.recurrence ? TASK_RECURRENCE_LABELS[task.recurrence].toLowerCase() : ''}{' '}
+          recurring task. Accept it to begin.
+        </p>
+        <button
+          type="button"
+          className="btn btn--primary"
+          onClick={() => void acceptRecurringCategoryTask(task.id)}
+        >
+          Accept task
+        </button>
+        <Link to={`/category/${categoryId}`} className="btn btn--ghost">
+          Back to category
+        </Link>
+      </div>
+    );
+  }
+
   const imageUrl =
     category.imageUrl && isCategoryImagePreview(category.imageUrl)
       ? category.imageUrl
@@ -208,6 +238,14 @@ export function TaskFocusPage() {
               {category.icon} {category.name}
             </p>
             <h2 className="task-focus__title">{task.title}</h2>
+            {recurring && task.recurrence && (
+              <span className="tag tag--info">
+                {TASK_RECURRENCE_LABELS[task.recurrence]}
+              </span>
+            )}
+            {recurrenceStatus && (
+              <p className="notice">{recurrenceStatus}</p>
+            )}
             {task.description && (
               <p className="task-focus__desc">{task.description}</p>
             )}

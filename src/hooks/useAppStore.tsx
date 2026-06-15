@@ -107,6 +107,17 @@ import {
   recordTaskCompletionDb,
 } from '../lib/dailyTaskCompletions';
 import {
+  acceptRecurringCategoryTaskDb,
+  fetchRecurringCategoryTaskData,
+} from '../lib/recurringCategoryTasksDb';
+import {
+  appendRecurringCompletion,
+  getRecurringPeriodKey,
+  isRecurringCategoryTask,
+  isRecurringPeriodComplete,
+  isRecurringTaskAccepted,
+} from '../lib/recurringCategoryTasks';
+import {
   isEffectiveAdmin,
   maskDailyTaskCompletionStatus,
   maskSessionForUserPreview,
@@ -214,6 +225,7 @@ interface AppStoreValue {
   awardBonusXp: (amount: number) => void;
   joinCategory: (categoryId: string) => Promise<MutateResult>;
   leaveCategory: (categoryId: string) => Promise<MutateResult>;
+  acceptRecurringCategoryTask: (taskId: string) => Promise<MutateResult>;
   updateSettings: (partial: Partial<AppState['settings']>) => void;
   updateCategory: (category: Category) => Promise<MutateResult>;
   addCategory: (category: Category) => Promise<MutateResult>;
@@ -391,13 +403,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     setDataError(null);
 
     try {
-      const [catalogResult, progressResult, membersResult, badgesResult, purchasedResult] =
+      const [catalogResult, progressResult, membersResult, badgesResult, purchasedResult, recurringResult] =
         await Promise.all([
           fetchSharedCatalog(),
           fetchUserProgress(userId),
           fetchCategoryMembers(userId),
           fetchUserBadgeIds(userId),
           fetchPurchasedVideoIds(userId),
+          fetchRecurringCategoryTaskData(userId),
         ]);
 
       if (!catalogResult.ok) {
@@ -420,6 +433,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         setDataError(purchasedResult.error);
         return;
       }
+      if (!recurringResult.ok) {
+        setDataError(recurringResult.error);
+        return;
+      }
 
       let merged = mergeCatalogIntoState(progressResult.state, catalogResult.catalog);
       merged = {
@@ -428,6 +445,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         categoryMemberProgress: membersResult.progress,
         unlockedBadgeIds: badgesResult.badgeIds,
         purchasedVideoIds: purchasedResult.videoIds,
+        acceptedRecurringTaskIds: recurringResult.acceptedTaskIds,
+        recurringTaskCompletions: recurringResult.completions,
       };
       merged = processDayRollover(merged, userId);
       merged = ensureDailyPlan(merged, undefined, userId);
@@ -616,6 +635,34 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
           };
         }
 
+        if (
+          !isAdmin &&
+          task &&
+          isRecurringCategoryTask(task) &&
+          !isRecurringTaskAccepted(state, taskId)
+        ) {
+          return {
+            ok: false,
+            error: 'Accept this recurring task before completing it.',
+          };
+        }
+
+        if (
+          !isAdmin &&
+          task &&
+          isRecurringCategoryTask(task) &&
+          isRecurringPeriodComplete(
+            state,
+            taskId,
+            getRecurringPeriodKey(task, getResetHour(state)),
+          )
+        ) {
+          return {
+            ok: false,
+            error: 'Already completed for this period.',
+          };
+        }
+
         const userId = userIdRef.current;
         const countsTowardLimit =
           task != null && countsTowardDailyCompletionLimit(task);
@@ -634,14 +681,26 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         }
 
         const next = completeTask(state, taskId, session?.userId ?? null);
-        applyUserState(next);
+        let stateWithRecurring = next;
+        if (task && isRecurringCategoryTask(task)) {
+          const periodKey = getRecurringPeriodKey(task, getResetHour(next));
+          stateWithRecurring = {
+            ...next,
+            recurringTaskCompletions: appendRecurringCompletion(
+              next.recurringTaskCompletions ?? [],
+              taskId,
+              periodKey,
+            ),
+          };
+        }
+        applyUserState(stateWithRecurring);
         if (
           userId &&
           categoryId &&
           (task?.taskScope ?? 'category') === 'category' &&
           next.joinedCategoryIds.includes(categoryId)
         ) {
-          void syncCategoryProgressDb(userId, categoryId, next).then((result) => {
+          void syncCategoryProgressDb(userId, categoryId, stateWithRecurring).then((result) => {
             if (!result.ok) return;
             setState((s) => ({
               ...s,
@@ -655,7 +714,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
           });
         }
         if (userId) {
-          void runBadgeUnlockOnComplete(userId, next, taskId);
+          void runBadgeUnlockOnComplete(userId, stateWithRecurring, taskId);
         }
         return { ok: true };
       },
@@ -864,6 +923,44 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
             (p) => p.categoryId !== categoryId,
           ),
         });
+        return { ok: true };
+      },
+      acceptRecurringCategoryTask: async (taskId) => {
+        const blocked = blockUserPreviewMutation();
+        if (blocked) return blocked;
+        const userId = userIdRef.current;
+        if (!userId) return { ok: false, error: 'Not signed in.' };
+        const task = state.tasks.find((t) => t.id === taskId);
+        if (!task || !isRecurringCategoryTask(task)) {
+          return { ok: false, error: 'This task is not a recurring category task.' };
+        }
+        const categoryId = task.categoryId;
+        if (
+          categoryId &&
+          !state.joinedCategoryIds.includes(categoryId)
+        ) {
+          return { ok: false, error: 'Join this category to accept its tasks.' };
+        }
+        if (
+          categoryId &&
+          !isCategoryTaskAvailable(state, task, categoryId)
+        ) {
+          return {
+            ok: false,
+            error: getCategoryTaskBlockReason(state, task, categoryId),
+          };
+        }
+        if (isRecurringTaskAccepted(state, taskId)) {
+          return { ok: true };
+        }
+        const result = await acceptRecurringCategoryTaskDb(taskId);
+        if (!result.ok) return result;
+        setState((s) => ({
+          ...s,
+          acceptedRecurringTaskIds: (s.acceptedRecurringTaskIds ?? []).includes(taskId)
+            ? (s.acceptedRecurringTaskIds ?? [])
+            : [...(s.acceptedRecurringTaskIds ?? []), taskId],
+        }));
         return { ok: true };
       },
       updateSettings: (partial) => {

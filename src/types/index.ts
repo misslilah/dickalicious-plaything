@@ -2,6 +2,9 @@ import type { TaskUserStage, UserStage } from '../lib/levels';
 
 export type TaskFrequency = 'daily' | 'weekly' | 'once';
 
+/** Recurring obligation for category tasks (accept once, complete each period). */
+export type TaskRecurrence = 'none' | 'daily' | 'weekly';
+
 export type TaskScope = 'category' | 'daily' | 'custom';
 
 export type TaskLinkedMediaType = 'none' | 'video' | 'audio';
@@ -99,6 +102,15 @@ export interface Task {
   prerequisiteTaskId?: string | null;
   /** Exam tasks unlock after all regular category tasks are completed. */
   isExamTask?: boolean;
+  /** Category tasks only: daily/weekly obligation after acceptance. */
+  recurrence?: TaskRecurrence;
+}
+
+export interface RecurringTaskCompletion {
+  taskId: string;
+  /** Period start date (YYYY-MM-DD): calendar day for daily, Monday for weekly. */
+  periodKey: string;
+  completedAt?: string;
 }
 
 export interface UserProgress {
@@ -431,5 +443,9 @@ export interface AppState {
   joinedCategoryIds: string[];
   /** Per-category completion synced from category_members. */
   categoryMemberProgress: CategoryMemberProgress[];
+  /** Recurring category tasks the user has accepted. */
+  acceptedRecurringTaskIds: string[];
+  /** Server-synced per-period completions for recurring category tasks. */
+  recurringTaskCompletions: RecurringTaskCompletion[];
   version: number;
 }

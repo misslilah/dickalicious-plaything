@@ -82,6 +82,8 @@ export function createInitialState(): AppState {
     unlockedBadgeIds: [],
     joinedCategoryIds: [],
     categoryMemberProgress: [],
-    version: 7,
+    acceptedRecurringTaskIds: [],
+    recurringTaskCompletions: [],
+    version: 8,
   };
 }

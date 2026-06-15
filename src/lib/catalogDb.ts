@@ -68,6 +68,7 @@ type DbTask = {
   sort_order: number;
   prerequisite_task_id: string | null;
   is_exam_task: boolean;
+  recurrence: string;
 };
 
 type DbReward = {
@@ -180,6 +181,10 @@ function mapTask(row: DbTask): Task {
     sortOrder: row.sort_order ?? 0,
     prerequisiteTaskId: row.prerequisite_task_id ?? null,
     isExamTask: row.is_exam_task ?? false,
+    recurrence:
+      row.recurrence === 'daily' || row.recurrence === 'weekly'
+        ? row.recurrence
+        : 'none',
   };
 }
 
@@ -511,6 +516,8 @@ export async function upsertTask(
     sort_order: task.sortOrder ?? 0,
     prerequisite_task_id: task.prerequisiteTaskId ?? null,
     is_exam_task: task.isExamTask ?? false,
+    recurrence:
+      taskScope === 'category' ? task.recurrence ?? 'none' : 'none',
   };
 
   const { data, error } = task.id

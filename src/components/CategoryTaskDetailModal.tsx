@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { TaskCompletionGate } from './TaskCompletionGate';
 import { useAppStore } from '../hooks/useAppStore';
 import { useTaskCompletion } from '../hooks/useTaskCompletion';
@@ -8,6 +8,12 @@ import {
   isCategoryTaskAvailable,
 } from '../lib/categoryProgression';
 import { getTaskPlanEntry } from '../lib/gameLogic';
+import {
+  getRecurringTaskStatusLabel,
+  isRecurringCategoryTask,
+  isRecurringTaskAccepted,
+  TASK_RECURRENCE_LABELS,
+} from '../lib/recurringCategoryTasks';
 import type { Category, Task } from '../types';
 
 interface CategoryTaskDetailModalProps {
@@ -29,20 +35,36 @@ export function CategoryTaskDetailModal({
   isMember,
   onClose,
 }: CategoryTaskDetailModalProps) {
-  const { state, markTaskStarted, completeTask } = useAppStore();
+  const { state, markTaskStarted, completeTask, acceptRecurringCategoryTask } =
+    useAppStore();
+  const [acceptError, setAcceptError] = useState('');
+  const [accepting, setAccepting] = useState(false);
+
+  const recurring = isRecurringCategoryTask(task);
+  const accepted = !recurring || isRecurringTaskAccepted(state, task.id);
+  const recurrenceLabel =
+    recurring && task.recurrence
+      ? TASK_RECURRENCE_LABELS[task.recurrence]
+      : null;
+  const recurrenceStatus = recurring
+    ? getRecurringTaskStatusLabel(state, task)
+    : null;
 
   const planEntry = getTaskPlanEntry(state, task.id);
-  const completed = planEntry?.completed ?? false;
+  const completedToday = planEntry?.completed ?? false;
+  const completed = recurring
+    ? recurrenceStatus?.includes('✓') ?? false
+    : completedToday;
 
   const { phraseChallengeFailed } = useTaskCompletion(task, completed);
 
   const shouldConfirmClose =
-    open && isMember && !completed && !phraseChallengeFailed;
+    open && isMember && accepted && !completed && !phraseChallengeFailed;
 
   useEffect(() => {
-    if (!open || !isMember || completed) return;
+    if (!open || !isMember || !accepted || completed) return;
     markTaskStarted(task.id);
-  }, [open, task.id, isMember, completed, markTaskStarted]);
+  }, [open, task.id, isMember, accepted, completed, markTaskStarted]);
 
   useEffect(() => {
     if (!open) return;
@@ -79,12 +101,25 @@ export function CategoryTaskDetailModal({
     return { ok: true as const };
   }, [task.id, completeTask, onClose]);
 
+  const handleAccept = useCallback(async () => {
+    setAcceptError('');
+    setAccepting(true);
+    const result = await acceptRecurringCategoryTask(task.id);
+    setAccepting(false);
+    if (!result.ok) {
+      setAcceptError(result.error);
+      return;
+    }
+  }, [task.id, acceptRecurringCategoryTask]);
+
   if (!open) return null;
 
-  const blocked =
+  const prerequisiteBlocked =
     !isAdmin &&
     !isCategoryTaskAvailable(state, task, categoryId) &&
     !completed;
+
+  const needsAccept = recurring && isMember && !isAdmin && !accepted;
 
   const imageUrl =
     category.imageUrl && isCategoryImagePreview(category.imageUrl)
@@ -116,6 +151,9 @@ export function CategoryTaskDetailModal({
             {task.isExamTask && (
               <span className="tag tag--warn">Exam</span>
             )}
+            {recurrenceLabel && (
+              <span className="tag tag--info">{recurrenceLabel}</span>
+            )}
           </div>
           <button
             type="button"
@@ -128,10 +166,36 @@ export function CategoryTaskDetailModal({
         </header>
 
         <div className="category-task-modal__body">
-          {blocked ? (
+          {prerequisiteBlocked ? (
             <p className="login-error" role="alert">
               {getCategoryTaskBlockReason(state, task, categoryId)}
             </p>
+          ) : needsAccept ? (
+            <div className="category-task-modal__layout">
+              <div className="category-task-modal__info">
+                {task.description && (
+                  <p className="category-task-modal__desc">{task.description}</p>
+                )}
+                <p className="muted">
+                  This is a {recurrenceLabel?.toLowerCase()} recurring task. Accept it
+                  to add it to your obligations until this category is fully
+                  completed.
+                </p>
+                {acceptError && (
+                  <p className="login-error" role="alert">
+                    {acceptError}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  disabled={accepting}
+                  onClick={() => void handleAccept()}
+                >
+                  {accepting ? 'Accepting…' : 'Accept task'}
+                </button>
+              </div>
+            </div>
           ) : (
             <div
               className={`category-task-modal__layout${completed ? ' category-task-modal__layout--completed' : ''}`}
@@ -156,6 +220,12 @@ export function CategoryTaskDetailModal({
 
                 {task.description && (
                   <p className="category-task-modal__desc">{task.description}</p>
+                )}
+
+                {recurrenceStatus && (
+                  <p className="notice category-task-modal__recurrence">
+                    {recurrenceStatus}
+                  </p>
                 )}
 
                 <div className="category-task-modal__rewards muted">
