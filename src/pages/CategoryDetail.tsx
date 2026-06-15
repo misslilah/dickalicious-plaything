@@ -360,6 +360,12 @@ export function CategoryDetail() {
       assignedUserId: scope === 'custom' ? taskDraft.assignedUserId ?? null : null,
       taskMediaUrl: mediaResult.taskMediaUrl,
       taskMediaType: mediaResult.taskMediaType,
+      taskMediaPlayback: mediaResult.taskMediaUrl
+        ? taskDraft.taskMediaPlayback ?? 'inline'
+        : undefined,
+      taskMediaAutoplayOnStart: mediaResult.taskMediaUrl
+        ? taskDraft.taskMediaAutoplayOnStart ?? false
+        : undefined,
     };
     const result = state.tasks.some((t) => t.id === task.id)
       ? await updateTask(task)
@@ -1023,8 +1029,25 @@ export function CategoryDetail() {
                   compact
                   existingUrl={taskDraft.taskMediaUrl}
                   existingType={taskDraft.taskMediaType}
+                  playback={taskDraft.taskMediaPlayback ?? 'inline'}
+                  onPlaybackChange={(playback) =>
+                    setTaskDraft((d) => ({ ...d, taskMediaPlayback: playback }))
+                  }
+                  autoplayOnStart={taskDraft.taskMediaAutoplayOnStart ?? false}
+                  onAutoplayOnStartChange={(autoplay) =>
+                    setTaskDraft((d) => ({ ...d, taskMediaAutoplayOnStart: autoplay }))
+                  }
                   value={taskMediaPicker}
-                  onChange={setTaskMediaPicker}
+                  onChange={(value) => {
+                    setTaskMediaPicker(value);
+                    if (value.removeExisting && !value.pendingFile) {
+                      setTaskDraft((d) => ({
+                        ...d,
+                        taskMediaPlayback: undefined,
+                        taskMediaAutoplayOnStart: undefined,
+                      }));
+                    }
+                  }}
                   onError={(message) => setTaskMessage(message)}
                 />
               </div>

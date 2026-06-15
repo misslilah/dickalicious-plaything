@@ -7,6 +7,7 @@ import {
   getTodayPlan,
   homePlanCompletionStats,
 } from '../lib/gameLogic';
+import { isMalusBlockingTasks, MALUS_TASK_BLOCK_MESSAGE } from '../lib/malus';
 import { formatDisplayDate, todayKey } from '../lib/dates';
 
 export function DailyTasksSection() {
@@ -17,6 +18,7 @@ export function DailyTasksSection() {
     uncompleteTask,
     markTaskStarted,
     closeDay,
+    isEffectiveAdmin,
   } = useAppStore();
   const userId = session?.userId ?? null;
   const plan = getTodayPlan(state);
@@ -25,6 +27,10 @@ export function DailyTasksSection() {
     : [];
   const stats = homePlanCompletionStats(state, plan, userId);
   const dateKey = todayKey(getResetHour(state));
+  const malusBlocked = isMalusBlockingTasks(
+    state.progress.malusPoints,
+    isEffectiveAdmin,
+  );
 
   if (!plan) {
     return (
@@ -65,6 +71,12 @@ export function DailyTasksSection() {
         </p>
       )}
 
+      {malusBlocked && (
+        <p className="login-error" role="alert">
+          {MALUS_TASK_BLOCK_MESSAGE}
+        </p>
+      )}
+
       <ul className="task-list">
         {homeEntries.map((entry) => {
           const task = state.tasks.find((t) => t.id === entry.taskId);
@@ -80,7 +92,7 @@ export function DailyTasksSection() {
                 category={category}
                 scopeBadge={isPersonal ? 'Personal' : undefined}
                 completed={entry.completed}
-                disabled={plan.closed}
+                disabled={plan.closed || malusBlocked}
                 onStart={() => markTaskStarted(entry.taskId)}
                 onComplete={() => completeTask(entry.taskId)}
                 onUncomplete={() => uncompleteTask(entry.taskId)}

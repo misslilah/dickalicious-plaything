@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { TaskAmbientMedia } from './TaskAmbientMedia';
 import { TaskCompletionGate } from './TaskCompletionGate';
 import { TaskMediaPlayer } from './TaskMediaPlayer';
 import { useAppStore } from '../hooks/useAppStore';
@@ -8,6 +9,7 @@ import {
   getCategoryTaskBlockReason,
   isCategoryTaskAvailable,
 } from '../lib/categoryProgression';
+import { isMalusBlockingTasks, MALUS_TASK_BLOCK_MESSAGE } from '../lib/malus';
 import { getTaskPlanEntry } from '../lib/gameLogic';
 import {
   getRecurringTaskStatusLabel,
@@ -15,7 +17,13 @@ import {
   isRecurringTaskAccepted,
   TASK_RECURRENCE_LABELS,
 } from '../lib/recurringCategoryTasks';
-import { taskHasUploadedMedia } from '../lib/taskMediaStorage';
+import {
+  isTaskMediaAmbient,
+  isTaskMediaAutoplayOnStart,
+  isTaskMediaCompletionGated,
+  isTaskMediaInline,
+  taskHasUploadedMedia,
+} from '../lib/taskMediaStorage';
 import type { Category, Task } from '../types';
 
 interface CategoryTaskDetailModalProps {
@@ -41,6 +49,8 @@ export function CategoryTaskDetailModal({
     useAppStore();
   const [acceptError, setAcceptError] = useState('');
   const [accepting, setAccepting] = useState(false);
+  const [taskActive, setTaskActive] = useState(false);
+  const [mediaFinished, setMediaFinished] = useState(false);
 
   const recurring = isRecurringCategoryTask(task);
   const accepted = !recurring || isRecurringTaskAccepted(state, task.id);
@@ -61,12 +71,15 @@ export function CategoryTaskDetailModal({
   const { phraseChallengeFailed } = useTaskCompletion(task, completed);
 
   const shouldConfirmClose =
-    open && isMember && accepted && !completed && !phraseChallengeFailed;
+    open && isMember && accepted && taskActive && !completed && !phraseChallengeFailed;
 
   useEffect(() => {
-    if (!open || !isMember || !accepted || completed) return;
-    markTaskStarted(task.id);
-  }, [open, task.id, isMember, accepted, completed, markTaskStarted]);
+    if (!open) setTaskActive(false);
+  }, [open, task.id]);
+
+  useEffect(() => {
+    setMediaFinished(false);
+  }, [task.id, taskActive]);
 
   useEffect(() => {
     if (!open) return;
@@ -96,6 +109,11 @@ export function CategoryTaskDetailModal({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [open, requestClose]);
 
+  const handleStart = useCallback(() => {
+    setTaskActive(true);
+    markTaskStarted(task.id);
+  }, [task.id, markTaskStarted]);
+
   const handleFinished = useCallback(async () => {
     const result = await completeTask(task.id);
     if (!result.ok) return result;
@@ -123,12 +141,46 @@ export function CategoryTaskDetailModal({
 
   const needsAccept = recurring && isMember && !isAdmin && !accepted;
 
+  const malusBlocked =
+    isMember &&
+    !isAdmin &&
+    !completed &&
+    isMalusBlockingTasks(state.progress.malusPoints, isAdmin);
+
   const imageUrl =
     category.imageUrl && isCategoryImagePreview(category.imageUrl)
       ? category.imageUrl
       : category.imageUrl?.startsWith('http')
         ? category.imageUrl
         : null;
+
+  const showAmbientMedia =
+    taskActive &&
+    isTaskMediaAmbient(task) &&
+    isTaskMediaAutoplayOnStart(task) &&
+    task.taskMediaUrl &&
+    task.taskMediaType;
+
+  const showAmbientHint =
+    taskHasUploadedMedia(task) &&
+    isTaskMediaAmbient(task) &&
+    isTaskMediaAutoplayOnStart(task) &&
+    !taskActive;
+
+  const showInlinePlayer =
+    taskHasUploadedMedia(task) &&
+    task.taskMediaUrl &&
+    task.taskMediaType &&
+    !(isTaskMediaAmbient(task) && taskActive && isTaskMediaAutoplayOnStart(task)) &&
+    !(isTaskMediaAmbient(task) && showAmbientHint);
+
+  const ambientPlaying = Boolean(showAmbientMedia && !completed);
+  const mediaCompletionGated = isTaskMediaCompletionGated(task, {
+    taskActive,
+    ambientPlaying,
+  });
+  const mediaCompletionBlocked = mediaCompletionGated && !mediaFinished;
+  const mediaCompletionHint = 'Finish watching/listening before completing';
 
   return (
     <div
@@ -144,6 +196,15 @@ export function CategoryTaskDetailModal({
         onClick={requestClose}
       />
       <div className="category-task-modal__panel">
+        {showAmbientMedia && (
+          <TaskAmbientMedia
+            url={task.taskMediaUrl}
+            mediaType={task.taskMediaType}
+            playing={ambientPlaying}
+            onEnded={() => setMediaFinished(true)}
+          />
+        )}
+
         <header className="category-task-modal__header">
           <div className="category-task-modal__heading">
             <p className="muted category-task-modal__category">
@@ -224,13 +285,29 @@ export function CategoryTaskDetailModal({
                   <p className="category-task-modal__desc">{task.description}</p>
                 )}
 
-                {taskHasUploadedMedia(task) && task.taskMediaUrl && task.taskMediaType && (
-                  <div className="category-task-modal__task-media">
-                    <TaskMediaPlayer
-                      url={task.taskMediaUrl}
-                      mediaType={task.taskMediaType}
-                    />
-                  </div>
+                {showInlinePlayer && (
+                    <div className="category-task-modal__task-media">
+                      <TaskMediaPlayer
+                        url={task.taskMediaUrl!}
+                        mediaType={task.taskMediaType!}
+                        autoPlay={
+                          taskActive &&
+                          isTaskMediaInline(task) &&
+                          isTaskMediaAutoplayOnStart(task)
+                        }
+                        onEnded={
+                          taskActive && mediaCompletionGated
+                            ? () => setMediaFinished(true)
+                            : undefined
+                        }
+                      />
+                    </div>
+                  )}
+
+                {showAmbientHint && (
+                  <p className="muted category-task-modal__ambient-hint">
+                    Background media will play when you start this task.
+                  </p>
                 )}
 
                 {recurrenceStatus && (
@@ -249,12 +326,32 @@ export function CategoryTaskDetailModal({
                 )}
               </div>
 
-              {!completed && (
+              {!completed && !taskActive && (
+                <div className="category-task-modal__start">
+                  {malusBlocked ? (
+                    <p className="login-error" role="alert">
+                      {MALUS_TASK_BLOCK_MESSAGE}
+                    </p>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn--primary btn--block"
+                      onClick={handleStart}
+                    >
+                      Start
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {!completed && taskActive && (
                 <div className="category-task-modal__actions">
                   <TaskCompletionGate
                     task={task}
                     completed={completed}
                     variant="focus"
+                    completionBlocked={mediaCompletionBlocked}
+                    completionBlockReason={mediaCompletionHint}
                     onStart={() => markTaskStarted(task.id)}
                     onComplete={handleFinished}
                   >

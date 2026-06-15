@@ -53,6 +53,7 @@ import {
   type AdminProfileRow,
   type AdminUserTierFilter,
 } from '../lib/profileDb';
+import { adminResetUserMalus } from '../lib/userProgressDb';
 import {
   AUDIO_PLAYLIST_TIER_OPTIONS,
   PATREON_MEMBER_TIER_OPTIONS,
@@ -1149,6 +1150,12 @@ function TaskAdmin() {
       assignedUserId: taskScope === 'custom' ? draft.assignedUserId ?? null : null,
       taskMediaUrl: mediaResult.taskMediaUrl,
       taskMediaType: mediaResult.taskMediaType,
+      taskMediaPlayback: mediaResult.taskMediaUrl
+        ? draft.taskMediaPlayback ?? 'inline'
+        : undefined,
+      taskMediaAutoplayOnStart: mediaResult.taskMediaUrl
+        ? draft.taskMediaAutoplayOnStart ?? false
+        : undefined,
     };
     const result = isNew ? await addTask(task) : await updateTask(task);
     setSaving(false);
@@ -1212,7 +1219,7 @@ function TaskAdmin() {
               key={t.id}
               selected={draft.id === t.id}
               title={t.title}
-              meta={`${TASK_SCOPE_LABELS[t.taskScope ?? 'category']}${(t.taskScope ?? 'category') === 'category' ? ` · ${categoryName(t.categoryId)}` : ''}${(t.taskScope ?? 'category') === 'custom' ? ` · ${profileName(t.assignedUserId)}` : ''} · ${getStageLabel(t.userStage ?? 'any')} · ${t.xpReward} XP · ${t.pointsReward ?? 0} pts · malus ${t.malusPointsOnFail ?? 0} · ${t.frequency}${(t.recurrence ?? 'none') !== 'none' ? ` · recur ${t.recurrence}` : ''}${t.isExamTask ? ' · exam' : ''}${getPrerequisiteTaskLabel(t, state.tasks) ? ` · after "${getPrerequisiteTaskLabel(t, state.tasks)}"` : ''}${(t.sortOrder ?? 0) > 0 ? ` · order ${t.sortOrder}` : ''}${t.timerSeconds ? ` · timer ${t.timerSeconds}s` : ''}${t.durationSeconds ? ` · duration ${t.durationSeconds}s` : ''}${t.openUrl ? ' · URL' : ''}${t.requiredPhrase ? ` · phrase${(t.requiredPhraseRepeatCount ?? 1) > 1 ? ` ×${t.requiredPhraseRepeatCount}` : ''}` : ''}${(t.linkedMediaType ?? 'none') !== 'none' ? ` · ${t.linkedMediaType}` : ''}${taskHasUploadedMedia(t) ? ` · task ${t.taskMediaType}` : ''}`}
+              meta={`${TASK_SCOPE_LABELS[t.taskScope ?? 'category']}${(t.taskScope ?? 'category') === 'category' ? ` · ${categoryName(t.categoryId)}` : ''}${(t.taskScope ?? 'category') === 'custom' ? ` · ${profileName(t.assignedUserId)}` : ''} · ${getStageLabel(t.userStage ?? 'any')} · ${t.xpReward} XP · ${t.pointsReward ?? 0} pts · malus ${t.malusPointsOnFail ?? 0} · ${t.frequency}${(t.recurrence ?? 'none') !== 'none' ? ` · recur ${t.recurrence}` : ''}${t.isExamTask ? ' · exam' : ''}${getPrerequisiteTaskLabel(t, state.tasks) ? ` · after "${getPrerequisiteTaskLabel(t, state.tasks)}"` : ''}${(t.sortOrder ?? 0) > 0 ? ` · order ${t.sortOrder}` : ''}${t.timerSeconds ? ` · timer ${t.timerSeconds}s` : ''}${t.durationSeconds ? ` · duration ${t.durationSeconds}s` : ''}${t.openUrl ? ' · URL' : ''}${t.requiredPhrase ? ` · phrase${(t.requiredPhraseRepeatCount ?? 1) > 1 ? ` ×${t.requiredPhraseRepeatCount}` : ''}` : ''}${(t.linkedMediaType ?? 'none') !== 'none' ? ` · ${t.linkedMediaType}` : ''}${taskHasUploadedMedia(t) ? ` · task ${t.taskMediaType}${t.taskMediaAutoplayOnStart ? (t.taskMediaPlayback === 'ambient' ? ' · play ambient on start' : ' · play on start') : ''}` : ''}`}
               onEdit={() => {
                 setDraft(t);
                 setTaskMediaPicker(emptyTaskMediaPickerValue());
@@ -1824,14 +1831,32 @@ function TaskAdmin() {
 
       <FormBlock title="Task media">
         <p className="muted" style={{ marginTop: 0 }}>
-          Optional. Upload a video or audio file shown on the task screen for this task
-          only.
+          Optional. Upload a video or audio file for this task. Users can preview
+          attached media before starting. Check &quot;Play on Start&quot; to begin
+          playback when they click Start (inline player or 40% background overlay).
         </p>
         <TaskMediaPicker
           existingUrl={draft.taskMediaUrl}
           existingType={draft.taskMediaType}
+          playback={draft.taskMediaPlayback ?? 'inline'}
+          onPlaybackChange={(playback) =>
+            setDraft((d) => ({ ...d, taskMediaPlayback: playback }))
+          }
+          autoplayOnStart={draft.taskMediaAutoplayOnStart ?? false}
+          onAutoplayOnStartChange={(autoplay) =>
+            setDraft((d) => ({ ...d, taskMediaAutoplayOnStart: autoplay }))
+          }
           value={taskMediaPicker}
-          onChange={setTaskMediaPicker}
+          onChange={(value) => {
+            setTaskMediaPicker(value);
+            if (value.removeExisting && !value.pendingFile) {
+              setDraft((d) => ({
+                ...d,
+                taskMediaPlayback: undefined,
+                taskMediaAutoplayOnStart: undefined,
+              }));
+            }
+          }}
           onError={(message) => setMessage(message)}
         />
       </FormBlock>
@@ -2726,6 +2751,8 @@ function UserAdmin() {
   const [syncMessage, setSyncMessage] = useState('');
   const [syncError, setSyncError] = useState('');
   const [syncConfigHint, setSyncConfigHint] = useState('');
+  const [malusResetMessage, setMalusResetMessage] = useState('');
+  const [malusResetLoading, setMalusResetLoading] = useState(false);
 
   const linkedProfileCount = useMemo(
     () => profiles.filter((p) => p.patreonUserId).length,
@@ -2808,6 +2835,33 @@ function UserAdmin() {
     setEditTier(row.patreonTier ?? '');
     setEditStatus(row.patreonStatus);
     setTierMessage('');
+    setMalusResetMessage('');
+  };
+
+  const resetUserMalus = async () => {
+    if (!selectedUserId || !selectedUser) return;
+    const malus = selectedUser.malusPoints ?? 0;
+    if (malus <= 0) {
+      setMalusResetMessage('This user has no malus points.');
+      return;
+    }
+    const confirmed = window.confirm(
+      `Reset malus for ${selectedUser.username}? Their balance will go from ${malus} to 0.`,
+    );
+    if (!confirmed) return;
+
+    setMalusResetMessage('');
+    setMalusResetLoading(true);
+    const result = await adminResetUserMalus(selectedUserId);
+    setMalusResetLoading(false);
+    if (!result.ok) {
+      setMalusResetMessage(result.error);
+      return;
+    }
+    setMalusResetMessage(
+      `Malus reset for ${selectedUser.username} (${result.previousMalus} → 0).`,
+    );
+    void loadProfiles();
   };
 
   const savePatreonTier = async () => {
@@ -2836,7 +2890,7 @@ function UserAdmin() {
     const statusPart = patreonStatusLabel(p.patreonStatus);
     const linkedPart = p.patreonUserId ? 'linked' : 'not linked';
     const syncedPart = formatPatreonLastSynced(p.patreonUpdatedAt);
-    return `Email: ${displayAdminUserEmail(p)} · ${p.role} · Patreon: ${tierPart} (${statusPart}, ${linkedPart}) · Last synced: ${syncedPart}`;
+    return `Email: ${displayAdminUserEmail(p)} · ${p.role} · Malus: ${p.malusPoints ?? 0} · Patreon: ${tierPart} (${statusPart}, ${linkedPart}) · Last synced: ${syncedPart}`;
   };
 
   const list = (
@@ -2938,6 +2992,27 @@ function UserAdmin() {
                 disabled
               />
             </Field>
+            <Field label="Malus balance" htmlFor="user-tier-malus">
+              <input
+                id="user-tier-malus"
+                value={String(selectedUser?.malusPoints ?? 0)}
+                readOnly
+                disabled
+              />
+            </Field>
+            <div className="btn-row">
+              <button
+                type="button"
+                className="btn btn--secondary"
+                disabled={
+                  malusResetLoading || (selectedUser?.malusPoints ?? 0) <= 0
+                }
+                onClick={() => void resetUserMalus()}
+              >
+                {malusResetLoading ? 'Resetting malus…' : 'Reset malus'}
+              </button>
+            </div>
+            <StatusMessage message={malusResetMessage} />
             <Field label="Patreon tier">
               <ChipSelect
                 label="Patreon tier"

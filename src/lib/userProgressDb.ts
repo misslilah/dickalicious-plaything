@@ -105,3 +105,34 @@ export async function saveUserProgress(
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }
+
+export async function adminResetUserMalus(
+  userId: string,
+): Promise<
+  { ok: true; previousMalus: number } | { ok: false; error: string }
+> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const { data, error } = await supabase.rpc('admin_reset_user_malus', {
+    p_user_id: userId,
+  });
+
+  if (error) {
+    const missingRpc =
+      error.code === 'PGRST202' ||
+      error.code === '42883' ||
+      /admin_reset_user_malus/i.test(error.message ?? '') ||
+      /function.*does not exist/i.test(error.message ?? '');
+    if (missingRpc) {
+      return {
+        ok: false,
+        error:
+          'Malus reset requires supabase/migrations/092_admin_reset_user_malus.sql. Run it in the Supabase SQL Editor, then retry.',
+      };
+    }
+    return { ok: false, error: error.message };
+  }
+
+  return { ok: true, previousMalus: typeof data === 'number' ? data : 0 };
+}

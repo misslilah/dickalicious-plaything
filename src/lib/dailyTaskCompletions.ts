@@ -1,3 +1,4 @@
+import { MALUS_TASK_BLOCK_MESSAGE } from './malus';
 import { mapRecurringCompletionRpcError } from './recurringCategoryTasksDb';
 import { getSupabase } from './supabase';
 
@@ -13,7 +14,7 @@ export interface DailyTaskCompletionStatus {
   remaining: number | null;
   unlimited: boolean;
   canComplete: boolean;
-  error?: 'daily_limit_reached' | 'task_not_found' | 'not_category_member' | 'recurring_not_accepted' | 'recurring_period_complete';
+  error?: 'daily_limit_reached' | 'task_not_found' | 'not_category_member' | 'recurring_not_accepted' | 'recurring_period_complete' | 'active_malus';
 }
 
 type RpcStatusRow = {
@@ -58,7 +59,8 @@ export function mapDailyTaskCompletionStatus(
     row?.error === 'task_not_found' ||
     row?.error === 'not_category_member' ||
     row?.error === 'recurring_not_accepted' ||
-    row?.error === 'recurring_period_complete'
+    row?.error === 'recurring_period_complete' ||
+    row?.error === 'active_malus'
       ? row.error
       : undefined;
 
@@ -125,11 +127,17 @@ export async function recordTaskCompletionDb(
 
   const row = data as RpcStatusRow | null;
   const status = mapDailyTaskCompletionStatus(row);
-  if (row?.ok === false || status.error === 'daily_limit_reached') {
+  if (
+    row?.ok === false ||
+    status.error === 'daily_limit_reached' ||
+    status.error === 'active_malus'
+  ) {
     return {
       ok: false,
       error:
-        status.error === 'not_category_member'
+        status.error === 'active_malus'
+          ? MALUS_TASK_BLOCK_MESSAGE
+          : status.error === 'not_category_member'
           ? 'Join this category to complete its tasks.'
           : status.error === 'recurring_not_accepted' ||
               status.error === 'recurring_period_complete'

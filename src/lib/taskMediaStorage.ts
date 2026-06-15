@@ -37,6 +37,29 @@ export function taskHasTaskMedia(task: Task): boolean {
 /** Alias used by player UI. */
 export const taskHasUploadedMedia = taskHasTaskMedia;
 
+export function isTaskMediaInline(task: Task): boolean {
+  return taskHasTaskMedia(task) && (task.taskMediaPlayback ?? 'inline') === 'inline';
+}
+
+export function isTaskMediaAmbient(task: Task): boolean {
+  return taskHasTaskMedia(task) && task.taskMediaPlayback === 'ambient';
+}
+
+/** True when completion must wait for uploaded task media to finish. */
+export function isTaskMediaCompletionGated(
+  task: Task,
+  options: { taskActive: boolean; ambientPlaying: boolean },
+): boolean {
+  if (!options.taskActive || !taskHasTaskMedia(task)) return false;
+  if (isTaskMediaInline(task)) return true;
+  if (isTaskMediaAmbient(task) && options.ambientPlaying) return true;
+  return false;
+}
+
+export function isTaskMediaAutoplayOnStart(task: Task): boolean {
+  return taskHasTaskMedia(task) && task.taskMediaAutoplayOnStart === true;
+}
+
 export function validateTaskMediaFile(
   file: File,
 ): { ok: true; mediaType: TaskMediaType } | { ok: false; error: string } {

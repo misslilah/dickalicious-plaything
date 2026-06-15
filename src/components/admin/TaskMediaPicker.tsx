@@ -3,7 +3,7 @@ import {
   TASK_MEDIA_ACCEPT,
   validateTaskMediaFile,
 } from '../../lib/taskMediaStorage';
-import type { TaskMediaType } from '../../types';
+import type { TaskMediaPlayback, TaskMediaType } from '../../types';
 
 export type TaskMediaPickerValue = {
   pendingFile: File | null;
@@ -15,6 +15,10 @@ export type TaskMediaPickerValue = {
 type TaskMediaPickerProps = {
   existingUrl?: string;
   existingType?: TaskMediaType;
+  playback?: TaskMediaPlayback;
+  onPlaybackChange?: (playback: TaskMediaPlayback) => void;
+  autoplayOnStart?: boolean;
+  onAutoplayOnStartChange?: (autoplay: boolean) => void;
   value: TaskMediaPickerValue;
   onChange: (value: TaskMediaPickerValue) => void;
   onError?: (message: string) => void;
@@ -31,6 +35,10 @@ export const emptyTaskMediaPickerValue = (): TaskMediaPickerValue => ({
 export function TaskMediaPicker({
   existingUrl,
   existingType,
+  playback = 'inline',
+  onPlaybackChange,
+  autoplayOnStart = false,
+  onAutoplayOnStartChange,
   value,
   onChange,
   onError,
@@ -72,6 +80,8 @@ export function TaskMediaPicker({
     });
   };
 
+  const hasMedia = Boolean(previewUrl && previewType);
+
   return (
     <div
       className={
@@ -103,6 +113,32 @@ export function TaskMediaPicker({
       <p className="muted task-media-picker__hint">
         One video (mp4, webm) or audio (mp3, wav, m4a, ogg) file per task. Max 100 MB.
       </p>
+
+      {hasMedia && onAutoplayOnStartChange && (
+        <label className="task-media-picker__autoplay">
+          <input
+            type="checkbox"
+            checked={autoplayOnStart}
+            onChange={(e) => onAutoplayOnStartChange(e.target.checked)}
+          />
+          <span>Play media when user clicks Start</span>
+        </label>
+      )}
+
+      {hasMedia && onPlaybackChange && autoplayOnStart && (
+        <label className="task-media-picker__playback">
+          <span className="muted">Playback</span>
+          <select
+            value={playback}
+            onChange={(e) =>
+              onPlaybackChange(e.target.value as TaskMediaPlayback)
+            }
+          >
+            <option value="inline">Inline (player with controls)</option>
+            <option value="ambient">Background media (40% opacity)</option>
+          </select>
+        </label>
+      )}
 
       {previewUrl && previewType === 'video' && (
         <video

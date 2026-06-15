@@ -150,8 +150,9 @@ export function Dashboard() {
       {malus > 0 && (
         <section className="card card--warn">
           <p>
-            {malus} malus point{malus === 1 ? '' : 's'}.{' '}
-            <Link to="/punishments">Clear malus with a punishment</Link>
+            You have <strong>{malus}</strong> active malus point{malus === 1 ? '' : 's'}.
+            Tasks are blocked until you clear your malus.{' '}
+            <Link to="/punishments">Complete a punishment</Link> to reduce your balance.
           </p>
         </section>
       )}

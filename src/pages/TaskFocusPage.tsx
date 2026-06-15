@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Link,
   useBlocker,
   useNavigate,
   useParams,
 } from 'react-router-dom';
+import { TaskAmbientMedia } from '../components/TaskAmbientMedia';
 import { TaskCompletionGate } from '../components/TaskCompletionGate';
 import { TaskMediaPlayer } from '../components/TaskMediaPlayer';
 import { useAppStore } from '../hooks/useAppStore';
@@ -17,6 +18,7 @@ import {
   isCategoryTaskAvailable,
   isCategoryUnlocked,
 } from '../lib/categoryProgression';
+import { isMalusBlockingTasks, MALUS_TASK_BLOCK_MESSAGE } from '../lib/malus';
 import { getCategoryTaskStatus } from '../lib/gameLogic';
 import {
   getRecurringTaskStatusLabel,
@@ -25,7 +27,13 @@ import {
   TASK_RECURRENCE_LABELS,
 } from '../lib/recurringCategoryTasks';
 import { isCategoryScopeTask } from '../lib/taskScope';
-import { taskHasUploadedMedia } from '../lib/taskMediaStorage';
+import {
+  isTaskMediaAmbient,
+  isTaskMediaAutoplayOnStart,
+  isTaskMediaCompletionGated,
+  isTaskMediaInline,
+  taskHasUploadedMedia,
+} from '../lib/taskMediaStorage';
 import type { Task } from '../types';
 
 const EMPTY_TASK: Task = {
@@ -44,6 +52,8 @@ export function TaskFocusPage() {
   }>();
   const navigate = useNavigate();
   const { state, markTaskStarted, completeTask, acceptRecurringCategoryTask, isEffectiveAdmin } = useAppStore();
+  const [taskActive, setTaskActive] = useState(false);
+  const [mediaFinished, setMediaFinished] = useState(false);
 
   const isAdmin = isEffectiveAdmin;
   const category = state.categories.find((c) => c.id === categoryId);
@@ -71,15 +81,15 @@ export function TaskFocusPage() {
 
   useEffect(() => {
     allowNavigationRef.current = false;
+    setTaskActive(false);
   }, [taskId]);
 
   useEffect(() => {
-    if (!taskId || !validTask || completed || !accepted) return;
-    markTaskStarted(taskId);
-  }, [taskId, validTask, completed, accepted, markTaskStarted]);
+    setMediaFinished(false);
+  }, [taskId, taskActive]);
 
   const shouldBlockNavigation =
-    validTask && isMember && accepted && !completed && !phraseChallengeFailed;
+    validTask && isMember && accepted && taskActive && !completed && !phraseChallengeFailed;
 
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
@@ -105,6 +115,12 @@ export function TaskFocusPage() {
     if (leave) blocker.proceed();
     else blocker.reset();
   }, [blocker]);
+
+  const handleStart = useCallback(() => {
+    if (!taskId) return;
+    setTaskActive(true);
+    markTaskStarted(taskId);
+  }, [taskId, markTaskStarted]);
 
   const handleFinished = useCallback(async () => {
     if (!taskId) return { ok: false as const, error: 'Task not found.' };
@@ -204,6 +220,40 @@ export function TaskFocusPage() {
 
   const canLeave = !shouldBlockNavigation;
 
+  const showAmbientMedia =
+    taskActive &&
+    isTaskMediaAmbient(task) &&
+    isTaskMediaAutoplayOnStart(task) &&
+    task.taskMediaUrl &&
+    task.taskMediaType;
+
+  const showAmbientHint =
+    taskHasUploadedMedia(task) &&
+    isTaskMediaAmbient(task) &&
+    isTaskMediaAutoplayOnStart(task) &&
+    !taskActive;
+
+  const showInlinePlayer =
+    taskHasUploadedMedia(task) &&
+    task.taskMediaUrl &&
+    task.taskMediaType &&
+    !(isTaskMediaAmbient(task) && taskActive && isTaskMediaAutoplayOnStart(task)) &&
+    !(isTaskMediaAmbient(task) && showAmbientHint);
+
+  const ambientPlaying = Boolean(showAmbientMedia && !completed);
+  const mediaCompletionGated = isTaskMediaCompletionGated(task, {
+    taskActive,
+    ambientPlaying,
+  });
+  const mediaCompletionBlocked = mediaCompletionGated && !mediaFinished;
+  const mediaCompletionHint = 'Finish watching/listening before completing';
+
+  const malusBlocked =
+    isMember &&
+    !isAdmin &&
+    !completed &&
+    isMalusBlockingTasks(state.progress.malusPoints, isAdmin);
+
   return (
     <div className="page task-focus">
       {canLeave ? (
@@ -216,7 +266,16 @@ export function TaskFocusPage() {
         </span>
       )}
 
-      <div className="task-focus__layout">
+      <div className="task-focus__layout task-focus__layout--with-ambient">
+        {showAmbientMedia && (
+          <TaskAmbientMedia
+            url={task.taskMediaUrl}
+            mediaType={task.taskMediaType}
+            playing={ambientPlaying}
+            onEnded={() => setMediaFinished(true)}
+          />
+        )}
+
         <div className="task-focus__media">
           {imageUrl ? (
             <img
@@ -251,28 +310,65 @@ export function TaskFocusPage() {
             {task.description && (
               <p className="task-focus__desc">{task.description}</p>
             )}
-            {taskHasUploadedMedia(task) && task.taskMediaUrl && task.taskMediaType && (
-              <div className="task-focus__task-media">
-                <TaskMediaPlayer
-                  url={task.taskMediaUrl}
-                  mediaType={task.taskMediaType}
-                />
-              </div>
+            {showInlinePlayer && (
+                <div className="task-focus__task-media">
+                  <TaskMediaPlayer
+                    url={task.taskMediaUrl!}
+                    mediaType={task.taskMediaType!}
+                    autoPlay={
+                      taskActive &&
+                      isTaskMediaInline(task) &&
+                      isTaskMediaAutoplayOnStart(task)
+                    }
+                    onEnded={
+                      taskActive && mediaCompletionGated
+                        ? () => setMediaFinished(true)
+                        : undefined
+                    }
+                  />
+                </div>
+              )}
+            {showAmbientHint && (
+              <p className="muted task-focus__ambient-hint">
+                Background media will play when you start this task.
+              </p>
             )}
           </header>
 
-          <TaskCompletionGate
-            task={task}
-            completed={completed}
-            variant="focus"
-            onStart={() => taskId && markTaskStarted(taskId)}
-            onComplete={handleFinished}
-          >
-            <div className="task-focus__rewards muted">
-              +{task.xpReward} XP
-              {(task.pointsReward ?? 0) > 0 && ` · +${task.pointsReward} pts`}
+          {!completed && !taskActive && (
+            <div className="task-focus__start">
+              {malusBlocked ? (
+                <p className="login-error" role="alert">
+                  {MALUS_TASK_BLOCK_MESSAGE}
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn--primary btn--block"
+                  onClick={handleStart}
+                >
+                  Start
+                </button>
+              )}
             </div>
-          </TaskCompletionGate>
+          )}
+
+          {!completed && taskActive && (
+            <TaskCompletionGate
+              task={task}
+              completed={completed}
+              variant="focus"
+              completionBlocked={mediaCompletionBlocked}
+              completionBlockReason={mediaCompletionHint}
+              onStart={() => taskId && markTaskStarted(taskId)}
+              onComplete={handleFinished}
+            >
+              <div className="task-focus__rewards muted">
+                +{task.xpReward} XP
+                {(task.pointsReward ?? 0) > 0 && ` · +${task.pointsReward} pts`}
+              </div>
+            </TaskCompletionGate>
+          )}
 
           {completed && (
             <p className="notice task-focus__done-notice">

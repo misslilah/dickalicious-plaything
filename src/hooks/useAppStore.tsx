@@ -128,6 +128,10 @@ import {
   writeAdminUserPreviewToStorage,
 } from '../lib/adminUserMode';
 import {
+  isMalusBlockingTasks,
+  MALUS_TASK_BLOCK_MESSAGE,
+} from '../lib/malus';
+import {
   readBubblesEnabledFromStorage,
   writeBubblesEnabledToStorage,
 } from '../lib/appSettings';
@@ -604,6 +608,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       completeTask: async (taskId) => {
         const blocked = blockUserPreviewMutation();
         if (blocked) return blocked;
+        if (isMalusBlockingTasks(state.progress.malusPoints, effectiveAdmin)) {
+          return { ok: false, error: MALUS_TASK_BLOCK_MESSAGE };
+        }
         const task = state.tasks.find((t) => t.id === taskId);
         const date = todayKey(getResetHour(state));
         const plan = state.dailyPlans[date];
@@ -739,6 +746,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       markTaskStarted: (taskId) => {
         const blocked = blockUserPreviewMutation();
         if (blocked) return;
+        if (isMalusBlockingTasks(state.progress.malusPoints, effectiveAdmin)) {
+          return;
+        }
         applyUserState(markTaskStarted(state, taskId));
       },
       closeDay: () => {
@@ -928,6 +938,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       acceptRecurringCategoryTask: async (taskId) => {
         const blocked = blockUserPreviewMutation();
         if (blocked) return blocked;
+        if (isMalusBlockingTasks(state.progress.malusPoints, effectiveAdmin)) {
+          return { ok: false, error: MALUS_TASK_BLOCK_MESSAGE };
+        }
         const userId = userIdRef.current;
         if (!userId) return { ok: false, error: 'Not signed in.' };
         const task = state.tasks.find((t) => t.id === taskId);

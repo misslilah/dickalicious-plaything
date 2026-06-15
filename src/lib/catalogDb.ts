@@ -67,6 +67,8 @@ type DbTask = {
   linked_audio_url: string | null;
   task_media_url: string | null;
   task_media_type: string | null;
+  task_media_playback: string | null;
+  task_media_autoplay_on_start: boolean;
   sort_order: number;
   prerequisite_task_id: string | null;
   is_exam_task: boolean;
@@ -185,6 +187,9 @@ function mapTask(row: DbTask): Task {
       row.task_media_type === 'video' || row.task_media_type === 'audio'
         ? row.task_media_type
         : undefined,
+    taskMediaPlayback:
+      row.task_media_playback === 'ambient' ? 'ambient' : 'inline',
+    taskMediaAutoplayOnStart: row.task_media_autoplay_on_start ?? false,
     sortOrder: row.sort_order ?? 0,
     prerequisiteTaskId: row.prerequisite_task_id ?? null,
     isExamTask: row.is_exam_task ?? false,
@@ -488,7 +493,7 @@ function formatTaskSaveError(message: string, inserting: boolean): string {
       : 'Task not found or could not be updated. It may have been deleted.';
   }
   if (/task_media_/i.test(message) && /column|schema cache/i.test(message)) {
-    return 'Task media columns are missing. Run supabase/migrations/089_task_media.sql in the Supabase SQL Editor, then retry.';
+    return 'Task media columns are missing. Run supabase/migrations/089_task_media.sql, 090_task_media_playback.sql, and 091_task_media_autoplay_on_start.sql in the Supabase SQL Editor, then retry.';
   }
   return message;
 }
@@ -535,6 +540,8 @@ export async function upsertTask(
         : null,
     task_media_url: task.taskMediaUrl?.trim() || null,
     task_media_type: task.taskMediaType ?? null,
+    task_media_playback: task.taskMediaPlayback ?? 'inline',
+    task_media_autoplay_on_start: task.taskMediaAutoplayOnStart ?? false,
     sort_order: task.sortOrder ?? 0,
     prerequisite_task_id: task.prerequisiteTaskId ?? null,
     is_exam_task: task.isExamTask ?? false,

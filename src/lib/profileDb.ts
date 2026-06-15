@@ -22,6 +22,7 @@ export interface AdminProfileRow {
   patreonStatus: PatreonStatus;
   patreonUserId: string | null;
   patreonUpdatedAt: string | null;
+  malusPoints: number;
 }
 
 type DbProfilePatreon = {
@@ -51,6 +52,7 @@ type DbAdminListUserRow = {
   patreon_tier: PatreonMemberTier | null;
   patreon_status: PatreonStatus;
   patreon_updated_at?: string | null;
+  malus_points?: number | null;
 };
 
 export type FetchAdminProfilesResult =
@@ -132,6 +134,7 @@ function mapAdminProfileRow(row: DbAdminProfileRow): AdminProfileRow {
     patreonTier: row.patreon_tier ?? null,
     patreonStatus: row.patreon_status ?? 'none',
     patreonUpdatedAt: row.patreon_updated_at ?? null,
+    malusPoints: 0,
   };
 }
 
@@ -145,6 +148,7 @@ function mapAdminListUserRow(row: DbAdminListUserRow): AdminProfileRow {
     patreonTier: row.patreon_tier ?? null,
     patreonStatus: row.patreon_status ?? 'none',
     patreonUpdatedAt: row.patreon_updated_at ?? null,
+    malusPoints: row.malus_points ?? 0,
   };
 }
 

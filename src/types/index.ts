@@ -9,8 +9,9 @@ export type TaskScope = 'category' | 'daily' | 'custom';
 
 export type TaskLinkedMediaType = 'none' | 'video' | 'audio';
 
-/** Uploaded video or audio file attached to a specific task. */
+/** Uploaded task-specific media (not catalog video / audio library). */
 export type TaskMediaType = 'video' | 'audio';
+export type TaskMediaPlayback = 'inline' | 'ambient';
 
 export type UserRole = 'user' | 'admin';
 
@@ -103,6 +104,10 @@ export interface Task {
   taskMediaUrl?: string;
   /** `video` or `audio` for taskMediaUrl. */
   taskMediaType?: TaskMediaType;
+  /** inline = player in info panel; ambient = 40% background when playing on Start. */
+  taskMediaPlayback?: TaskMediaPlayback;
+  /** When true, media plays after the user clicks Start. */
+  taskMediaAutoplayOnStart?: boolean;
   /** Display order within the category (lower first). */
   sortOrder?: number;
   /** Must complete this task in the same category first. */

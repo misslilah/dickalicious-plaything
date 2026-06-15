@@ -1906,6 +1906,12 @@ a.task-list-row {
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
 }
 
+.category-task-modal__header,
+.category-task-modal__body {
+  position: relative;
+  z-index: 1;
+}
+
 @media (min-width: 768px) {
   .category-task-modal__panel {
     width: min(100%, 52rem);
@@ -2049,6 +2055,71 @@ a.task-list-row {
 
 .category-task-modal__done {
   margin: 0;
+}
+
+.category-task-modal__start {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.category-task-modal__ambient-hint,
+.task-focus__ambient-hint {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.task-ambient-media {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.4;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.task-ambient-media--audio {
+  /* Audio has no visual; keep element in DOM for playback only. */
+  width: 0;
+  height: 0;
+  opacity: 0;
+}
+
+.task-focus__layout--with-ambient {
+  position: relative;
+  overflow: hidden;
+}
+
+.task-focus__layout--with-ambient > .task-focus__media,
+.task-focus__layout--with-ambient > .task-focus__panel {
+  position: relative;
+  z-index: 1;
+}
+
+.task-focus__start {
+  margin-top: 1rem;
+}
+
+.task-media-picker__autoplay {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.task-media-picker__playback {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.task-media-picker__playback select {
+  width: 100%;
+  max-width: 28rem;
 }
 
 .category-detail__hero {

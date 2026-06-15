@@ -3,6 +3,7 @@ import type { Task } from '../types';
 import { useTaskCompletion } from '../hooks/useTaskCompletion';
 import { useAppStore } from '../hooks/useAppStore';
 import { dailyTaskCompletionBlockedMessage } from '../lib/dailyTaskCompletions';
+import { isMalusBlockingTasks, MALUS_TASK_BLOCK_MESSAGE } from '../lib/malus';
 import { countsTowardDailyCompletionLimit } from '../lib/taskScope';
 import { getPhraseRepeatCount } from '../lib/phraseChallenge';
 import {
@@ -21,6 +22,8 @@ interface TaskCompletionGateProps {
   task: Task;
   completed: boolean;
   disabled?: boolean;
+  completionBlocked?: boolean;
+  completionBlockReason?: string;
   variant?: 'list' | 'focus';
   onStart?: () => void;
   onComplete: () => TaskCompleteResult | Promise<TaskCompleteResult>;
@@ -32,6 +35,8 @@ export function TaskCompletionGate({
   task,
   completed,
   disabled = false,
+  completionBlocked = false,
+  completionBlockReason,
   variant = 'list',
   onStart,
   onComplete,
@@ -43,6 +48,7 @@ export function TaskCompletionGate({
     recordBadgeTaskTime,
     dailyTaskCompletionStatus,
     isEffectiveAdmin,
+    state,
   } = useAppStore();
   const [showPhraseModal, setShowPhraseModal] = useState(false);
   const [showMediaModal, setShowMediaModal] = useState(false);
@@ -51,6 +57,10 @@ export function TaskCompletionGate({
   const [completionError, setCompletionError] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
   const isAdmin = isEffectiveAdmin;
+  const malusBlocked =
+    !completed &&
+    !isAdmin &&
+    isMalusBlockingTasks(state.progress.malusPoints, isAdmin);
   const enforceDailyLimit = countsTowardDailyCompletionLimit(task);
   const atDailyLimit =
     enforceDailyLimit &&
@@ -95,6 +105,8 @@ export function TaskCompletionGate({
   const needsManualStart = hasTimer || hasDuration || hasLinkedMedia;
   const repeatCount = getPhraseRepeatCount(task);
   const malusOnFail = task.malusPointsOnFail ?? 0;
+  const mediaCompletionBlocked = !completed && completionBlocked;
+  const effectiveCanComplete = canComplete && !mediaCompletionBlocked;
 
   useEffect(() => {
     timerCreditedRef.current = false;
@@ -212,6 +224,10 @@ export function TaskCompletionGate({
       setPhraseFailNotice(null);
       return;
     }
+    if (malusBlocked) {
+      setCompletionError(MALUS_TASK_BLOCK_MESSAGE);
+      return;
+    }
     if (atDailyLimit) {
       setCompletionError(
         dailyTaskCompletionStatus
@@ -224,12 +240,15 @@ export function TaskCompletionGate({
       openPhraseChallenge();
       return;
     }
-    if (!canComplete || disabled || completing) return;
+    if (!effectiveCanComplete || disabled || completing) return;
     void runComplete();
   };
 
   const handleFinished = () => {
-    if (completed || disabled || !canComplete || completing || atDailyLimit) return;
+    if (completed || disabled || !effectiveCanComplete || completing || atDailyLimit || malusBlocked) {
+      if (malusBlocked) setCompletionError(MALUS_TASK_BLOCK_MESSAGE);
+      return;
+    }
     void runComplete();
   };
 
@@ -274,7 +293,8 @@ export function TaskCompletionGate({
     disabled ||
     completing ||
     atDailyLimit ||
-    (!completed && hasRequirements && !canComplete);
+    malusBlocked ||
+    (!completed && hasRequirements && !effectiveCanComplete);
 
   const requirementHints: string[] = [];
   if (!completed && hasRequirements) {
@@ -291,14 +311,21 @@ export function TaskCompletionGate({
       requirementHints.push('Linked media failed');
     else if (hasLinkedMedia && !linkedMediaDone)
       requirementHints.push('Watch or listen to linked media');
+    if (mediaCompletionBlocked) {
+      requirementHints.push(
+        completionBlockReason ?? 'Finish watching/listening before completing',
+      );
+    }
   }
 
   const gateContent = (
     <>
-      {(completionError || atDailyLimit) && !completed && (
+      {(completionError || atDailyLimit || malusBlocked) && !completed && (
         <p className="task-card__phrase-fail" role="alert">
           {completionError ??
-            (dailyTaskCompletionStatus
+            (malusBlocked
+              ? MALUS_TASK_BLOCK_MESSAGE
+              : dailyTaskCompletionStatus
               ? dailyTaskCompletionBlockedMessage(dailyTaskCompletionStatus)
               : 'Category task limit reached (3/3). Come back tomorrow.')}
         </p>
@@ -435,13 +462,17 @@ export function TaskCompletionGate({
 
       {focusMode && !completed && !disabled && (
         <div className="task-focus__actions">
-          {atDailyLimit ? (
+          {malusBlocked ? (
+            <p className="task-focus__lock login-error" role="alert">
+              {MALUS_TASK_BLOCK_MESSAGE}
+            </p>
+          ) : atDailyLimit ? (
             <p className="task-focus__lock login-error" role="alert">
               {dailyTaskCompletionStatus
                 ? dailyTaskCompletionBlockedMessage(dailyTaskCompletionStatus)
                 : 'Category task limit reached (3/3). Come back tomorrow.'}
             </p>
-          ) : canComplete ? (
+          ) : effectiveCanComplete ? (
             <button
               type="button"
               className="btn btn--primary btn--block"
@@ -452,9 +483,11 @@ export function TaskCompletionGate({
             </button>
           ) : (
             <p className="task-focus__lock muted">
-              {phraseChallengeFailed || linkedMediaFailed
-                ? 'This task cannot be completed today.'
-                : 'Complete all requirements above to finish.'}
+              {mediaCompletionBlocked
+                ? (completionBlockReason ?? 'Finish watching/listening before completing')
+                : phraseChallengeFailed || linkedMediaFailed
+                  ? 'This task cannot be completed today.'
+                  : 'Complete all requirements above to finish.'}
             </p>
           )}
         </div>
