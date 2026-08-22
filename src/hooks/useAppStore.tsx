@@ -103,6 +103,8 @@ import {
 import { completePunishmentDb } from '../lib/punishmentCooldownDb';
 import {
   type DailyTaskCompletionStatus,
+  dailyTaskCompletionBlockedMessage,
+  DAILY_TASK_COMPLETION_LIMIT,
   fetchDailyTaskCompletionStatus,
   recordTaskCompletionDb,
 } from '../lib/dailyTaskCompletions';
@@ -118,13 +120,16 @@ import {
   isRecurringTaskAccepted,
 } from '../lib/recurringCategoryTasks';
 import {
+  composeUserPreviewState,
+  extractUserPreviewOverlay,
   isEffectiveAdmin,
-  maskDailyTaskCompletionStatus,
   maskSessionForUserPreview,
   maskStateForUserPreview,
   readAdminUserPreviewFromStorage,
+  sandboxDailyTaskCompletionStatus,
   shouldApplyUserPreview,
-  USER_PREVIEW_PROGRESS_BLOCKED,
+  type UserPreviewOverlay,
+  withSyncedCategoryProgress,
   writeAdminUserPreviewToStorage,
 } from '../lib/adminUserMode';
 import {
@@ -301,14 +306,39 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [adminUserPreview, setAdminUserPreviewState] = useState(
     () => readAdminUserPreviewFromStorage(),
   );
+  const [previewOverlay, setPreviewOverlay] = useState<UserPreviewOverlay | null>(
+    null,
+  );
   const userIdRef = useRef<string | null>(null);
 
-  const setAdminUserPreview = useCallback((enabled: boolean) => {
-    writeAdminUserPreviewToStorage(enabled);
-    setAdminUserPreviewState(enabled);
-  }, []);
-
   const previewActive = shouldApplyUserPreview(session, adminUserPreview);
+
+  const createFreshPreviewOverlay = useCallback((): UserPreviewOverlay => {
+    const fresh = ensureDailyPlan(
+      { ...maskStateForUserPreview(state), dailyPlans: {} },
+      undefined,
+      userIdRef.current,
+    );
+    return extractUserPreviewOverlay(fresh, 0);
+  }, [state]);
+
+  const setAdminUserPreview = useCallback(
+    (enabled: boolean) => {
+      writeAdminUserPreviewToStorage(enabled);
+      setPreviewOverlay(enabled ? createFreshPreviewOverlay() : null);
+      setAdminUserPreviewState(enabled);
+    },
+    [createFreshPreviewOverlay],
+  );
+
+  useEffect(() => {
+    if (!previewActive) {
+      setPreviewOverlay(null);
+      return;
+    }
+    setPreviewOverlay((current) => current ?? createFreshPreviewOverlay());
+  }, [previewActive, createFreshPreviewOverlay]);
+
   const effectiveSession = useMemo(
     () =>
       previewActive && session
@@ -316,25 +346,34 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         : session,
     [previewActive, session],
   );
-  const displayState = useMemo(
-    () => (previewActive ? maskStateForUserPreview(state) : state),
-    [previewActive, state],
-  );
+  const displayState = useMemo(() => {
+    if (!previewActive) return state;
+    return ensureDailyPlan(
+      composeUserPreviewState(state, previewOverlay),
+      undefined,
+      session?.userId ?? null,
+    );
+  }, [previewActive, state, previewOverlay, session?.userId]);
   const displayDailyTaskCompletionStatus = useMemo(
     () =>
       previewActive
-        ? maskDailyTaskCompletionStatus(dailyTaskCompletionStatus)
+        ? sandboxDailyTaskCompletionStatus(previewOverlay?.dailyCompletionsUsed ?? 0)
         : dailyTaskCompletionStatus,
-    [previewActive, dailyTaskCompletionStatus],
+    [previewActive, previewOverlay, dailyTaskCompletionStatus],
   );
   const effectiveAdmin = isEffectiveAdmin(session, adminUserPreview);
 
-  const blockUserPreviewMutation = useCallback((): { ok: false; error: string } | null => {
-    if (previewActive) {
-      return { ok: false, error: USER_PREVIEW_PROGRESS_BLOCKED };
-    }
-    return null;
-  }, [previewActive]);
+  const commitSandboxState = useCallback(
+    (next: AppState, dailyCompletionsUsed?: number) => {
+      setPreviewOverlay(
+        extractUserPreviewOverlay(
+          next,
+          dailyCompletionsUsed ?? previewOverlay?.dailyCompletionsUsed ?? 0,
+        ),
+      );
+    },
+    [previewOverlay],
+  );
 
   const refreshDailyTaskCompletionStatus = useCallback(async () => {
     if (!userIdRef.current || !isSupabaseConfigured()) {
@@ -557,7 +596,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   }, [session?.role]);
 
   const value = useMemo<AppStoreValue>(
-    () => ({
+    () => {
+    const working = previewActive ? displayState : state;
+    const sandboxUsed = previewOverlay?.dailyCompletionsUsed ?? 0;
+    return {
       authReady,
       dataLoading,
       dataError,
@@ -606,14 +648,12 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       dailyTaskCompletionStatus: displayDailyTaskCompletionStatus,
       refreshDailyTaskCompletionStatus,
       completeTask: async (taskId) => {
-        const blocked = blockUserPreviewMutation();
-        if (blocked) return blocked;
-        if (isMalusBlockingTasks(state.progress.malusPoints, effectiveAdmin)) {
+        if (isMalusBlockingTasks(working.progress.malusPoints, effectiveAdmin)) {
           return { ok: false, error: MALUS_TASK_BLOCK_MESSAGE };
         }
-        const task = state.tasks.find((t) => t.id === taskId);
-        const date = todayKey(getResetHour(state));
-        const plan = state.dailyPlans[date];
+        const task = working.tasks.find((t) => t.id === taskId);
+        const date = todayKey(getResetHour(working));
+        const plan = working.dailyPlans[date];
         const entry = plan?.tasks.find((t) => t.taskId === taskId);
         if (entry?.completed) return { ok: true };
 
@@ -625,7 +665,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
           !isAdmin &&
           isCategoryTask &&
           categoryId &&
-          !state.joinedCategoryIds.includes(categoryId)
+          !working.joinedCategoryIds.includes(categoryId)
         ) {
           return { ok: false, error: 'Join this category to complete its tasks.' };
         }
@@ -634,11 +674,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
           isCategoryTask &&
           categoryId &&
           task &&
-          !isCategoryTaskAvailable(state, task, categoryId)
+          !isCategoryTaskAvailable(working, task, categoryId)
         ) {
           return {
             ok: false,
-            error: getCategoryTaskBlockReason(state, task, categoryId),
+            error: getCategoryTaskBlockReason(working, task, categoryId),
           };
         }
 
@@ -646,7 +686,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
           !isAdmin &&
           task &&
           isRecurringCategoryTask(task) &&
-          !isRecurringTaskAccepted(state, taskId)
+          !isRecurringTaskAccepted(working, taskId)
         ) {
           return {
             ok: false,
@@ -659,9 +699,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
           task &&
           isRecurringCategoryTask(task) &&
           isRecurringPeriodComplete(
-            state,
+            working,
             taskId,
-            getRecurringPeriodKey(task, getResetHour(state)),
+            getRecurringPeriodKey(task, getResetHour(working)),
           )
         ) {
           return {
@@ -674,7 +714,22 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         const countsTowardLimit =
           task != null && countsTowardDailyCompletionLimit(task);
 
-        if (userId && isSupabaseConfigured() && !isAdmin && countsTowardLimit) {
+        if (previewActive && countsTowardLimit && sandboxUsed >= DAILY_TASK_COMPLETION_LIMIT) {
+          return {
+            ok: false,
+            error: dailyTaskCompletionBlockedMessage(
+              sandboxDailyTaskCompletionStatus(sandboxUsed),
+            ),
+          };
+        }
+
+        if (
+          !previewActive &&
+          userId &&
+          isSupabaseConfigured() &&
+          !isAdmin &&
+          countsTowardLimit
+        ) {
           const recordResult = await recordTaskCompletionDb(taskId);
           if (!recordResult.ok) {
             if (recordResult.status) {
@@ -683,11 +738,16 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
             return { ok: false, error: recordResult.error };
           }
           setDailyTaskCompletionStatus(recordResult.status);
-        } else if (userId && isSupabaseConfigured() && isAdmin) {
+        } else if (
+          !previewActive &&
+          userId &&
+          isSupabaseConfigured() &&
+          isAdmin
+        ) {
           void refreshDailyTaskCompletionStatus();
         }
 
-        const next = completeTask(state, taskId, session?.userId ?? null);
+        const next = completeTask(working, taskId, session?.userId ?? null);
         let stateWithRecurring = next;
         if (task && isRecurringCategoryTask(task)) {
           const periodKey = getRecurringPeriodKey(task, getResetHour(next));
@@ -700,6 +760,23 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
             ),
           };
         }
+        stateWithRecurring = withSyncedCategoryProgress(
+          stateWithRecurring,
+          categoryId,
+        );
+
+        if (previewActive) {
+          const completedNow = stateWithRecurring.dailyPlans[date]?.tasks.find(
+            (t) => t.taskId === taskId,
+          )?.completed;
+          const newlyCompleted = Boolean(completedNow) && !entry?.completed;
+          commitSandboxState(
+            stateWithRecurring,
+            sandboxUsed + (newlyCompleted && countsTowardLimit ? 1 : 0),
+          );
+          return { ok: true };
+        }
+
         applyUserState(stateWithRecurring);
         if (
           userId &&
@@ -726,11 +803,13 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         return { ok: true };
       },
       recordBadgeTaskTime: (taskId, seconds) => {
+        if (previewActive) return;
         const userId = userIdRef.current;
         if (!userId || seconds <= 0) return;
         void runBadgeUnlockOnTime(userId, state, taskId, seconds);
       },
       recordSoapBubblePop: () => {
+        if (previewActive) return;
         const userId = userIdRef.current;
         if (!userId || !isSupabaseConfigured()) return;
         void incrementUserBubblePopCount().then((result) => {
@@ -739,31 +818,72 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         });
       },
       uncompleteTask: (taskId) => {
-        const blocked = blockUserPreviewMutation();
-        if (blocked) return;
+        if (previewActive) {
+          const task = working.tasks.find((t) => t.id === taskId);
+          const date = todayKey(getResetHour(working));
+          const wasCompleted = working.dailyPlans[date]?.tasks.find(
+            (t) => t.taskId === taskId,
+          )?.completed;
+          const next = withSyncedCategoryProgress(
+            uncompleteTask(working, taskId),
+            task?.categoryId,
+          );
+          const countsTowardLimit =
+            task != null && countsTowardDailyCompletionLimit(task);
+          commitSandboxState(
+            next,
+            Math.max(
+              0,
+              sandboxUsed - (wasCompleted && countsTowardLimit ? 1 : 0),
+            ),
+          );
+          return;
+        }
         applyUserState(uncompleteTask(state, taskId));
       },
       markTaskStarted: (taskId) => {
-        const blocked = blockUserPreviewMutation();
-        if (blocked) return;
-        if (isMalusBlockingTasks(state.progress.malusPoints, effectiveAdmin)) {
+        if (isMalusBlockingTasks(working.progress.malusPoints, effectiveAdmin)) {
+          return;
+        }
+        if (previewActive) {
+          commitSandboxState(markTaskStarted(working, taskId));
           return;
         }
         applyUserState(markTaskStarted(state, taskId));
       },
       closeDay: () => {
-        const blocked = blockUserPreviewMutation();
-        if (blocked) return;
+        if (previewActive) {
+          commitSandboxState(closeDay(working, session?.userId ?? null));
+          return;
+        }
         applyUserState(closeDay(state, session?.userId ?? null));
       },
       purchaseReward: (rewardId) => {
-        const blocked = blockUserPreviewMutation();
-        if (blocked) return;
+        if (previewActive) {
+          commitSandboxState(purchaseReward(working, rewardId));
+          return;
+        }
         applyUserState(purchaseReward(state, rewardId));
       },
       purchaseVideo: async (videoId) => {
-        const blocked = blockUserPreviewMutation();
-        if (blocked) return blocked;
+        if (previewActive) {
+          const video = working.videos.find((v) => v.id === videoId);
+          if (!video) return { ok: false, error: 'Video not found.' };
+          if (working.purchasedVideoIds.includes(videoId)) return { ok: true };
+          const cost = video.shopPointsCost ?? 0;
+          if (cost > 0 && working.progress.points < cost) {
+            return { ok: false, error: 'Not enough points.' };
+          }
+          commitSandboxState({
+            ...working,
+            progress: {
+              ...working.progress,
+              points: Math.max(0, working.progress.points - cost),
+            },
+            purchasedVideoIds: [...working.purchasedVideoIds, videoId],
+          });
+          return { ok: true };
+        }
         const userId = userIdRef.current;
         if (!userId) return { ok: false, error: 'Not signed in.' };
         const result = await purchaseVideoDb(videoId);
@@ -782,8 +902,26 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         return { ok: true };
       },
       purchaseTierShopVideo: async (videoId) => {
-        const blocked = blockUserPreviewMutation();
-        if (blocked) return blocked;
+        if (previewActive) {
+          const video = working.videos.find((v) => v.id === videoId);
+          if (!video) return { ok: false, error: 'Video not found.' };
+          if (working.purchasedVideoIds.includes(videoId)) {
+            return { ok: true, videoId, videoTitle: video.title };
+          }
+          const cost = video.shopPointsCost ?? 0;
+          if (cost > 0 && working.progress.points < cost) {
+            return { ok: false, error: 'Not enough points.' };
+          }
+          commitSandboxState({
+            ...working,
+            progress: {
+              ...working.progress,
+              points: Math.max(0, working.progress.points - cost),
+            },
+            purchasedVideoIds: [...working.purchasedVideoIds, videoId],
+          });
+          return { ok: true, videoId, videoTitle: video.title };
+        }
         const userId = userIdRef.current;
         if (!userId) return { ok: false, error: 'Not signed in.' };
         const result = await purchaseTierShopVideoDb(videoId);
@@ -806,11 +944,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         };
       },
       acceptPunishment: async (templateId) => {
-        const blocked = blockUserPreviewMutation();
-        if (blocked) return blocked;
-        const userId = userIdRef.current;
         const localRemaining = getPunishmentCooldownRemainingMs(
-          getLocalPunishmentCooldownAvailableAt(state.punishments, templateId),
+          getLocalPunishmentCooldownAvailableAt(working.punishments, templateId),
         );
         if (localRemaining > 0) {
           return {
@@ -819,6 +954,16 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
           };
         }
 
+        if (previewActive) {
+          const next = acceptPunishment(working, templateId);
+          if (next === working) {
+            return { ok: false, error: 'Could not complete punishment.' };
+          }
+          commitSandboxState(next);
+          return { ok: true };
+        }
+
+        const userId = userIdRef.current;
         if (userId) {
           const result = await completePunishmentDb(templateId);
           if (!result.ok) {
@@ -842,23 +987,30 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         return { ok: true };
       },
       applyTaskMalus: (taskId) => {
-        const blocked = blockUserPreviewMutation();
-        if (blocked) return;
+        if (previewActive) {
+          commitSandboxState(applyTaskMalus(working, taskId));
+          return;
+        }
         applyUserState(applyTaskMalus(state, taskId));
       },
       dismissPunishment: (id) => {
-        const blocked = blockUserPreviewMutation();
-        if (blocked) return;
+        if (previewActive) {
+          commitSandboxState(dismissPunishment(working, id));
+          return;
+        }
         applyUserState(dismissPunishment(state, id));
       },
       awardVideoCompletion: async (videoId) => {
-        const blocked = blockUserPreviewMutation();
-        if (blocked) return 0;
-        const userId = userIdRef.current;
-        if (!userId) return 0;
-        const video = state.videos.find((v) => v.id === videoId);
+        const video = working.videos.find((v) => v.id === videoId);
         if (!video) return 0;
         const xpReward = video.xpReward ?? 0;
+        if (previewActive) {
+          if (xpReward <= 0) return 0;
+          commitSandboxState(addVideoXp(working, xpReward));
+          return xpReward;
+        }
+        const userId = userIdRef.current;
+        if (!userId) return 0;
         const result = await tryRecordVideoCompletion(userId, videoId, xpReward);
         if (!result.ok) {
           setLastSaveError(result.error);
@@ -869,6 +1021,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         return result.xp;
       },
       recordVideoPartialView: async (videoId, watchPercent) => {
+        if (previewActive) return;
         const userId = userIdRef.current;
         if (!userId) return;
         const result = await tryRecordVideoPartialView(videoId, watchPercent);
@@ -881,23 +1034,42 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       },
       awardBonusXp: (amount) => {
         if (amount <= 0) return;
-        const blocked = blockUserPreviewMutation();
-        if (blocked) return;
+        if (previewActive) {
+          commitSandboxState(addVideoXp(working, amount));
+          return;
+        }
         applyUserState(addVideoXp(state, amount));
       },
       joinCategory: async (categoryId) => {
-        const blocked = blockUserPreviewMutation();
-        if (blocked) return blocked;
         const userId = userIdRef.current;
         if (!userId) return { ok: false, error: 'Not signed in.' };
-        const category = state.categories.find((c) => c.id === categoryId);
+        const category = working.categories.find((c) => c.id === categoryId);
         if (!category) return { ok: false, error: 'Category not found.' };
         const gate = canJoinCategory(
-          state,
+          working,
           category,
-          state.progress.currentLevel,
+          working.progress.currentLevel,
         );
         if (!gate.ok) return { ok: false, error: gate.reason };
+        if (previewActive) {
+          commitSandboxState({
+            ...working,
+            joinedCategoryIds: working.joinedCategoryIds.includes(categoryId)
+              ? working.joinedCategoryIds
+              : [...working.joinedCategoryIds, categoryId],
+            categoryMemberProgress: [
+              ...working.categoryMemberProgress.filter(
+                (p) => p.categoryId !== categoryId,
+              ),
+              {
+                categoryId,
+                tasksCompletedCount: 0,
+                markedCompleteAt: null,
+              },
+            ],
+          });
+          return { ok: true };
+        }
         const result = await joinCategoryDb(userId, categoryId);
         if (!result.ok) return result;
         setState((s) => ({
@@ -917,10 +1089,21 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         return { ok: true };
       },
       leaveCategory: async (categoryId) => {
-        const blocked = blockUserPreviewMutation();
-        if (blocked) return blocked;
         const userId = userIdRef.current;
         if (!userId) return { ok: false, error: 'Not signed in.' };
+        if (previewActive) {
+          const cleared = clearCategoryAccomplishments(working, categoryId);
+          commitSandboxState({
+            ...cleared,
+            joinedCategoryIds: cleared.joinedCategoryIds.filter(
+              (id) => id !== categoryId,
+            ),
+            categoryMemberProgress: cleared.categoryMemberProgress.filter(
+              (p) => p.categoryId !== categoryId,
+            ),
+          });
+          return { ok: true };
+        }
         const result = await leaveCategoryDb(userId, categoryId);
         if (!result.ok) return result;
         const cleared = clearCategoryAccomplishments(state, categoryId);
@@ -936,34 +1119,43 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         return { ok: true };
       },
       acceptRecurringCategoryTask: async (taskId) => {
-        const blocked = blockUserPreviewMutation();
-        if (blocked) return blocked;
-        if (isMalusBlockingTasks(state.progress.malusPoints, effectiveAdmin)) {
+        if (isMalusBlockingTasks(working.progress.malusPoints, effectiveAdmin)) {
           return { ok: false, error: MALUS_TASK_BLOCK_MESSAGE };
         }
         const userId = userIdRef.current;
         if (!userId) return { ok: false, error: 'Not signed in.' };
-        const task = state.tasks.find((t) => t.id === taskId);
+        const task = working.tasks.find((t) => t.id === taskId);
         if (!task || !isRecurringCategoryTask(task)) {
           return { ok: false, error: 'This task is not a recurring category task.' };
         }
         const categoryId = task.categoryId;
         if (
           categoryId &&
-          !state.joinedCategoryIds.includes(categoryId)
+          !working.joinedCategoryIds.includes(categoryId)
         ) {
           return { ok: false, error: 'Join this category to accept its tasks.' };
         }
         if (
           categoryId &&
-          !isCategoryTaskAvailable(state, task, categoryId)
+          !isCategoryTaskAvailable(working, task, categoryId)
         ) {
           return {
             ok: false,
-            error: getCategoryTaskBlockReason(state, task, categoryId),
+            error: getCategoryTaskBlockReason(working, task, categoryId),
           };
         }
-        if (isRecurringTaskAccepted(state, taskId)) {
+        if (isRecurringTaskAccepted(working, taskId)) {
+          return { ok: true };
+        }
+        if (previewActive) {
+          commitSandboxState({
+            ...working,
+            acceptedRecurringTaskIds: (working.acceptedRecurringTaskIds ?? []).includes(
+              taskId,
+            )
+              ? (working.acceptedRecurringTaskIds ?? [])
+              : [...(working.acceptedRecurringTaskIds ?? []), taskId],
+          });
           return { ok: true };
         }
         const result = await acceptRecurringCategoryTaskDb(taskId);
@@ -1383,8 +1575,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         return { ok: true };
       },
       resetAll: async () => {
-        const blocked = blockUserPreviewMutation();
-        if (blocked) return blocked;
+        if (previewActive) {
+          setPreviewOverlay(createFreshPreviewOverlay());
+          return { ok: true };
+        }
         const userId = userIdRef.current;
         if (!userId) return { ok: false, error: 'Not signed in.' };
         const fresh = createInitialState();
@@ -1411,7 +1605,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         if (!save.ok) return save;
         return { ok: true };
       },
-    }),
+    };
+    },
     [
       displayState,
       session,
@@ -1420,7 +1615,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       adminUserPreview,
       setAdminUserPreview,
       displayDailyTaskCompletionStatus,
-      blockUserPreviewMutation,
+      previewActive,
+      previewOverlay,
+      commitSandboxState,
+      createFreshPreviewOverlay,
       state,
       authReady,
       dataLoading,

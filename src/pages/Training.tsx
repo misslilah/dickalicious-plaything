@@ -15,7 +15,6 @@ import {
   fetchUserTrainingCompletions,
   trainingTaskNeedsProof,
 } from '../lib/trainingDb';
-import { USER_PREVIEW_PROGRESS_BLOCKED } from '../lib/adminUserMode';
 import { getSupabase } from '../lib/supabase';
 import { fetchUserThronePending } from '../lib/throneDb';
 import type {
@@ -96,10 +95,12 @@ export function Training() {
     }
 
     setLoadError(null);
-    setBlackmail(blackmailResult.profile);
+    setBlackmail(adminUserPreview ? { enabled: false, consentedAt: null } : blackmailResult.profile);
     setTasks(tasksResult.tasks);
-    setCompletions(adminUserPreview ? [] : completionsResult.completions);
-    setThronePending(pendingResult.pending);
+    setCompletions((prev) =>
+      adminUserPreview ? prev : completionsResult.completions,
+    );
+    setThronePending(adminUserPreview ? [] : pendingResult.pending);
   }, [userId, adminUserPreview]);
 
   useEffect(() => {
@@ -147,6 +148,11 @@ export function Training() {
 
   const handleEnableBlackmail = async () => {
     if (!userId) return;
+    if (adminUserPreview) {
+      setBlackmail({ enabled: true, consentedAt: new Date().toISOString() });
+      setShowBlackmailGate(false);
+      return;
+    }
     setBlackmailSaving(true);
     setBlackmailError(null);
     const result = await enableTrainingBlackmail(userId);
@@ -165,7 +171,23 @@ export function Training() {
   ): Promise<{ ok: true } | { ok: false; error: string }> => {
     if (!userId) return { ok: false, error: 'Not signed in.' };
     if (adminUserPreview) {
-      return { ok: false, error: USER_PREVIEW_PROGRESS_BLOCKED };
+      setCompletions((prev) => {
+        if (prev.some((c) => c.taskId === task.id)) return prev;
+        return [
+          ...prev,
+          {
+            id: `preview-${task.id}`,
+            userId,
+            taskId: task.id,
+            completedAt: new Date().toISOString(),
+            proofPhotoPath,
+            proofStatus: proofPhotoPath ? 'pending' : null,
+            verifiedAt: null,
+            verifiedBy: null,
+          },
+        ];
+      });
+      return { ok: true };
     }
     const needsProof = trainingTaskNeedsProof(task, blackmail.enabled);
     const result = await completeTrainingTask(

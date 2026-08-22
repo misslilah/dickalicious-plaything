@@ -215,8 +215,9 @@ export function Settings() {
               <strong>View as user</strong>
               <br />
               <span className="muted">
-                Preview the app as a new member. Your real progress is hidden until
-                you turn this off.
+                Preview the app as a new member. You can join categories, start
+                and complete tasks, and try the full flow — nothing is saved.
+                Your real progress comes back when you turn this off.
               </span>
             </span>
           </label>

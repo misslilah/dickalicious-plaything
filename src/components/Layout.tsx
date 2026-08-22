@@ -4,6 +4,7 @@ import { AudioPlaylistPreviewModal } from './AudioPlaylistPreviewModal';
 import { ThroneGiftToast } from './ThroneGiftToast';
 import { useAudioPlayer } from '../contexts/AudioPlayerProvider';
 import { useAppStore } from '../hooks/useAppStore';
+import { USER_PREVIEW_SANDBOX_BANNER } from '../lib/adminUserMode';
 import { useThroneGiftRealtime } from '../hooks/useThroneGiftRealtime';
 
 const baseNavItems = [
@@ -52,7 +53,7 @@ export function Layout() {
         <div className="app-content">
           {adminUserPreview && (
             <p className="notice user-preview-banner" role="status">
-              User preview mode —{' '}
+              {USER_PREVIEW_SANDBOX_BANNER}{' '}
               <Link to="/settings">turn off in Settings</Link>
             </p>
           )}
