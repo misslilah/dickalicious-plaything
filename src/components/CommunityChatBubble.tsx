@@ -197,6 +197,7 @@ export function CommunityChatBubble() {
   const [adminThreadUserId, setAdminThreadUserId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [sendError, setSendError] = useState('');
+  const [clearingAll, setClearingAll] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const widgetRef = useRef<HTMLDivElement>(null);
 
@@ -230,6 +231,7 @@ export function CommunityChatBubble() {
     sending,
     send,
     removeMessage,
+    clearAllMessages,
     toggleHeart,
   } = useCommunityChat({
     channel: activeChannel,
@@ -346,6 +348,22 @@ export function CommunityChatBubble() {
     setSendError(result.error);
   };
 
+  const handleClearAllMessages = async () => {
+    if (!isAdmin) return;
+    const confirmed = window.confirm(
+      'Delete every community chat message? This cannot be undone.',
+    );
+    if (!confirmed) return;
+
+    setSendError('');
+    setClearingAll(true);
+    const result = await clearAllMessages();
+    setClearingAll(false);
+    if (!result.ok) {
+      setSendError(result.error);
+    }
+  };
+
   const lockMessage = getCommunityChannelLockMessage(activeChannel);
   const patreonUrl = getPatreonPageUrl();
   const showChannelChat = isChannelView(activeView);
@@ -431,14 +449,28 @@ export function CommunityChatBubble() {
                 </p>
               </div>
             </div>
-            <button
-              type="button"
-              className="community-chat-widget__close"
-              onClick={() => setOpen(false)}
-              aria-label="Close chat"
-            >
-              <span aria-hidden="true">×</span>
-            </button>
+            <div className="community-chat-widget__header-actions">
+              {isAdmin && (
+                <button
+                  type="button"
+                  className="community-chat-widget__clear-all"
+                  onClick={() => void handleClearAllMessages()}
+                  disabled={clearingAll}
+                  aria-label="Clear all messages"
+                  title="Delete every community chat message"
+                >
+                  {clearingAll ? 'Clearing…' : 'Clear all messages'}
+                </button>
+              )}
+              <button
+                type="button"
+                className="community-chat-widget__close"
+                onClick={() => setOpen(false)}
+                aria-label="Close chat"
+              >
+                <span aria-hidden="true">×</span>
+              </button>
+            </div>
           </header>
 
           <nav
@@ -509,9 +541,9 @@ export function CommunityChatBubble() {
           <div className="community-chat-widget__body">
             {isAdminContact && isAdminConversationList && (
               <>
-                {adminDm.error && (
+                {(adminDm.error || actionError) && (
                   <p className="login-error" role="alert">
-                    {adminDm.error}
+                    {adminDm.error || actionError}
                   </p>
                 )}
 
@@ -532,9 +564,9 @@ export function CommunityChatBubble() {
 
             {isAdminContact && isAdminThread && (
               <>
-                {(adminDm.error || error) && (
+                {(adminDm.error || error || actionError) && (
                   <p className="login-error" role="alert">
-                    {adminDm.error || error}
+                    {adminDm.error || error || actionError}
                   </p>
                 )}
 
@@ -621,9 +653,9 @@ export function CommunityChatBubble() {
 
             {isAdminContact && !isAdmin && (
               <>
-                {(adminDm.error || error) && (
+                {(adminDm.error || error || actionError) && (
                   <p className="login-error" role="alert">
-                    {adminDm.error || error}
+                    {adminDm.error || error || actionError}
                   </p>
                 )}
 

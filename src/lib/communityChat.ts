@@ -173,6 +173,41 @@ export async function sendCommunityMessage(
   return { ok: true, message: mapRow(data as CommunityMessageRow) };
 }
 
+export async function adminClearCommunityMessages(): Promise<
+  { ok: true; deleted: number } | { ok: false; error: string }
+> {
+  if (!isSupabaseConfigured()) {
+    return { ok: false, error: 'Supabase is not configured.' };
+  }
+  const supabase = getSupabase();
+  if (!supabase) {
+    return { ok: false, error: 'Supabase is not configured.' };
+  }
+
+  const { data, error } = await supabase.rpc('admin_clear_community_messages');
+
+  if (error) {
+    const missingRpc =
+      error.code === 'PGRST202' ||
+      error.code === '42883' ||
+      /admin_clear_community_messages/i.test(error.message ?? '') ||
+      /function.*does not exist/i.test(error.message ?? '');
+    if (missingRpc) {
+      return {
+        ok: false,
+        error:
+          'Clearing chat requires supabase/migrations/095_admin_clear_community_messages.sql. Run it in the Supabase SQL Editor, then retry.',
+      };
+    }
+    if (/row-level security|policy|Admin access required/i.test(error.message ?? '')) {
+      return { ok: false, error: 'You do not have permission to clear community chat.' };
+    }
+    return { ok: false, error: error.message };
+  }
+
+  return { ok: true, deleted: typeof data === 'number' ? data : Number(data) || 0 };
+}
+
 export async function deleteCommunityMessage(
   messageId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {

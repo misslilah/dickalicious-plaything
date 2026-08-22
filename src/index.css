@@ -8296,6 +8296,39 @@ body.interactive-video-player--pseudo-fs {
   background: var(--bg-card);
 }
 
+.community-chat-widget__header-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.community-chat-widget__clear-all {
+  flex-shrink: 0;
+  padding: 0.32rem 0.5rem;
+  border-radius: 10px;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.12);
+  color: #fca5a5;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.community-chat-widget__clear-all:hover:not(:disabled) {
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.65);
+  background: rgba(248, 113, 113, 0.22);
+}
+
+.community-chat-widget__clear-all:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
 .community-chat-widget__body {
   display: flex;
   flex-direction: column;

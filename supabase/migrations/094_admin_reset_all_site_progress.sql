@@ -15,30 +15,31 @@ begin
   end if;
 
   -- Recurring category tasks
-  delete from public.user_recurring_task_completions;
+  -- WHERE true: required by Supabase SQL Editor (blocks DELETE/UPDATE without WHERE).
+  delete from public.user_recurring_task_completions where true;
   get diagnostics v_count = row_count;
   v_cleared := v_cleared || jsonb_build_object('recurring_task_completions', v_count);
 
-  delete from public.user_accepted_recurring_tasks;
+  delete from public.user_accepted_recurring_tasks where true;
   get diagnostics v_count = row_count;
   v_cleared := v_cleared || jsonb_build_object('accepted_recurring_tasks', v_count);
 
   -- Daily limits
-  delete from public.daily_task_completions;
+  delete from public.daily_task_completions where true;
   get diagnostics v_count = row_count;
   v_cleared := v_cleared || jsonb_build_object('daily_task_completions', v_count);
 
-  delete from public.daily_game_attempts;
+  delete from public.daily_game_attempts where true;
   get diagnostics v_count = row_count;
   v_cleared := v_cleared || jsonb_build_object('daily_game_attempts', v_count);
 
   -- Punishments
-  delete from public.punishment_completions;
+  delete from public.punishment_completions where true;
   get diagnostics v_count = row_count;
   v_cleared := v_cleared || jsonb_build_object('punishment_completions', v_count);
 
   -- Training
-  delete from public.training_task_completions;
+  delete from public.training_task_completions where true;
   get diagnostics v_count = row_count;
   v_cleared := v_cleared || jsonb_build_object('training_task_completions', v_count);
 
@@ -48,60 +49,60 @@ begin
   v_cleared := v_cleared || jsonb_build_object('personal_training_tasks', v_count);
 
   -- Admin lock cards
-  delete from public.user_lock_cards;
+  delete from public.user_lock_cards where true;
   get diagnostics v_count = row_count;
   v_cleared := v_cleared || jsonb_build_object('user_lock_cards', v_count);
 
   -- Badges & rewards progress
-  delete from public.user_badges;
+  delete from public.user_badges where true;
   get diagnostics v_count = row_count;
   v_cleared := v_cleared || jsonb_build_object('user_badges', v_count);
 
-  delete from public.user_badge_progress;
+  delete from public.user_badge_progress where true;
   get diagnostics v_count = row_count;
   v_cleared := v_cleared || jsonb_build_object('user_badge_progress', v_count);
 
-  delete from public.user_bubble_pop_counts;
+  delete from public.user_bubble_pop_counts where true;
   get diagnostics v_count = row_count;
   v_cleared := v_cleared || jsonb_build_object('user_bubble_pop_counts', v_count);
 
   -- Video shop & watch history
-  delete from public.user_purchased_videos;
+  delete from public.user_purchased_videos where true;
   get diagnostics v_count = row_count;
   v_cleared := v_cleared || jsonb_build_object('user_purchased_videos', v_count);
 
-  delete from public.user_video_completions;
+  delete from public.user_video_completions where true;
   get diagnostics v_count = row_count;
   v_cleared := v_cleared || jsonb_build_object('user_video_completions', v_count);
 
-  delete from public.user_video_views;
+  delete from public.user_video_views where true;
   get diagnostics v_count = row_count;
   v_cleared := v_cleared || jsonb_build_object('user_video_views', v_count);
 
-  delete from public.video_playlists;
+  delete from public.video_playlists where true;
   get diagnostics v_count = row_count;
   v_cleared := v_cleared || jsonb_build_object('video_playlists', v_count);
 
   -- Leaderboards & puzzles
-  delete from public.puzzle_solve_times;
+  delete from public.puzzle_solve_times where true;
   get diagnostics v_count = row_count;
   v_cleared := v_cleared || jsonb_build_object('puzzle_solve_times', v_count);
 
-  delete from public.mini_game_scores;
+  delete from public.mini_game_scores where true;
   get diagnostics v_count = row_count;
   v_cleared := v_cleared || jsonb_build_object('mini_game_scores', v_count);
 
-  delete from public.mini_game_leaderboard_hall_of_fame;
+  delete from public.mini_game_leaderboard_hall_of_fame where true;
   get diagnostics v_count = row_count;
   v_cleared := v_cleared || jsonb_build_object('mini_game_leaderboard_hall_of_fame', v_count);
 
   -- Category membership & progression
-  delete from public.category_members;
+  delete from public.category_members where true;
   get diagnostics v_count = row_count;
   v_cleared := v_cleared || jsonb_build_object('category_members', v_count);
 
   -- Throne pending payments (gift event audit rows are kept; links cleared below)
-  delete from public.throne_payment_pending;
+  delete from public.throne_payment_pending where true;
   get diagnostics v_count = row_count;
   v_cleared := v_cleared || jsonb_build_object('throne_payment_pending', v_count);
 
@@ -129,7 +130,8 @@ begin
     daily_plans = '{}'::jsonb,
     unlocked_reward_ids = '[]'::jsonb,
     punishments = '[]'::jsonb,
-    updated_at = now();
+    updated_at = now()
+  where true;
   get diagnostics v_count = row_count;
   v_cleared := v_cleared || jsonb_build_object('user_progress_reset', v_count);
 

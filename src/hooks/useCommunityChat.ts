@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommunityChannel } from '../lib/communityChannels';
 import {
   COMMUNITY_SEND_COOLDOWN_MS,
+  adminClearCommunityMessages,
   deleteCommunityMessage,
   fetchCommunityMessages,
   sendCommunityMessage,
@@ -236,6 +237,22 @@ export function useCommunityChat({
     [isAdmin],
   );
 
+  const clearAllMessages = useCallback(async () => {
+    if (!isAdmin) {
+      return { ok: false as const, error: 'You do not have permission to delete messages.' };
+    }
+
+    setActionError('');
+    const result = await adminClearCommunityMessages();
+    if (!result.ok) {
+      setActionError(result.error);
+      return result;
+    }
+
+    setMessages([]);
+    return result;
+  }, [isAdmin]);
+
   const toggleHeart = useCallback(
     async (messageId: string, hearted: boolean) => {
       if (!isAdmin || !userId) {
@@ -269,6 +286,7 @@ export function useCommunityChat({
     sending,
     send,
     removeMessage,
+    clearAllMessages,
     toggleHeart,
     refresh,
   };

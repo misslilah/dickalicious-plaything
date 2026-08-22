@@ -191,6 +191,7 @@ npm run build
 | `supabase/migrations/013`–`015` | Phrase repeat count, profiles presence, task points reward |
 | `supabase/migrations/016_badges.sql` | Profile badge catalog + `user_badges` unlocks (required for badges UI) |
 | `supabase/migrations/017_badges_fix.sql` | Idempotent repair if `016` was never run (paste in SQL Editor) |
+| `supabase/migrations/095_admin_clear_community_messages.sql` | Admin RPC `admin_clear_community_messages()` — wipe all community chat messages + reactions (not admin DMs) |
 | `supabase/storage_setup.sql` | Storage buckets and policies |
 | `supabase/functions/patreon-*` | OAuth + webhook Edge Functions |
 
