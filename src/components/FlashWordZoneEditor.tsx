@@ -1,4 +1,9 @@
-import { useCallback, useRef, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import {
   DEFAULT_DISTRACTION_ZONE,
   DEFAULT_HARD_HIGHLIGHT_ZONE,
@@ -81,10 +86,20 @@ export function FlashWordZoneEditor({
     startY: number;
     startZone: FlashWordZone;
   } | null>(null);
+  const pendingWordFocusRef = useRef<'distraction' | 'hardDistraction' | null>(null);
+  const newDistractionWordRef = useRef<HTMLInputElement | null>(null);
+  const newHardDistractionWordRef = useRef<HTMLInputElement | null>(null);
 
   const onPointerDown =
     (target: DragTarget, mode: DragMode, startZone: FlashWordZone) =>
     (event: ReactPointerEvent) => {
+      const eventTarget = event.target;
+      if (
+        eventTarget instanceof HTMLElement &&
+        eventTarget.closest('input, textarea, select, button')
+      ) {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -194,6 +209,7 @@ export function FlashWordZoneEditor({
   const addDistractionZone = () => {
     if (!onDistractionZonesChange) return;
     const offset = distractionZones.length * 6;
+    pendingWordFocusRef.current = 'distraction';
     onDistractionZonesChange([
       ...distractionZones,
       {
@@ -240,6 +256,7 @@ export function FlashWordZoneEditor({
   const addHardDistractionZone = () => {
     if (!onHardDistractionZonesChange) return;
     const offset = hardDistractionZones.length * 6;
+    pendingWordFocusRef.current = 'hardDistraction';
     onHardDistractionZonesChange([
       ...hardDistractionZones,
       {
@@ -326,6 +343,23 @@ export function FlashWordZoneEditor({
   const hardModeImagePreviewUrl = (entry: FlashWordHardModeImageFormEntry): string | null =>
     entry.pendingPreviewUrl ?? entry.imageUrl ?? null;
 
+  const stopZoneDrag = (event: { stopPropagation: () => void }) => {
+    event.stopPropagation();
+  };
+
+  useEffect(() => {
+    const pending = pendingWordFocusRef.current;
+    if (!pending) return;
+    const input =
+      pending === 'hardDistraction'
+        ? newHardDistractionWordRef.current
+        : newDistractionWordRef.current;
+    if (!input) return;
+    pendingWordFocusRef.current = null;
+    input.focus();
+    input.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [distractionZones.length, hardDistractionZones.length]);
+
   const normalizedMain = normalizeZone(zone);
 
   return (
@@ -371,9 +405,17 @@ export function FlashWordZoneEditor({
                   role="presentation"
                 >
                   <span className="flash-zone-editor__zone-label">Distraction zone</span>
-                  {entry.word.trim() && (
-                    <span className="flash-zone-editor__zone-word">{entry.word.trim()}</span>
-                  )}
+                  <input
+                    type="text"
+                    className="flash-zone-editor__zone-input"
+                    value={entry.word}
+                    placeholder="Type distraction…"
+                    aria-label={`Distraction word ${index + 1}`}
+                    onPointerDown={stopZoneDrag}
+                    onClick={stopZoneDrag}
+                    onFocus={stopZoneDrag}
+                    onChange={(e) => updateDistractionWord(index, e.target.value)}
+                  />
                   <button
                     type="button"
                     className="flash-zone-editor__resize"
@@ -474,9 +516,17 @@ export function FlashWordZoneEditor({
                   role="presentation"
                 >
                   <span className="flash-zone-editor__zone-label">Hard distraction</span>
-                  {entry.word.trim() && (
-                    <span className="flash-zone-editor__zone-word">{entry.word.trim()}</span>
-                  )}
+                  <input
+                    type="text"
+                    className="flash-zone-editor__zone-input"
+                    value={entry.word}
+                    placeholder="Type distraction…"
+                    aria-label={`Hard distraction word ${index + 1}`}
+                    onPointerDown={stopZoneDrag}
+                    onClick={stopZoneDrag}
+                    onFocus={stopZoneDrag}
+                    onChange={(e) => updateHardDistractionWord(index, e.target.value)}
+                  />
                   <button
                     type="button"
                     className="flash-zone-editor__resize"
@@ -532,6 +582,12 @@ export function FlashWordZoneEditor({
                       value={entry.word}
                       onChange={(e) => updateDistractionWord(index, e.target.value)}
                       placeholder="Word to flash as a distraction"
+                      aria-label={`Distraction word ${index + 1}`}
+                      ref={
+                        index === distractionZones.length - 1
+                          ? newDistractionWordRef
+                          : undefined
+                      }
                     />
                   </label>
                   <button
@@ -703,6 +759,12 @@ export function FlashWordZoneEditor({
                           value={entry.word}
                           onChange={(e) => updateHardDistractionWord(index, e.target.value)}
                           placeholder="Extra word during hard mode"
+                          aria-label={`Hard distraction word ${index + 1}`}
+                          ref={
+                            index === hardDistractionZones.length - 1
+                              ? newHardDistractionWordRef
+                              : undefined
+                          }
                         />
                       </label>
                       <button

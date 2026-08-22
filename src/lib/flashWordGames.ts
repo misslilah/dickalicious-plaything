@@ -21,9 +21,9 @@ export const DEFAULT_ZONE = {
 
 export const DEFAULT_DISTRACTION_ZONE = {
   xPct: 10,
-  yPct: 70,
-  widthPct: 15,
-  heightPct: 8,
+  yPct: 62,
+  widthPct: 28,
+  heightPct: 16,
 };
 
 /** Streak count at which hard mode activates for subsequent rounds. */

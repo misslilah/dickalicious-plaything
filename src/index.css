@@ -6993,7 +6993,12 @@ a.task-list-row {
 .flash-zone-editor__zone--distraction {
   border-color: #22c55e;
   background: rgba(34, 197, 94, 0.15);
-  z-index: 1;
+  z-index: 3;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 5.5rem;
+  min-height: 2.6rem;
+  overflow: visible;
 }
 
 .flash-zone-editor__zone--hard-highlight-0 {
@@ -7023,7 +7028,12 @@ a.task-list-row {
 .flash-zone-editor__zone--hard-distraction {
   border-color: #f59e0b;
   background: rgba(245, 158, 11, 0.15);
-  z-index: 1;
+  z-index: 3;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 5.5rem;
+  min-height: 2.6rem;
+  overflow: visible;
 }
 
 .flash-zone-editor__zone--hard-distraction .flash-zone-editor__zone-label {
@@ -7170,6 +7180,30 @@ a.task-list-row {
   pointer-events: none;
 }
 
+.flash-zone-editor__zone-input {
+  width: calc(100% - 0.2rem);
+  min-width: 0;
+  min-height: 1.45rem;
+  margin: 0.1rem;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid rgba(134, 239, 172, 0.75);
+  border-radius: 4px;
+  background: rgba(13, 8, 18, 0.92);
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.2;
+  pointer-events: auto;
+  cursor: text;
+  touch-action: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.flash-zone-editor__zone--hard-distraction .flash-zone-editor__zone-input {
+  border-color: rgba(250, 204, 21, 0.75);
+}
+
 .flash-zone-editor__zone--distraction .flash-zone-editor__resize {
   border-color: #22c55e;
 }
@@ -7208,6 +7242,21 @@ a.task-list-row {
   flex: 1;
   min-width: 12rem;
   margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.flash-zone-editor__distraction-word input {
+  min-height: 2.1rem;
+  padding: 0.35rem 0.5rem;
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid rgba(192, 132, 252, 0.25);
+  background: var(--bg);
+  color: var(--text);
 }
 
 .flash-zone-editor__resize {
