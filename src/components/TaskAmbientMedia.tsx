@@ -8,55 +8,33 @@ interface TaskAmbientMediaProps {
   onEnded?: () => void;
 }
 
-/**
- * Ambient background media at 40% opacity. Video is muted for browser autoplay
- * after the user clicks Start; audio plays with sound (Start is a user gesture).
- */
 export function TaskAmbientMedia({
   url,
   mediaType,
   playing,
   onEnded,
 }: TaskAmbientMediaProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    const el = mediaType === 'video' ? videoRef.current : audioRef.current;
+    const el = mediaRef.current;
     if (!el) return;
-
     if (playing) {
-      const playPromise = el.play();
-      if (playPromise) {
-        void playPromise.catch(() => {
-          if (mediaType === 'video' && videoRef.current) {
-            videoRef.current.muted = true;
-            void videoRef.current.play().catch(() => {});
-          }
-        });
-      }
-    } else {
-      el.pause();
-      el.currentTime = 0;
+      void el.play().catch(() => {});
+      return;
     }
-  }, [playing, url, mediaType]);
-
-  useEffect(() => {
-    return () => {
-      videoRef.current?.pause();
-      audioRef.current?.pause();
-    };
-  }, []);
+    el.pause();
+  }, [playing, url]);
 
   if (mediaType === 'video') {
     return (
       <video
-        ref={videoRef}
+        ref={mediaRef as React.RefObject<HTMLVideoElement>}
         className="task-ambient-media"
         src={url}
         playsInline
         muted
-        aria-hidden
+        preload="metadata"
         onEnded={onEnded}
       />
     );
@@ -64,10 +42,10 @@ export function TaskAmbientMedia({
 
   return (
     <audio
-      ref={audioRef}
+      ref={mediaRef as React.RefObject<HTMLAudioElement>}
       className="task-ambient-media task-ambient-media--audio"
       src={url}
-      aria-hidden
+      preload="metadata"
       onEnded={onEnded}
     />
   );

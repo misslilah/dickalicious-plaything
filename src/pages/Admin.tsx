@@ -53,6 +53,12 @@ import {
   type AdminProfileRow,
   type AdminUserTierFilter,
 } from '../lib/profileDb';
+import {
+  ADMIN_SITE_RESET_CLEARED,
+  ADMIN_SITE_RESET_PRESERVED,
+  adminResetAllSiteProgress,
+  formatAdminSiteResetSummary,
+} from '../lib/adminSiteReset';
 import { adminResetAllMalus, adminResetUserMalus } from '../lib/userProgressDb';
 import {
   AUDIO_PLAYLIST_TIER_OPTIONS,
@@ -2732,7 +2738,7 @@ function PunishmentsAdminLink() {
 }
 
 function UserAdmin() {
-  const { createAppUser } = useAppStore();
+  const { createAppUser, refresh } = useAppStore();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
@@ -2755,6 +2761,9 @@ function UserAdmin() {
   const [malusResetLoading, setMalusResetLoading] = useState(false);
   const [allMalusResetMessage, setAllMalusResetMessage] = useState('');
   const [allMalusResetLoading, setAllMalusResetLoading] = useState(false);
+  const [siteResetConfirm, setSiteResetConfirm] = useState('');
+  const [siteResetMessage, setSiteResetMessage] = useState('');
+  const [siteResetLoading, setSiteResetLoading] = useState(false);
 
   const linkedProfileCount = useMemo(
     () => profiles.filter((p) => p.patreonUserId).length,
@@ -2887,6 +2896,32 @@ function UserAdmin() {
     }
     setAllMalusResetMessage(`Reset malus for ${result.usersReset} users.`);
     void loadProfiles();
+  };
+
+  const resetAllSiteProgress = async () => {
+    if (siteResetConfirm.trim().toUpperCase() !== 'RESET') {
+      setSiteResetMessage('Type RESET in the confirmation field to proceed.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Reset ALL user progress for every account? This is irreversible. Accounts, Patreon tiers, and catalog content are kept.',
+    );
+    if (!confirmed) return;
+
+    setSiteResetMessage('');
+    setSiteResetLoading(true);
+    const result = await adminResetAllSiteProgress();
+    setSiteResetLoading(false);
+    if (!result.ok) {
+      setSiteResetMessage(result.error);
+      return;
+    }
+
+    setSiteResetConfirm('');
+    setSiteResetMessage(formatAdminSiteResetSummary(result.cleared));
+    void loadProfiles();
+    void refresh();
   };
 
   const savePatreonTier = async () => {
@@ -3075,6 +3110,59 @@ function UserAdmin() {
             </div>
           </>
         )}
+      </section>
+
+      <section className="card">
+        <h3 className="section-title">Reset all site progress</h3>
+        <p className="muted">
+          Clears every user&apos;s game state and returns the site to a fresh
+          start. This cannot be undone.
+        </p>
+        <div className="form-block">
+          <p className="muted">
+            <strong>Cleared for all users:</strong>
+          </p>
+          <ul className="muted">
+            {ADMIN_SITE_RESET_CLEARED.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+          <p className="muted">
+            <strong>Preserved:</strong>
+          </p>
+          <ul className="muted">
+            {ADMIN_SITE_RESET_PRESERVED.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+        <Field
+          label='Type "RESET" to confirm'
+          htmlFor="site-reset-confirm"
+          hint="Required before the reset button is enabled."
+        >
+          <input
+            id="site-reset-confirm"
+            value={siteResetConfirm}
+            onChange={(e) => setSiteResetConfirm(e.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="RESET"
+          />
+        </Field>
+        <div className="btn-row">
+          <button
+            type="button"
+            className="btn btn--secondary"
+            disabled={
+              siteResetLoading || siteResetConfirm.trim().toUpperCase() !== 'RESET'
+            }
+            onClick={() => void resetAllSiteProgress()}
+          >
+            {siteResetLoading ? 'Resetting all site progress…' : 'Reset all site progress'}
+          </button>
+        </div>
+        <StatusMessage message={siteResetMessage} />
       </section>
 
       <section className="card">

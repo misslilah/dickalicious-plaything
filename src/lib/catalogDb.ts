@@ -493,7 +493,7 @@ function formatTaskSaveError(message: string, inserting: boolean): string {
       : 'Task not found or could not be updated. It may have been deleted.';
   }
   if (/task_media_/i.test(message) && /column|schema cache/i.test(message)) {
-    return 'Task media columns are missing. Run supabase/migrations/089_task_media.sql, 090_task_media_playback.sql, and 091_task_media_autoplay_on_start.sql in the Supabase SQL Editor, then retry.';
+    return 'Task media columns are missing. Run supabase/migrations/089_task_media.sql in the Supabase SQL Editor, then retry.';
   }
   return message;
 }
