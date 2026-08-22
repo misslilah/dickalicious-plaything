@@ -316,8 +316,26 @@ select {
   cursor: default;
 }
 
+.punishment-list-row--preview {
+  cursor: pointer;
+}
+
+.punishment-list-row--static {
+  cursor: default;
+}
+
+.punishment-list-row--selected {
+  border-color: var(--accent);
+  background: rgba(232, 121, 249, 0.08);
+  box-shadow: 0 0 0 1px rgba(232, 121, 249, 0.25);
+}
+
 .punishment-list-row .task-list-row__aside {
   justify-content: center;
+}
+
+.punishment-list-row--preview .btn {
+  pointer-events: none;
 }
 
 .punishment-selected-hint {
@@ -332,6 +350,240 @@ select {
 .admin-library-item__main--active {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.admin-punishments {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.admin-punishments .admin-minigames-tabs {
+  align-items: center;
+}
+
+.admin-punishments .admin-minigames-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.punishment-category-card--new {
+  border-style: dashed;
+  border-color: rgba(192, 132, 252, 0.35);
+  background: transparent;
+}
+
+.punishment-category-card--new:hover,
+.punishment-category-card--new.punishment-category-card--selected {
+  border-style: dashed;
+}
+
+.admin-punishments-workspace,
+.admin-tasks-workspace,
+.admin-categories-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  scroll-margin-top: 0.75rem;
+}
+
+@media (min-width: 960px) {
+  .admin-punishments-workspace,
+  .admin-tasks-workspace--editing,
+  .admin-categories-workspace--editing {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(20rem, 0.9fr);
+    align-items: start;
+    gap: 1rem;
+  }
+
+  .admin-punishments-editor,
+  .admin-tasks-editor,
+  .admin-categories-editor {
+    position: sticky;
+    top: 0.5rem;
+    max-height: calc(100vh - 1.5rem);
+    overflow: auto;
+  }
+}
+
+.admin-punishments-preview-label {
+  margin: 0 0 0.45rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.admin-punishments-editor .punishment-list-row {
+  margin-bottom: 1rem;
+}
+
+.admin-categories {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.admin-categories .card {
+  scroll-margin-top: 0.75rem;
+}
+
+.admin-categories .admin-minigames-tabs {
+  align-items: center;
+}
+
+.admin-categories .admin-minigames-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.admin-categories-preview {
+  max-width: 16rem;
+}
+
+.admin-categories-preview .category-card {
+  pointer-events: none;
+}
+
+.admin-categories-task-list {
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-categories-task-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  border-top: 1px solid rgba(192, 132, 252, 0.12);
+  font-size: 0.85rem;
+}
+
+.admin-categories-task-tag {
+  flex-shrink: 0;
+}
+
+.admin-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.admin-tasks .card {
+  scroll-margin-top: 0.75rem;
+}
+
+.admin-tasks .admin-minigames-tabs {
+  align-items: center;
+}
+
+.admin-tasks .admin-minigames-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.admin-tasks-category-group {
+  margin-top: 0.85rem;
+}
+
+.admin-tasks-category-group:first-of-type {
+  margin-top: 0.5rem;
+}
+
+.admin-tasks-category-group__title {
+  margin: 0 0 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted, #a1a1aa);
+}
+
+.admin-tasks-breadcrumb {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.15rem;
+}
+
+.admin-tasks-breadcrumb .back-link {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.admin-tasks-breadcrumb__sep {
+  color: var(--muted, #a1a1aa);
+}
+
+.admin-tasks-breadcrumb__current {
+  margin: 0;
+}
+
+.admin-tasks-editor .task-list-row,
+.admin-tasks-editor .task-card {
+  margin-bottom: 1rem;
+}
+
+button.task-card {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-card--preview {
+  cursor: pointer;
+}
+
+.task-card--selected,
+.task-list-row--selected {
+  border-color: var(--accent);
+  background: rgba(232, 121, 249, 0.08);
+  box-shadow: 0 0 0 1px rgba(232, 121, 249, 0.25);
+}
+
+.task-list-row--static {
+  cursor: default;
+}
+
+.admin-punishments-subheading {
+  margin: 0.25rem 0 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.field-row input,
+.field-row select {
+  flex: 1;
+  min-width: 8rem;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.checkbox-label input {
+  margin-top: 0.25rem;
 }
 
 .punishment-category-section {
@@ -1201,7 +1453,8 @@ select {
 }
 
 .field input,
-.field textarea {
+.field textarea,
+.field select {
   padding: 0.55rem;
   border-radius: 8px;
   border: 1px solid rgba(192, 132, 252, 0.25);
@@ -3595,19 +3848,83 @@ a.task-list-row {
   filter: saturate(0.85);
 }
 
-.admin-gif-bank-item__main {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
+.admin-gif-bank-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(5.75rem, 1fr));
+  gap: 0.45rem;
 }
 
-.admin-gif-bank-item__thumb {
-  width: 56px;
-  height: 56px;
+.admin-gif-bank-cell {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(192, 132, 252, 0.18);
+  background: var(--bg-elevated);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.admin-gif-bank-cell:hover {
+  border-color: rgba(192, 132, 252, 0.42);
+}
+
+.admin-gif-bank-cell--selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(232, 121, 249, 0.35);
+}
+
+.admin-gif-bank-cell__preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.admin-gif-bank-cell__preview:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.admin-gif-bank-cell__thumb {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  border-radius: 0.35rem;
-  flex-shrink: 0;
+  display: block;
   background: rgba(255, 255, 255, 0.06);
+}
+
+.admin-gif-bank-cell__delete {
+  position: absolute;
+  top: 0.28rem;
+  right: 0.28rem;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  padding: 0;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  border-radius: 0.35rem;
+  background: rgba(13, 8, 18, 0.78);
+  color: var(--danger);
+  cursor: pointer;
+}
+
+.admin-gif-bank-cell__delete:hover {
+  background: rgba(248, 113, 113, 0.28);
+  border-color: var(--danger);
+}
+
+.admin-gif-bank-cell__delete:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .gif-bank-preview-modal {
@@ -5090,36 +5407,276 @@ a.task-list-row {
   margin-top: 0.5rem;
 }
 
-.puzzle-admin__preview {
+.puzzle-admin {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.puzzle-admin__intro {
+  margin: 0;
+}
+
+.puzzle-admin__library h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.puzzle-admin__library-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.puzzle-admin__library-title {
   display: flex;
   align-items: center;
-  justify-content: center;
-  min-height: 10rem;
-  margin: 0.75rem 0;
-  border-radius: var(--radius);
+  gap: 0.5rem;
+}
+
+.puzzle-admin__library-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.puzzle-admin__hint {
+  margin: 0.45rem 0 0.35rem;
+  font-size: 0.8rem;
+}
+
+.puzzle-admin__grid {
+  list-style: none;
+  margin: 0.35rem 0 0.15rem;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(5.75rem, 1fr));
+  gap: 0.45rem;
+}
+
+.puzzle-admin__cell {
+  position: relative;
+  aspect-ratio: 1;
   overflow: hidden;
-  background: rgba(13, 8, 18, 0.5);
-  border: 1px dashed rgba(192, 132, 252, 0.25);
+  border-radius: 0.5rem;
+  border: 1px solid rgba(192, 132, 252, 0.18);
+  background: var(--bg-elevated);
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.puzzle-admin__preview img {
-  max-width: 100%;
-  max-height: 14rem;
-  object-fit: contain;
+.puzzle-admin__cell::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2.1rem;
+  background: linear-gradient(to top, rgba(13, 8, 18, 0.82), transparent);
+  pointer-events: none;
+  z-index: 0;
 }
 
-.puzzle-admin__list-thumb {
-  width: 4rem;
-  height: 4rem;
-  flex-shrink: 0;
-  border-radius: 0.35rem;
-  overflow: hidden;
+.puzzle-admin__cell:hover {
+  border-color: rgba(192, 132, 252, 0.42);
 }
 
-.puzzle-admin__list-thumb img {
+.puzzle-admin__cell--selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(232, 121, 249, 0.35);
+}
+
+.puzzle-admin__cell-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.puzzle-admin__cell-preview:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.puzzle-admin__cell-thumb {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: block;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.puzzle-admin__cell-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 0.68rem;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.puzzle-admin__cell-meta {
+  position: absolute;
+  left: 0.28rem;
+  right: 0.28rem;
+  bottom: 0.28rem;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  pointer-events: none;
+}
+
+.puzzle-admin__cell-index,
+.puzzle-admin__cell-type,
+.puzzle-admin__cell-hidden {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.2rem;
+  padding: 0.08rem 0.32rem;
+  border-radius: 0.3rem;
+  background: rgba(13, 8, 18, 0.82);
+  color: var(--text);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.puzzle-admin__cell-type {
+  flex: 1;
+  justify-content: flex-start;
+}
+
+.puzzle-admin__cell-hidden {
+  background: rgba(248, 113, 113, 0.28);
+  color: #fecaca;
+}
+
+.puzzle-admin__cell-remove {
+  position: absolute;
+  top: 0.28rem;
+  right: 0.28rem;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  padding: 0;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  border-radius: 0.35rem;
+  background: rgba(13, 8, 18, 0.78);
+  color: var(--danger);
+  cursor: pointer;
+}
+
+.puzzle-admin__cell-remove:hover {
+  background: rgba(248, 113, 113, 0.28);
+  border-color: var(--danger);
+}
+
+.puzzle-admin__cell-remove:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.puzzle-admin__selected {
+  margin-top: 0.55rem;
+  padding: 0.7rem 0.75rem 0.8rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(192, 132, 252, 0.2);
+  background: var(--bg-elevated);
+}
+
+.puzzle-admin__selected-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.puzzle-admin__selected-bar strong {
+  font-size: 0.88rem;
+}
+
+.puzzle-admin__selected-body {
+  display: grid;
+  grid-template-columns: 8.5rem minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.puzzle-admin__photo-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.puzzle-admin__photo {
+  aspect-ratio: 1;
+  width: 100%;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid rgba(192, 132, 252, 0.2);
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.puzzle-admin__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.puzzle-admin__replace {
+  justify-content: center;
+  cursor: pointer;
+}
+
+.puzzle-admin__fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem 0.65rem;
+  align-items: start;
+}
+
+.puzzle-admin__fields .field {
+  margin-bottom: 0;
+}
+
+.puzzle-admin__fields .field:first-child {
+  grid-column: 1 / -1;
+}
+
+.puzzle-admin__visible {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.puzzle-admin__visible input[type='checkbox'] {
+  width: auto;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.puzzle-admin__editor-hint {
+  margin: 0.55rem 0 0;
+  font-size: 0.8rem;
 }
 
 .puzzle-admin__actions {
@@ -5127,6 +5684,21 @@ a.task-list-row {
   flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .puzzle-admin__selected-body {
+    grid-template-columns: 1fr;
+  }
+
+  .puzzle-admin__photo {
+    max-width: 10rem;
+    max-height: 10rem;
+  }
+
+  .puzzle-admin__fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 .puzzle-game-modal__panel {
@@ -5663,34 +6235,201 @@ a.task-list-row {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.35rem;
 }
 
 .flash-game-streak-tier-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 0.3rem;
+  padding: 0.18rem 0.3rem 0.18rem 0.45rem;
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid rgba(192, 132, 252, 0.12);
+  min-height: 2.1rem;
+}
+
+.flash-game-streak-tier-row--editing {
+  flex-direction: column;
+  flex-wrap: wrap;
+  align-items: stretch;
+  padding: 0.55rem;
+  min-height: 0;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(232, 121, 249, 0.2);
+}
+
+.flash-game-streak-tier-row__summary {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.1rem 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  min-height: 1.55rem;
+  overflow: hidden;
+}
+
+.flash-game-streak-tier-row__summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+.flash-game-streak-tier-row__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.flash-game-streak-tier-row__audio-mark {
+  flex-shrink: 0;
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+.flash-game-streak-tier-row__fields {
   display: grid;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  border-radius: var(--radius);
-  border: 1px solid rgba(192, 132, 252, 0.2);
-  background: rgba(0, 0, 0, 0.15);
+  gap: 0.4rem;
+}
+
+.flash-game-streak-tier-row__fields .form-field {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.flash-game-streak-tier-row__fields input {
+  min-height: 2.1rem;
+  padding: 0.35rem 0.5rem;
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid rgba(192, 132, 252, 0.25);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.flash-game-streak-tier-row__audio {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.flash-game-streak-tier-row__audio p {
+  margin: 0;
+}
+
+.flash-game-streak-tier-row__audio-name {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flash-game-streak-tier-row__actions {
+  display: flex;
+  gap: 0.2rem;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.flash-game-streak-tier-row__actions .btn {
+  margin-top: 0;
+  width: auto;
+}
+
+.flash-game-streak-tier-row__action {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  min-height: 1.55rem;
+  padding: 0.12rem 0.35rem;
+  border: 1px solid rgba(192, 132, 252, 0.35);
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.flash-game-streak-tier-row__action:hover {
+  background: rgba(232, 121, 249, 0.16);
+  border-color: rgba(232, 121, 249, 0.55);
+}
+
+.flash-game-streak-tier-row__action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.flash-game-streak-tier-row__action--danger {
+  border-color: rgba(248, 113, 113, 0.4);
+  color: var(--danger);
+}
+
+.flash-game-streak-tier-row__action--danger:hover {
+  background: rgba(248, 113, 113, 0.18);
+  border-color: var(--danger);
+}
+
+.flash-game-streak-tier-row--editing .flash-game-streak-tier-row__actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 720px) {
+  .flash-game-streak-tier-row:not(.flash-game-streak-tier-row--editing)
+    .flash-game-streak-tier-row__action {
+    width: 1.7rem;
+    min-width: 1.7rem;
+    padding: 0.12rem;
+  }
+
+  .flash-game-streak-tier-row:not(.flash-game-streak-tier-row--editing)
+    .flash-game-streak-tier-row__action
+    span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
 }
 
 @media (min-width: 640px) {
-  .flash-game-streak-tier-row {
+  .flash-game-streak-tier-row__fields {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: end;
   }
 
-  .flash-game-streak-tier-row__message {
-    grid-column: 1 / -1;
-  }
-
+  .flash-game-streak-tier-row__message,
   .flash-game-streak-tier-row__audio {
     grid-column: 1 / -1;
-  }
-
-  .flash-game-streak-tier-row__remove {
-    justify-self: start;
   }
 }
 
@@ -6288,6 +7027,10 @@ a.task-list-row {
   border-top: 1px solid rgba(251, 191, 36, 0.2);
 }
 
+.flash-game-test-play__hint {
+  margin: 0.85rem 0 0;
+}
+
 .flash-word-game-test-modal__sandbox {
   margin: 0.25rem 0 0;
   font-size: 0.8rem;
@@ -6407,61 +7150,135 @@ a.task-list-row {
   text-align: center;
 }
 
-.flash-game-cards__list {
+.flash-game-cards__grid {
   list-style: none;
   margin: 0.75rem 0;
   padding: 0;
   display: grid;
-  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(7.25rem, 1fr));
+  gap: 0.45rem;
 }
 
-.flash-game-cards__item {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  padding: 0.5rem;
-  border-radius: 10px;
+.flash-game-cards__cell {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(192, 132, 252, 0.18);
   background: var(--bg-elevated);
-  border: 1px solid rgba(192, 132, 252, 0.12);
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.flash-game-cards__thumb-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.25rem;
-  border: 2px solid transparent;
-  border-radius: 8px;
+.flash-game-cards__cell:hover {
+  border-color: rgba(192, 132, 252, 0.42);
+}
+
+.flash-game-cards__cell--selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(232, 121, 249, 0.35);
+}
+
+.flash-game-cards__cell-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
   background: transparent;
   cursor: pointer;
-  color: inherit;
-  font: inherit;
 }
 
-.flash-game-cards__thumb-btn--active {
-  border-color: var(--accent);
-  background: rgba(232, 121, 249, 0.08);
+.flash-game-cards__cell-preview:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
-.flash-game-cards__thumb {
-  width: 4rem;
-  height: 2.75rem;
+.flash-game-cards__cell-thumb {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  border-radius: 6px;
   display: block;
+  background: rgba(255, 255, 255, 0.06);
 }
 
-.flash-game-cards__thumb-label {
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-
-.flash-game-cards__item-actions {
+.flash-game-cards__cell-actions {
+  position: absolute;
+  left: 0.28rem;
+  right: 0.28rem;
+  bottom: 0.28rem;
+  z-index: 1;
   display: flex;
-  gap: 0.5rem;
+  gap: 0.25rem;
+}
+
+.flash-game-cards__cell-action {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  min-height: 1.55rem;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid rgba(192, 132, 252, 0.35);
+  border-radius: 0.35rem;
+  background: rgba(13, 8, 18, 0.78);
+  color: var(--text);
+  font-size: 0.65rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.flash-game-cards__cell-action:hover {
+  background: rgba(232, 121, 249, 0.22);
+  border-color: rgba(232, 121, 249, 0.55);
+}
+
+.flash-game-cards__cell-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.flash-game-cards__cell-remove {
+  position: absolute;
+  top: 0.28rem;
+  right: 0.28rem;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  padding: 0;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  border-radius: 0.35rem;
+  background: rgba(13, 8, 18, 0.78);
+  color: var(--danger);
+  cursor: pointer;
+}
+
+.flash-game-cards__cell-remove:hover {
+  background: rgba(248, 113, 113, 0.28);
+  border-color: var(--danger);
+}
+
+.flash-game-cards__cell-remove:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.flash-game-cards__selected {
+  margin-top: 0.35rem;
+}
+
+.flash-game-cards__selected-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0.75rem 0 0.65rem;
   flex-wrap: wrap;
-  margin-left: auto;
 }
 
 .flash-game-admin-item__main {
@@ -6523,27 +7340,168 @@ a.task-list-row {
   margin: 0;
 }
 
-.flash-game-round-row {
-  display: grid;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  margin-bottom: 0.75rem;
-  border-radius: 10px;
+.flash-game-combos {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.flash-game-combo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 100%;
+  padding: 0.18rem 0.3rem 0.18rem 0.45rem;
+  border-radius: 8px;
   background: var(--bg-elevated);
   border: 1px solid rgba(192, 132, 252, 0.12);
+  min-height: 2.1rem;
+}
+
+.flash-game-combo--editing {
+  flex: 1 1 100%;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0.55rem;
+  min-height: 0;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(232, 121, 249, 0.2);
+}
+
+.flash-game-combo__summary {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  padding: 0.1rem 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  min-height: 1.55rem;
+}
+
+.flash-game-combo__summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+.flash-game-combo__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 16rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.flash-game-combo__label--incomplete {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.flash-game-combo__fields {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.flash-game-combo__fields .form-field {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.flash-game-combo__fields input {
+  min-height: 2.1rem;
+  padding: 0.35rem 0.5rem;
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid rgba(192, 132, 252, 0.25);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.flash-game-combo__actions {
+  display: flex;
+  gap: 0.2rem;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.flash-game-combo__actions .btn {
+  margin-top: 0;
+  width: auto;
+}
+
+.flash-game-combo__action {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  width: 1.7rem;
+  min-width: 1.7rem;
+  min-height: 1.55rem;
+  padding: 0.12rem;
+  border: 1px solid rgba(192, 132, 252, 0.35);
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.flash-game-combo__action:hover {
+  background: rgba(232, 121, 249, 0.16);
+  border-color: rgba(232, 121, 249, 0.55);
+}
+
+.flash-game-combo__action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.flash-game-combo__action--danger {
+  border-color: rgba(248, 113, 113, 0.4);
+  color: var(--danger);
+}
+
+.flash-game-combo__action--danger:hover {
+  background: rgba(248, 113, 113, 0.18);
+  border-color: var(--danger);
+}
+
+.flash-game-combo:not(.flash-game-combo--editing) .flash-game-combo__action span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.flash-game-combo--editing .flash-game-combo__actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 @media (min-width: 640px) {
-  .flash-game-round-row {
+  .flash-game-combo__fields {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    align-items: end;
-  }
-
-  .flash-game-round-row__actions {
-    grid-column: 1 / -1;
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
   }
 }
 
@@ -6811,7 +7769,7 @@ a.task-list-row {
 .follow-instinct-admin__rounds {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.45rem;
   margin: 0.75rem 0;
 }
 
@@ -6827,22 +7785,183 @@ a.task-list-row {
   font-size: 0.95rem;
 }
 
-.follow-instinct-admin__round {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.75rem;
+.follow-instinct-admin__rounds-hint {
+  margin: 0;
+  font-size: 0.8rem;
 }
 
-.follow-instinct-admin__round-heading {
+.follow-instinct-admin__grid {
+  list-style: none;
+  margin: 0.35rem 0 0.15rem;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(5.75rem, 1fr));
+  gap: 0.45rem;
+}
+
+.follow-instinct-admin__cell {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(192, 132, 252, 0.18);
+  background: var(--bg-elevated);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.follow-instinct-admin__cell::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2.1rem;
+  background: linear-gradient(to top, rgba(13, 8, 18, 0.82), transparent);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.follow-instinct-admin__cell:hover {
+  border-color: rgba(192, 132, 252, 0.42);
+}
+
+.follow-instinct-admin__cell--selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(232, 121, 249, 0.35);
+}
+
+.follow-instinct-admin__cell-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.follow-instinct-admin__cell-preview:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.follow-instinct-admin__cell-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.follow-instinct-admin__cell-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 0.68rem;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.follow-instinct-admin__cell-meta {
+  position: absolute;
+  left: 0.28rem;
+  right: 0.28rem;
+  bottom: 0.28rem;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  pointer-events: none;
+}
+
+.follow-instinct-admin__cell-index,
+.follow-instinct-admin__cell-type,
+.follow-instinct-admin__cell-phrase {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.2rem;
+  padding: 0.08rem 0.32rem;
+  border-radius: 0.3rem;
+  background: rgba(13, 8, 18, 0.82);
+  color: var(--text);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.follow-instinct-admin__cell-type {
+  flex: 1;
+  justify-content: flex-start;
+}
+
+.follow-instinct-admin__cell-remove {
+  position: absolute;
+  top: 0.28rem;
+  right: 0.28rem;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  padding: 0;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  border-radius: 0.35rem;
+  background: rgba(13, 8, 18, 0.78);
+  color: var(--danger);
+  cursor: pointer;
+}
+
+.follow-instinct-admin__cell-remove:hover {
+  background: rgba(248, 113, 113, 0.28);
+  border-color: var(--danger);
+}
+
+.follow-instinct-admin__cell-remove:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.follow-instinct-admin__selected {
+  margin-top: 0.45rem;
+  padding: 0.7rem 0.75rem 0.8rem;
+  border-radius: var(--radius);
+  border: 1px solid rgba(192, 132, 252, 0.2);
+  background: var(--bg-elevated);
+}
+
+.follow-instinct-admin__selected-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.follow-instinct-admin__selected-bar strong {
+  font-size: 0.88rem;
+}
+
+.follow-instinct-admin__selected-body {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.follow-instinct-admin__photo-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 
 .follow-instinct-admin__round-photo {
-  aspect-ratio: 4 / 3;
-  max-height: 10rem;
+  aspect-ratio: 1;
+  width: 100%;
   border-radius: var(--radius);
   overflow: hidden;
   border: 1px solid rgba(192, 132, 252, 0.2);
@@ -6856,6 +7975,41 @@ a.task-list-row {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.follow-instinct-admin__round-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem 0.65rem;
+  align-items: start;
+}
+
+.follow-instinct-admin__round-fields .field {
+  margin-bottom: 0;
+}
+
+.follow-instinct-admin__replace {
+  justify-content: center;
+  cursor: pointer;
+}
+
+.follow-instinct-admin__phrase {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 640px) {
+  .follow-instinct-admin__selected-body {
+    grid-template-columns: 1fr;
+  }
+
+  .follow-instinct-admin__round-photo {
+    max-width: 8.5rem;
+    max-height: 8.5rem;
+  }
+
+  .follow-instinct-admin__round-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 .follow-instinct-admin__actions {

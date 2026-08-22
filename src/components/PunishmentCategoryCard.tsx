@@ -5,11 +5,13 @@ import { isCategoryImagePreview } from '../lib/categoryImage';
 interface PunishmentCategoryCardProps {
   category: PunishmentCategory;
   onSelect: () => void;
+  selected?: boolean;
 }
 
 export function PunishmentCategoryCard({
   category,
   onSelect,
+  selected = false,
 }: PunishmentCategoryCardProps) {
   const imagePreview = isCategoryImagePreview(category.imageUrl)
     ? category.imageUrl
@@ -18,8 +20,9 @@ export function PunishmentCategoryCard({
   return (
     <button
       type="button"
-      className="category-card punishment-category-card"
+      className={`category-card punishment-category-card${selected ? ' punishment-category-card--selected' : ''}`}
       style={{ '--cat-color': 'var(--accent)' } as CSSProperties}
+      aria-pressed={selected}
       onClick={onSelect}
     >
       <div className="category-card__image-wrap">

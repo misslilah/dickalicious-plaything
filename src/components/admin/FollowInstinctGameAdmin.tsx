@@ -14,6 +14,12 @@ import {
   type FollowInstinctRoundDraft,
 } from '../../lib/followInstinctGames';
 
+const ORDER_SHORT_LABELS: Record<FollowInstinctOrderType, string> = {
+  close_eyes: 'Eyes',
+  open_mouth: 'Mouth',
+  tongue_out: 'Tongue',
+};
+
 function blankForm(): FollowInstinctGameInput & { rounds: FollowInstinctRoundDraft[] } {
   return {
     title: '',
@@ -38,6 +44,28 @@ function summarizeOrderTypes(rounds: { orderType: FollowInstinctOrderType }[]): 
   return labels.join(', ');
 }
 
+function TrashIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 7h16" />
+      <path d="M9 7V5h6v2" />
+      <path d="M18 7l-1 14H7L6 7" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </svg>
+  );
+}
+
 export function FollowInstinctGameAdmin() {
   const [games, setGames] = useState<FollowInstinctGame[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,7 +74,8 @@ export function FollowInstinctGameAdmin() {
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState(blankForm());
+  const [form, setForm] = useState(blankForm);
+  const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null);
 
   const filteredGames = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -57,6 +86,22 @@ export function FollowInstinctGameAdmin() {
         (game.description ?? '').toLowerCase().includes(query),
     );
   }, [games, search]);
+
+  const selectedRound = useMemo(() => {
+    if (form.rounds.length === 0) return null;
+    return form.rounds.find((round) => round.id === selectedRoundId) ?? form.rounds[0];
+  }, [form.rounds, selectedRoundId]);
+
+  const selectedRoundIndex = selectedRound
+    ? form.rounds.findIndex((round) => round.id === selectedRound.id)
+    : -1;
+
+  useEffect(() => {
+    if (!selectedRound) return;
+    if (selectedRoundId !== selectedRound.id) {
+      setSelectedRoundId(selectedRound.id);
+    }
+  }, [selectedRound, selectedRoundId]);
 
   const loadGames = async () => {
     setLoading(true);
@@ -75,17 +120,21 @@ export function FollowInstinctGameAdmin() {
   }, []);
 
   const resetForm = () => {
+    const next = blankForm();
     setEditingId(null);
-    setForm(blankForm());
+    setForm(next);
+    setSelectedRoundId(next.rounds[0]?.id ?? null);
   };
 
   const startEdit = (game: FollowInstinctGame) => {
+    const rounds = gameToDrafts(game);
     setEditingId(game.id);
     setForm({
       title: game.title,
       description: game.description ?? '',
-      rounds: gameToDrafts(game),
+      rounds,
     });
+    setSelectedRoundId(rounds[0]?.id ?? null);
     setMessage('');
     setError('');
   };
@@ -113,17 +162,24 @@ export function FollowInstinctGameAdmin() {
   };
 
   const addRound = () => {
+    const round = newRoundDraft('close_eyes');
     setForm((prev) => ({
       ...prev,
-      rounds: [...prev.rounds, newRoundDraft('close_eyes')],
+      rounds: [...prev.rounds, round],
     }));
+    setSelectedRoundId(round.id);
   };
 
   const removeRound = (roundId: string) => {
-    setForm((prev) => {
-      if (prev.rounds.length <= 1) return prev;
-      return { ...prev, rounds: prev.rounds.filter((round) => round.id !== roundId) };
-    });
+    const remaining = form.rounds.filter((round) => round.id !== roundId);
+    if (remaining.length === form.rounds.length) return;
+    if (remaining.length === 0) return;
+    const removedIndex = form.rounds.findIndex((round) => round.id === roundId);
+    setForm((prev) => ({ ...prev, rounds: prev.rounds.filter((round) => round.id !== roundId) }));
+    if (selectedRoundId === roundId) {
+      const fallback = remaining[Math.min(Math.max(removedIndex, 0), remaining.length - 1)];
+      setSelectedRoundId(fallback?.id ?? null);
+    }
   };
 
   const handleSave = async () => {
@@ -216,77 +272,155 @@ export function FollowInstinctGameAdmin() {
               Add round
             </button>
           </div>
+          <p className="muted follow-instinct-admin__rounds-hint">
+            Click a thumbnail to edit that round.
+          </p>
 
-          {form.rounds.map((round, index) => (
-            <div key={round.id} className="follow-instinct-admin__round card">
-              <div className="follow-instinct-admin__round-heading">
-                <strong>Round {index + 1}</strong>
+          <ul className="follow-instinct-admin__grid">
+            {form.rounds.map((round, index) => {
+              const selected = round.id === selectedRound?.id;
+              const label = `Round ${index + 1}`;
+              const hasPhrase = Boolean(round.phraseToType?.trim());
+              return (
+                <li
+                  key={round.id}
+                  className={
+                    selected
+                      ? 'follow-instinct-admin__cell follow-instinct-admin__cell--selected'
+                      : 'follow-instinct-admin__cell'
+                  }
+                >
+                  <button
+                    type="button"
+                    className="follow-instinct-admin__cell-preview"
+                    onClick={() => setSelectedRoundId(round.id)}
+                    aria-pressed={selected}
+                    aria-label={`Edit ${label}: ${FOLLOW_INSTINCT_ORDER_LABELS[round.orderType]}`}
+                    title={`${label} · ${FOLLOW_INSTINCT_ORDER_LABELS[round.orderType]}`}
+                  >
+                    {round.imageUrl ? (
+                      <img src={round.imageUrl} alt="" className="follow-instinct-admin__cell-thumb" />
+                    ) : (
+                      <span className="follow-instinct-admin__cell-empty">No photo</span>
+                    )}
+                  </button>
+                  <span className="follow-instinct-admin__cell-meta">
+                    <span className="follow-instinct-admin__cell-index">{index + 1}</span>
+                    <span className="follow-instinct-admin__cell-type">
+                      {ORDER_SHORT_LABELS[round.orderType]}
+                    </span>
+                    {hasPhrase && (
+                      <span className="follow-instinct-admin__cell-phrase" title="Has phrase to type">
+                        Aa
+                      </span>
+                    )}
+                  </span>
+                  {form.rounds.length > 1 && (
+                    <button
+                      type="button"
+                      className="follow-instinct-admin__cell-remove"
+                      onClick={() => removeRound(round.id)}
+                      aria-label={`Remove ${label}`}
+                      title="Remove"
+                    >
+                      <TrashIcon />
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+
+          {selectedRound && (
+            <div className="follow-instinct-admin__selected">
+              <div className="follow-instinct-admin__selected-bar">
+                <strong>
+                  Editing round {selectedRoundIndex + 1} ·{' '}
+                  {FOLLOW_INSTINCT_ORDER_LABELS[selectedRound.orderType]}
+                </strong>
                 {form.rounds.length > 1 && (
                   <button
                     type="button"
                     className="btn btn--ghost btn--small btn--danger"
-                    onClick={() => removeRound(round.id)}
+                    onClick={() => removeRound(selectedRound.id)}
                   >
-                    Remove
+                    Remove round
                   </button>
                 )}
               </div>
 
-              <div className="follow-instinct-admin__round-photo">
-                {round.imageUrl ? (
-                  <img src={round.imageUrl} alt="" />
-                ) : (
-                  <span className="muted">No photo</span>
-                )}
+              <div className="follow-instinct-admin__selected-body">
+                <div className="follow-instinct-admin__photo-col">
+                  <div className="follow-instinct-admin__round-photo">
+                    {selectedRound.imageUrl ? (
+                      <img src={selectedRound.imageUrl} alt="" />
+                    ) : (
+                      <span className="muted">No photo</span>
+                    )}
+                  </div>
+                  <label className="btn btn--ghost btn--small follow-instinct-admin__replace">
+                    {selectedRound.imageUrl ? 'Replace photo' : 'Add photo'}
+                    <input
+                      type="file"
+                      accept={FOLLOW_INSTINCT_IMAGE_ACCEPT}
+                      className="visually-hidden"
+                      onChange={(event) => {
+                        onPickRoundImage(selectedRound.id, event.target.files?.[0]);
+                        event.currentTarget.value = '';
+                      }}
+                    />
+                  </label>
+                </div>
+
+                <div className="follow-instinct-admin__round-fields">
+                  <label className="field">
+                    <span>Order type</span>
+                    <select
+                      value={selectedRound.orderType}
+                      onChange={(event) => {
+                        const orderType = event.target.value as FollowInstinctOrderType;
+                        updateRound(selectedRound.id, {
+                          orderType,
+                          orderText: FOLLOW_INSTINCT_ORDER_LABELS[orderType],
+                        });
+                      }}
+                    >
+                      {(Object.keys(FOLLOW_INSTINCT_ORDER_LABELS) as FollowInstinctOrderType[]).map(
+                        (type) => (
+                          <option key={type} value={type}>
+                            {FOLLOW_INSTINCT_ORDER_LABELS[type]}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </label>
+
+                  <label className="field">
+                    <span>Order text (shown to player)</span>
+                    <input
+                      type="text"
+                      value={selectedRound.orderText}
+                      onChange={(event) =>
+                        updateRound(selectedRound.id, { orderText: event.target.value })
+                      }
+                    />
+                  </label>
+
+                  <label className="field follow-instinct-admin__phrase">
+                    <span>Phrase to type (optional)</span>
+                    <input
+                      type="text"
+                      value={selectedRound.phraseToType ?? ''}
+                      placeholder='e.g. "I obey" — leave blank for pose only'
+                      onChange={(event) =>
+                        updateRound(selectedRound.id, { phraseToType: event.target.value })
+                      }
+                    />
+                  </label>
+                </div>
               </div>
-              <input
-                type="file"
-                accept={FOLLOW_INSTINCT_IMAGE_ACCEPT}
-                onChange={(event) => onPickRoundImage(round.id, event.target.files?.[0])}
-              />
-
-              <label className="field">
-                <span>Order type</span>
-                <select
-                  value={round.orderType}
-                  onChange={(event) => {
-                    const orderType = event.target.value as FollowInstinctOrderType;
-                    updateRound(round.id, {
-                      orderType,
-                      orderText: FOLLOW_INSTINCT_ORDER_LABELS[orderType],
-                    });
-                  }}
-                >
-                  {(Object.keys(FOLLOW_INSTINCT_ORDER_LABELS) as FollowInstinctOrderType[]).map(
-                    (type) => (
-                      <option key={type} value={type}>
-                        {FOLLOW_INSTINCT_ORDER_LABELS[type]}
-                      </option>
-                    ),
-                  )}
-                </select>
-              </label>
-
-              <label className="field">
-                <span>Order text (shown to player)</span>
-                <input
-                  type="text"
-                  value={round.orderText}
-                  onChange={(event) => updateRound(round.id, { orderText: event.target.value })}
-                />
-              </label>
-
-              <label className="field">
-                <span>Phrase to type (optional)</span>
-                <input
-                  type="text"
-                  value={round.phraseToType ?? ''}
-                  placeholder='e.g. "I obey" — leave blank for pose only'
-                  onChange={(event) => updateRound(round.id, { phraseToType: event.target.value })}
-                />
-              </label>
             </div>
-          ))}
+          )}
         </div>
 
         <div className="follow-instinct-admin__actions">

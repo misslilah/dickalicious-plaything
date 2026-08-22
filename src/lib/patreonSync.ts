@@ -203,3 +203,95 @@ export function patreonStatusLabel(status: string): string {
       return 'None';
   }
 }
+
+/** localStorage ISO timestamp of the last successful admin batch Patreon sync. */
+export const ADMIN_PATREON_LAST_SYNC_STORAGE_KEY = 'admin-patreon-last-sync';
+
+/** Skip Admin → Users auto-sync when a successful batch sync ran within this window. */
+export const ADMIN_PATREON_AUTO_SYNC_THROTTLE_MS = 20 * 60 * 1000;
+
+export type AdminPatreonAutoSyncOutcome =
+  | { kind: 'unconfigured'; probe: PatreonSyncProbeResult }
+  | { kind: 'skipped'; lastSyncedAt: number }
+  | { kind: 'synced'; result: Extract<PatreonSyncResult, { ok: true }> }
+  | { kind: 'failed'; result: Extract<PatreonSyncResult, { ok: false }> };
+
+function readLastSuccessfulPatreonSyncAt(): number | null {
+  try {
+    const raw = localStorage.getItem(ADMIN_PATREON_LAST_SYNC_STORAGE_KEY);
+    if (!raw) return null;
+    const timestamp = Date.parse(raw);
+    return Number.isNaN(timestamp) ? null : timestamp;
+  } catch {
+    return null;
+  }
+}
+
+/** Record a successful batch (all linked users) sync for the auto-sync throttle. */
+export function markAdminPatreonBatchSyncSucceeded(at = Date.now()): void {
+  try {
+    localStorage.setItem(ADMIN_PATREON_LAST_SYNC_STORAGE_KEY, new Date(at).toISOString());
+  } catch {
+    // Ignore quota / private-mode failures; the next visit may auto-sync again.
+  }
+}
+
+export function formatPatreonAutoSyncSkippedMessage(lastSyncedAt: number): string {
+  const when = formatPatreonLastSynced(new Date(lastSyncedAt).toISOString());
+  return `Patreon tiers already synced (${when}) — skipped auto-sync. Use Sync Patreon tiers to refresh.`;
+}
+
+let adminPatreonAutoSyncInFlight: Promise<AdminPatreonAutoSyncOutcome> | null = null;
+let adminPatreonAutoSyncBatchStarted = false;
+const adminPatreonAutoSyncStartListeners: Array<() => void> = [];
+
+/**
+ * Probe then optionally batch-sync Patreon members when Admin → Users mounts.
+ * Dedupes overlapping calls (React Strict Mode). Does not retry on missing secrets.
+ */
+export function runAdminPatreonAutoSync(
+  onBatchSyncStart?: () => void,
+): Promise<AdminPatreonAutoSyncOutcome> {
+  if (onBatchSyncStart) {
+    if (adminPatreonAutoSyncBatchStarted) onBatchSyncStart();
+    else adminPatreonAutoSyncStartListeners.push(onBatchSyncStart);
+  }
+
+  if (adminPatreonAutoSyncInFlight) return adminPatreonAutoSyncInFlight;
+
+  const pending = (async (): Promise<AdminPatreonAutoSyncOutcome> => {
+    try {
+      const probe = await probePatreonSync();
+      if (!probe.ok) return { kind: 'unconfigured', probe };
+
+      const lastSyncedAt = readLastSuccessfulPatreonSyncAt();
+      if (
+        lastSyncedAt != null &&
+        Date.now() - lastSyncedAt < ADMIN_PATREON_AUTO_SYNC_THROTTLE_MS
+      ) {
+        return { kind: 'skipped', lastSyncedAt };
+      }
+
+      adminPatreonAutoSyncBatchStarted = true;
+      const startListeners = adminPatreonAutoSyncStartListeners.splice(0);
+      for (const listener of startListeners) listener();
+
+      const result = await syncPatreonMembers();
+      if (!result.ok) return { kind: 'failed', result };
+
+      markAdminPatreonBatchSyncSucceeded();
+      return { kind: 'synced', result };
+    } finally {
+      adminPatreonAutoSyncStartListeners.length = 0;
+      adminPatreonAutoSyncBatchStarted = false;
+    }
+  })();
+
+  adminPatreonAutoSyncInFlight = pending;
+  void pending.finally(() => {
+    if (adminPatreonAutoSyncInFlight === pending) {
+      adminPatreonAutoSyncInFlight = null;
+    }
+  });
+  return pending;
+}

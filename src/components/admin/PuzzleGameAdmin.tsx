@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   MAX_PUZZLE_IMAGE_BYTES,
   PUZZLE_IMAGE_ACCEPT,
@@ -17,6 +17,12 @@ import {
   type PuzzleRotationDirection,
 } from '../../lib/puzzleGames';
 
+const ROTATION_SHORT_LABELS: Record<PuzzleRotationDirection, string> = {
+  clockwise: 'CW',
+  counterclockwise: 'CCW',
+  none: 'Pos',
+};
+
 function blankForm(): PuzzleGameInput & { titleInput: string; imagePreview: string | null } {
   return {
     title: null,
@@ -28,6 +34,28 @@ function blankForm(): PuzzleGameInput & { titleInput: string; imagePreview: stri
   };
 }
 
+function TrashIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 7h16" />
+      <path d="M9 7V5h6v2" />
+      <path d="M18 7l-1 14H7L6 7" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </svg>
+  );
+}
+
 export function PuzzleGameAdmin() {
   const [puzzles, setPuzzles] = useState<PuzzleGame[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,8 +64,11 @@ export function PuzzleGameAdmin() {
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState(blankForm());
+  const [isCreating, setIsCreating] = useState(false);
+  const [form, setForm] = useState(blankForm);
   const [imageFile, setImageFile] = useState<File | undefined>();
+  const editorRef = useRef<HTMLDivElement>(null);
+  const blobPreviewRef = useRef<string | null>(null);
 
   const filteredPuzzles = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -46,6 +77,21 @@ export function PuzzleGameAdmin() {
       puzzleDisplayTitle(puzzle).toLowerCase().includes(query),
     );
   }, [puzzles, search]);
+
+  const selectedPuzzle = editingId
+    ? puzzles.find((puzzle) => puzzle.id === editingId) ?? null
+    : null;
+  const selectedIndex = selectedPuzzle
+    ? puzzles.findIndex((puzzle) => puzzle.id === selectedPuzzle.id)
+    : -1;
+  const showEditor = isCreating || editingId != null;
+
+  const clearBlobPreview = () => {
+    if (blobPreviewRef.current) {
+      URL.revokeObjectURL(blobPreviewRef.current);
+      blobPreviewRef.current = null;
+    }
+  };
 
   const loadPuzzles = async () => {
     setLoading(true);
@@ -63,13 +109,41 @@ export function PuzzleGameAdmin() {
     void loadPuzzles();
   }, []);
 
+  useEffect(
+    () => () => {
+      if (blobPreviewRef.current) URL.revokeObjectURL(blobPreviewRef.current);
+    },
+    [],
+  );
+
+  const scrollEditorIntoView = () => {
+    requestAnimationFrame(() => {
+      editorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  };
+
   const resetForm = () => {
+    clearBlobPreview();
     setEditingId(null);
+    setIsCreating(false);
     setForm(blankForm());
     setImageFile(undefined);
   };
 
+  const startCreate = () => {
+    clearBlobPreview();
+    setEditingId(null);
+    setIsCreating(true);
+    setForm(blankForm());
+    setImageFile(undefined);
+    setMessage('');
+    setError('');
+    scrollEditorIntoView();
+  };
+
   const startEdit = (puzzle: PuzzleGame) => {
+    clearBlobPreview();
+    setIsCreating(false);
     setEditingId(puzzle.id);
     setForm({
       title: puzzle.title,
@@ -82,6 +156,7 @@ export function PuzzleGameAdmin() {
     setImageFile(undefined);
     setMessage('');
     setError('');
+    scrollEditorIntoView();
   };
 
   const onPickImage = (file: File | undefined) => {
@@ -90,8 +165,12 @@ export function PuzzleGameAdmin() {
       setError('Image must be 5 MB or smaller.');
       return;
     }
+    clearBlobPreview();
+    const preview = URL.createObjectURL(file);
+    blobPreviewRef.current = preview;
     setImageFile(file);
-    setForm((prev) => ({ ...prev, imagePreview: URL.createObjectURL(file) }));
+    setForm((prev) => ({ ...prev, imagePreview: preview }));
+    setError('');
   };
 
   const handleSave = async () => {
@@ -165,9 +244,16 @@ export function PuzzleGameAdmin() {
     }
   };
 
+  const gridSize = puzzleGridSize(form.pieceCount);
+  const editorTitle = isCreating
+    ? 'New puzzle'
+    : selectedPuzzle
+      ? `Editing ${puzzleDisplayTitle(selectedPuzzle)}`
+      : 'Edit puzzle';
+
   return (
     <div className="puzzle-admin">
-      <p className="muted">
+      <p className="muted puzzle-admin__intro">
         Upload an image and choose how many pieces to split it into. Players rearrange and rotate
         pieces until the image is restored. Set rotation direction per puzzle (clockwise,
         counter-clockwise, or position-only).
@@ -180,168 +266,238 @@ export function PuzzleGameAdmin() {
       )}
       {message && <p className="admin-form-message">{message}</p>}
 
-      <section className="card puzzle-admin__form">
-        <h3>{editingId ? 'Edit puzzle' : 'New puzzle'}</h3>
-
-        <label className="field">
-          <span>Title (optional)</span>
-          <input
-            type="text"
-            value={form.titleInput}
-            placeholder="Puzzle"
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, titleInput: event.target.value }))
-            }
-          />
-        </label>
-
-        <div className="puzzle-admin__preview">
-          {form.imagePreview ? (
-            <img src={form.imagePreview} alt="" />
-          ) : (
-            <span className="muted">No image selected</span>
-          )}
-        </div>
-        <input
-          type="file"
-          accept={PUZZLE_IMAGE_ACCEPT}
-          onChange={(event) => onPickImage(event.target.files?.[0])}
-        />
-
-        <label className="field">
-          <span>Piece count</span>
-          <select
-            value={form.pieceCount}
-            onChange={(event) =>
-              setForm((prev) => ({
-                ...prev,
-                pieceCount: Number(event.target.value) as PuzzlePieceCount,
-              }))
-            }
-          >
-            {PUZZLE_PIECE_COUNTS.map((count) => {
-              const size = puzzleGridSize(count);
-              return (
-                <option key={count} value={count}>
-                  {count} pieces ({size}×{size})
-                </option>
-              );
-            })}
-          </select>
-        </label>
-
-        <label className="field">
-          <span>Rotation direction</span>
-          <select
-            value={form.rotationDirection}
-            onChange={(event) =>
-              setForm((prev) => ({
-                ...prev,
-                rotationDirection: event.target.value as PuzzleRotationDirection,
-              }))
-            }
-          >
-            {(Object.keys(PUZZLE_ROTATION_LABELS) as PuzzleRotationDirection[]).map((value) => (
-              <option key={value} value={value}>
-                {PUZZLE_ROTATION_LABELS[value]}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="field field--checkbox">
-          <input
-            type="checkbox"
-            checked={form.isActive}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, isActive: event.target.checked }))
-            }
-          />
-          <span>Visible to players</span>
-        </label>
-
-        <div className="puzzle-admin__actions">
-          <button
-            type="button"
-            className="btn btn--primary"
-            disabled={saving}
-            onClick={() => void handleSave()}
-          >
-            {saving ? 'Saving…' : editingId ? 'Save changes' : 'Create puzzle'}
-          </button>
-          {editingId && (
-            <button type="button" className="btn btn--ghost" onClick={resetForm}>
-              Cancel edit
+      <section className="card puzzle-admin__library">
+        <div className="puzzle-admin__library-header">
+          <div className="puzzle-admin__library-title">
+            <h3>Puzzles</h3>
+            <span className="admin-count" aria-live="polite">
+              {puzzles.length}
+            </span>
+          </div>
+          <div className="puzzle-admin__library-tools">
+            <input
+              type="search"
+              className="admin-search"
+              placeholder="Search…"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              aria-label="Search puzzles"
+            />
+            <button type="button" className="btn btn--ghost btn--small" onClick={startCreate}>
+              Add puzzle
             </button>
-          )}
+          </div>
         </div>
-      </section>
+        <p className="muted puzzle-admin__hint">Click a thumbnail to edit that puzzle.</p>
 
-      <section className="card">
-        <div className="admin-list-header">
-          <h3>Puzzles</h3>
-          <input
-            type="search"
-            className="admin-search"
-            placeholder="Search…"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </div>
         {loading && <p className="muted">Loading…</p>}
         {!loading && filteredPuzzles.length === 0 && (
           <p className="muted">No puzzles yet.</p>
         )}
-        <ul className="admin-list">
-          {filteredPuzzles.map((puzzle, index) => (
-            <li key={puzzle.id} className="admin-list-item">
-              <div className="puzzle-admin__list-thumb">
-                <img src={puzzle.imageUrl} alt="" />
-              </div>
-              <div className="admin-list-item__body">
-                <strong>{puzzleDisplayTitle(puzzle)}</strong>
-                <p className="muted">
-                  {puzzle.pieceCount} pieces ({puzzleGridSize(puzzle.pieceCount)}×
-                  {puzzleGridSize(puzzle.pieceCount)}) ·{' '}
-                  {PUZZLE_ROTATION_LABELS[puzzle.rotationDirection]}
-                  {!puzzle.isActive && ' · Hidden'}
-                </p>
-              </div>
-              <div className="admin-list-item__actions">
+
+        <ul className="puzzle-admin__grid">
+          {filteredPuzzles.map((puzzle) => {
+            const selected = puzzle.id === editingId;
+            const size = puzzleGridSize(puzzle.pieceCount);
+            const label = puzzleDisplayTitle(puzzle);
+            return (
+              <li
+                key={puzzle.id}
+                className={
+                  selected
+                    ? 'puzzle-admin__cell puzzle-admin__cell--selected'
+                    : 'puzzle-admin__cell'
+                }
+              >
                 <button
                   type="button"
-                  className="btn btn--ghost btn--small"
-                  disabled={index === 0}
-                  onClick={() => void movePuzzle(puzzle.id, -1)}
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--ghost btn--small"
-                  disabled={index === puzzles.length - 1}
-                  onClick={() => void movePuzzle(puzzle.id, 1)}
-                >
-                  ↓
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--ghost btn--small"
+                  className="puzzle-admin__cell-preview"
                   onClick={() => startEdit(puzzle)}
+                  aria-pressed={selected}
+                  aria-label={`Edit ${label}: ${puzzle.pieceCount} pieces, ${PUZZLE_ROTATION_LABELS[puzzle.rotationDirection]}`}
+                  title={`${label} · ${puzzle.pieceCount} pieces · ${PUZZLE_ROTATION_LABELS[puzzle.rotationDirection]}`}
                 >
-                  Edit
+                  {puzzle.imageUrl ? (
+                    <img src={puzzle.imageUrl} alt="" className="puzzle-admin__cell-thumb" />
+                  ) : (
+                    <span className="puzzle-admin__cell-empty">No image</span>
+                  )}
                 </button>
+                <span className="puzzle-admin__cell-meta">
+                  <span className="puzzle-admin__cell-index">
+                    {size}×{size}
+                  </span>
+                  <span className="puzzle-admin__cell-type">
+                    {ROTATION_SHORT_LABELS[puzzle.rotationDirection]}
+                  </span>
+                  {!puzzle.isActive && (
+                    <span className="puzzle-admin__cell-hidden" title="Hidden from players">
+                      Off
+                    </span>
+                  )}
+                </span>
                 <button
                   type="button"
-                  className="btn btn--ghost btn--small btn--danger"
+                  className="puzzle-admin__cell-remove"
                   onClick={() => void handleDelete(puzzle.id)}
+                  aria-label={`Delete ${label}`}
+                  title="Delete"
                 >
-                  Delete
+                  <TrashIcon />
                 </button>
-              </div>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
+
+        {showEditor && (
+          <div ref={editorRef} className="puzzle-admin__selected">
+            <div className="puzzle-admin__selected-bar">
+              <strong>{editorTitle}</strong>
+              <div className="btn-row">
+                {editingId && selectedIndex >= 0 && (
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--small"
+                      disabled={selectedIndex === 0}
+                      onClick={() => void movePuzzle(editingId, -1)}
+                    >
+                      Move up
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--small"
+                      disabled={selectedIndex === puzzles.length - 1}
+                      onClick={() => void movePuzzle(editingId, 1)}
+                    >
+                      Move down
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn--ghost btn--small btn--danger"
+                      onClick={() => void handleDelete(editingId)}
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="puzzle-admin__selected-body">
+              <div className="puzzle-admin__photo-col">
+                <div className="puzzle-admin__photo">
+                  {form.imagePreview ? (
+                    <img src={form.imagePreview} alt="" />
+                  ) : (
+                    <span className="muted">No image</span>
+                  )}
+                </div>
+                <label className="btn btn--ghost btn--small puzzle-admin__replace">
+                  {form.imagePreview ? 'Replace image' : 'Add image'}
+                  <input
+                    type="file"
+                    accept={PUZZLE_IMAGE_ACCEPT}
+                    className="visually-hidden"
+                    onChange={(event) => {
+                      onPickImage(event.target.files?.[0]);
+                      event.currentTarget.value = '';
+                    }}
+                  />
+                </label>
+              </div>
+
+              <div className="puzzle-admin__fields">
+                <label className="field">
+                  <span>Title (optional)</span>
+                  <input
+                    type="text"
+                    value={form.titleInput}
+                    placeholder="Puzzle"
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, titleInput: event.target.value }))
+                    }
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Piece count</span>
+                  <select
+                    value={form.pieceCount}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        pieceCount: Number(event.target.value) as PuzzlePieceCount,
+                      }))
+                    }
+                  >
+                    {PUZZLE_PIECE_COUNTS.map((count) => {
+                      const size = puzzleGridSize(count);
+                      return (
+                        <option key={count} value={count}>
+                          {count} pieces ({size}×{size})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+
+                <label className="field">
+                  <span>Rotation direction</span>
+                  <select
+                    value={form.rotationDirection}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        rotationDirection: event.target.value as PuzzleRotationDirection,
+                      }))
+                    }
+                  >
+                    {(Object.keys(PUZZLE_ROTATION_LABELS) as PuzzleRotationDirection[]).map(
+                      (value) => (
+                        <option key={value} value={value}>
+                          {PUZZLE_ROTATION_LABELS[value]}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </label>
+
+                <label className="field field--checkbox puzzle-admin__visible">
+                  <input
+                    type="checkbox"
+                    checked={form.isActive}
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, isActive: event.target.checked }))
+                    }
+                  />
+                  <span>Visible to players</span>
+                </label>
+              </div>
+            </div>
+
+            <p className="muted puzzle-admin__editor-hint">
+              {form.imagePreview
+                ? `Players will solve a ${form.pieceCount}-piece (${gridSize}×${gridSize}) board.`
+                : 'An image is required to create a puzzle.'}
+            </p>
+
+            <div className="puzzle-admin__actions">
+              <button
+                type="button"
+                className="btn btn--primary"
+                disabled={saving}
+                onClick={() => void handleSave()}
+              >
+                {saving ? 'Saving…' : editingId ? 'Save changes' : 'Create puzzle'}
+              </button>
+              <button type="button" className="btn btn--ghost" onClick={resetForm}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </section>
     </div>
   );

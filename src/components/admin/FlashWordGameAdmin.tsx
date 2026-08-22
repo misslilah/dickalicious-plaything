@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   DEFAULT_FLASH_DURATION_MS,
@@ -33,7 +33,16 @@ import {
 } from '../../lib/flashWordGames';
 import { FlashWordGameTestModal } from '../FlashWordGameTestModal';
 import { FlashWordZoneEditor } from '../FlashWordZoneEditor';
-import { buildSandboxFlashWordGame } from '../../lib/flashWordAdminTest';
+import {
+  buildSandboxFlashWordGame,
+  buildStreakRewardPreviewGame,
+  type AdminStreakTierSource,
+} from '../../lib/flashWordAdminTest';
+import {
+  playFlashWordStreakAudio,
+  stopFlashWordStreakAudio,
+} from '../../lib/flashWordStreakReward';
+import type { FlashWordStreakRewardPreview } from '../FlashWordGamePlayer';
 
 const EMPTY_TRIPLET: FlashWordTripletInput = {
   word1: '',
@@ -119,6 +128,45 @@ function streakTierToFormEntry(tier: FlashWordStreakTier): StreakTierFormEntry {
   };
 }
 
+function tierHasAudioClip(tier: StreakTierFormEntry): boolean {
+  return Boolean((tier.pendingAudioFile || tier.audioUrl) && !tier.clearAudio);
+}
+
+function resolveTierAudioUrl(tier: StreakTierFormEntry): {
+  url: string | null;
+  objectUrl?: string;
+} {
+  if (!tierHasAudioClip(tier)) return { url: null };
+  if (tier.pendingAudioFile) {
+    const objectUrl = URL.createObjectURL(tier.pendingAudioFile);
+    return { url: objectUrl, objectUrl };
+  }
+  return { url: tier.audioUrl ?? null };
+}
+
+function mapFormStreakTiersForSandbox(
+  tiers: StreakTierFormEntry[],
+): { sources: AdminStreakTierSource[]; revoke: () => void } {
+  const objectUrls: string[] = [];
+  const sources = tiers.map((tier) => {
+    const resolved = resolveTierAudioUrl(tier);
+    if (resolved.objectUrl) objectUrls.push(resolved.objectUrl);
+    return {
+      id: tier.id,
+      streakThreshold: tier.streakThreshold,
+      xpReward: tier.xpReward,
+      message: tier.message,
+      audioUrl: resolved.url,
+    };
+  });
+  return {
+    sources,
+    revoke: () => {
+      for (const url of objectUrls) URL.revokeObjectURL(url);
+    },
+  };
+}
+
 function gameToForm(game: FlashWordGame) {
   return {
     title: game.title,
@@ -136,8 +184,124 @@ function gameToForm(game: FlashWordGame) {
   };
 }
 
+function PencilIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M8 5.14v13.72L19 12Z" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 7h16" />
+      <path d="M9 7V5h6v2" />
+      <path d="M18 7l-1 14H7L6 7" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </svg>
+  );
+}
+
+function AudioIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+      <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+    </svg>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
 function formatCombinationLabel(combination: FlashWordSavedCombination): string {
   return `${combination.word1} · ${combination.word2} · ${combination.word3}`;
+}
+
+function formatTripletLabel(triplet: FlashWordTripletInput): string {
+  const w1 = triplet.word1.trim();
+  const w2 = triplet.word2.trim();
+  const w3 = triplet.word3.trim();
+  if (!w1 && !w2 && !w3) return 'New combination';
+  return `${w1 || '…'} · ${w2 || '…'} · ${w3 || '…'}`;
+}
+
+function formatStreakTierLabel(tier: StreakTierFormEntry): string {
+  const threshold = Number.isFinite(tier.streakThreshold) ? String(tier.streakThreshold) : '?';
+  const xp = Number.isFinite(tier.xpReward) ? tier.xpReward : 0;
+  const message = tier.message.trim().replace(/\s+/g, ' ');
+  const snippet = message.length > 36 ? `${message.slice(0, 35).trimEnd()}…` : message;
+  const parts = [`Streak ${threshold}`, `+${xp} XP`];
+  if (snippet) parts.push(snippet);
+  return parts.join(' · ');
+}
+
+function tripletIsIncomplete(triplet: FlashWordTripletInput): boolean {
+  return !triplet.word1.trim() || !triplet.word2.trim() || !triplet.word3.trim();
 }
 
 function tripletMatchesSaved(
@@ -161,6 +325,8 @@ export function FlashWordGameAdmin() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(blankForm());
   const [selectedCardIndex, setSelectedCardIndex] = useState(0);
+  const [editingTripletIndex, setEditingTripletIndex] = useState<number | null>(null);
+  const [editingStreakTierIndex, setEditingStreakTierIndex] = useState<number | null>(null);
   const [savedCombinations, setSavedCombinations] = useState<FlashWordSavedCombination[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(true);
   const [libraryOpen, setLibraryOpen] = useState(false);
@@ -169,11 +335,18 @@ export function FlashWordGameAdmin() {
   const [testPlay, setTestPlay] = useState<{
     game: FlashWordGame;
     cardLabel: string;
+    previewReward?: FlashWordStreakRewardPreview;
+    revokeAudioUrls?: () => void;
   } | null>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const streakListenAudioRef = useRef<HTMLAudioElement | null>(null);
+  const streakListenObjectUrlRef = useRef<string | null>(null);
+  const testPlayRevokeRef = useRef<(() => void) | undefined>(undefined);
 
   const selectedCard = form.cards[selectedCardIndex] ?? null;
   const zoneImageUrl =
     selectedCard?.pendingPreviewUrl ?? selectedCard?.imageUrl ?? null;
+  testPlayRevokeRef.current = testPlay?.revokeAudioUrls;
 
   const loadSavedCombinations = async () => {
     setLibraryLoading(true);
@@ -203,6 +376,19 @@ export function FlashWordGameAdmin() {
     void loadSavedCombinations();
   }, []);
 
+  useEffect(
+    () => () => {
+      stopFlashWordStreakAudio(streakListenAudioRef.current);
+      streakListenAudioRef.current = null;
+      if (streakListenObjectUrlRef.current) {
+        URL.revokeObjectURL(streakListenObjectUrlRef.current);
+        streakListenObjectUrlRef.current = null;
+      }
+      testPlayRevokeRef.current?.();
+    },
+    [],
+  );
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return games;
@@ -217,6 +403,8 @@ export function FlashWordGameAdmin() {
     setEditingId(null);
     setForm(blankForm());
     setSelectedCardIndex(0);
+    setEditingTripletIndex(null);
+    setEditingStreakTierIndex(null);
     setMessage('');
     setError('');
   };
@@ -225,6 +413,8 @@ export function FlashWordGameAdmin() {
     setEditingId(game.id);
     setForm(gameToForm(game));
     setSelectedCardIndex(0);
+    setEditingTripletIndex(null);
+    setEditingStreakTierIndex(null);
     setMessage('');
     setError('');
   };
@@ -245,11 +435,30 @@ export function FlashWordGameAdmin() {
     }));
   };
 
+  const startAddCombination = () => {
+    const emptyIndex = form.triplets.findIndex(
+      (triplet) =>
+        !triplet.word1.trim() && !triplet.word2.trim() && !triplet.word3.trim(),
+    );
+    if (emptyIndex >= 0) {
+      setEditingTripletIndex(emptyIndex);
+      return;
+    }
+    setEditingTripletIndex(form.triplets.length);
+    addTriplet();
+  };
+
   const removeTriplet = (index: number) => {
     setForm((prev) => ({
       ...prev,
       triplets: prev.triplets.filter((_, i) => i !== index),
     }));
+    setEditingTripletIndex((current) => {
+      if (current == null) return null;
+      if (current === index) return null;
+      if (current > index) return current - 1;
+      return current;
+    });
   };
 
   const updateCardZone = (index: number, zone: FlashWordZone) => {
@@ -469,6 +678,7 @@ export function FlashWordGameAdmin() {
         { streakThreshold: 3, xpReward: 10, message: '' },
       ],
     }));
+    setEditingStreakTierIndex(form.streakTiers.length);
   };
 
   const updateStreakTier = (index: number, patch: Partial<StreakTierFormEntry>) => {
@@ -485,6 +695,12 @@ export function FlashWordGameAdmin() {
       ...prev,
       streakTiers: prev.streakTiers.filter((_, i) => i !== index),
     }));
+    setEditingStreakTierIndex((current) => {
+      if (current == null) return null;
+      if (current === index) return null;
+      if (current > index) return current - 1;
+      return current;
+    });
   };
 
   const setStreakTierAudio = (index: number, file: File) => {
@@ -518,6 +734,74 @@ export function FlashWordGameAdmin() {
           : tier,
       ),
     }));
+  };
+
+  const stopStreakListenAudio = () => {
+    stopFlashWordStreakAudio(streakListenAudioRef.current);
+    streakListenAudioRef.current = null;
+    if (streakListenObjectUrlRef.current) {
+      URL.revokeObjectURL(streakListenObjectUrlRef.current);
+      streakListenObjectUrlRef.current = null;
+    }
+  };
+
+  const playStreakTierAudio = (index: number) => {
+    const tier = form.streakTiers[index];
+    if (!tier || !tierHasAudioClip(tier)) return;
+    stopStreakListenAudio();
+    const resolved = resolveTierAudioUrl(tier);
+    if (!resolved.url) return;
+    if (resolved.objectUrl) {
+      streakListenObjectUrlRef.current = resolved.objectUrl;
+    }
+    const audio = playFlashWordStreakAudio(resolved.url);
+    streakListenAudioRef.current = audio;
+    audio.addEventListener('ended', () => {
+      if (streakListenAudioRef.current === audio) {
+        stopStreakListenAudio();
+      }
+    });
+  };
+
+  const closeTestPlay = () => {
+    stopStreakListenAudio();
+    setTestPlay((current) => {
+      current?.revokeAudioUrls?.();
+      return null;
+    });
+  };
+
+  const openStreakRewardPreview = (index: number) => {
+    const tier = form.streakTiers[index];
+    if (!tier) return;
+
+    stopStreakListenAudio();
+    const mapped = mapFormStreakTiersForSandbox(form.streakTiers);
+    const card = form.cards[selectedCardIndex] ?? form.cards[0] ?? null;
+    const previewSource = mapped.sources[index];
+    const game = buildStreakRewardPreviewGame({
+      title: form.title,
+      flashDurationMs: form.flashDurationMs,
+      distractionZonesEnabled: form.distractionZonesEnabled,
+      card,
+      streakTiers: mapped.sources,
+    });
+
+    setError('');
+    setTestPlay((current) => {
+      current?.revokeAudioUrls?.();
+      return {
+        game,
+        cardLabel: `Streak ${tier.streakThreshold}`,
+        previewReward: {
+          streakThreshold: tier.streakThreshold,
+          xpReward: tier.xpReward,
+          message: tier.message,
+          audioUrl: previewSource?.audioUrl ?? null,
+        },
+        revokeAudioUrls: mapped.revoke,
+      };
+    });
   };
 
   const buildInput = (): FlashWordGameInput => ({
@@ -649,29 +933,46 @@ export function FlashWordGameAdmin() {
     setEditingId(result.game.id);
     setForm(gameToForm(result.game));
     setSelectedCardIndex(0);
+    setEditingTripletIndex(null);
+    setEditingStreakTierIndex(null);
+  };
+
+  const selectCardForEdit = (index: number) => {
+    setSelectedCardIndex(index);
+    requestAnimationFrame(() => {
+      editorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
   };
 
   const openTestPlay = (cardIndex: number) => {
     const card = form.cards[cardIndex];
     if (!card) return;
 
+    const mapped = mapFormStreakTiersForSandbox(form.streakTiers);
     const result = buildSandboxFlashWordGame({
       title: form.title,
       flashDurationMs: form.flashDurationMs,
       distractionZonesEnabled: form.distractionZonesEnabled,
       card,
       triplets: form.triplets,
+      streakTiers: mapped.sources,
     });
 
     if (!result.ok) {
+      mapped.revoke();
       setError(result.error);
       return;
     }
 
+    stopStreakListenAudio();
     setError('');
-    setTestPlay({
-      game: result.game,
-      cardLabel: `Card ${cardIndex + 1}`,
+    setTestPlay((current) => {
+      current?.revokeAudioUrls?.();
+      return {
+        game: result.game,
+        cardLabel: `Card ${cardIndex + 1}`,
+        revokeAudioUrls: mapped.revoke,
+      };
     });
   };
 
@@ -870,34 +1171,77 @@ export function FlashWordGameAdmin() {
             <p className="muted flash-game-cards__empty">No cards yet — add an image above.</p>
           ) : (
             <>
-              <ul className="flash-game-cards__list">
-                {form.cards.map((card, index) => (
-                  <li key={card.id ?? `new-${index}`} className="flash-game-cards__item">
-                    <button
-                      type="button"
+              <ul className="flash-game-cards__grid">
+                {form.cards.map((card, index) => {
+                  const selected = index === selectedCardIndex;
+                  const label = `Card ${index + 1}`;
+                  return (
+                    <li
+                      key={card.id ?? `new-${index}`}
                       className={
-                        index === selectedCardIndex
-                          ? 'flash-game-cards__thumb-btn flash-game-cards__thumb-btn--active'
-                          : 'flash-game-cards__thumb-btn'
+                        selected
+                          ? 'flash-game-cards__cell flash-game-cards__cell--selected'
+                          : 'flash-game-cards__cell'
                       }
-                      onClick={() => setSelectedCardIndex(index)}
-                      aria-pressed={index === selectedCardIndex}
                     >
-                      <img
-                        src={card.pendingPreviewUrl ?? card.imageUrl}
-                        alt=""
-                        className="flash-game-cards__thumb"
-                      />
-                      <span className="flash-game-cards__thumb-label">Card {index + 1}</span>
-                    </button>
-                    <div className="flash-game-cards__item-actions">
                       <button
                         type="button"
-                        className="btn btn--ghost btn--small"
-                        onClick={() => openTestPlay(index)}
+                        className="flash-game-cards__cell-preview"
+                        onClick={() => selectCardForEdit(index)}
+                        aria-pressed={selected}
+                        aria-label={`Edit ${label}`}
+                        title={label}
                       >
-                        Test play
+                        <img
+                          src={card.pendingPreviewUrl ?? card.imageUrl}
+                          alt=""
+                          className="flash-game-cards__cell-thumb"
+                        />
                       </button>
+                      <div className="flash-game-cards__cell-actions">
+                        <button
+                          type="button"
+                          className="flash-game-cards__cell-action"
+                          onClick={() => {
+                            setSelectedCardIndex(index);
+                            openTestPlay(index);
+                          }}
+                          aria-label={`Test play ${label}`}
+                          title="Test play"
+                        >
+                          <PlayIcon />
+                          <span>Test</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="flash-game-cards__cell-action"
+                          onClick={() => selectCardForEdit(index)}
+                          aria-label={`Edit ${label}`}
+                          title="Edit"
+                        >
+                          <PencilIcon />
+                          <span>Edit</span>
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        className="flash-game-cards__cell-remove"
+                        onClick={() => removeCard(index)}
+                        aria-label={`Remove ${label}`}
+                        title="Remove"
+                      >
+                        <TrashIcon />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              {selectedCard && (
+                <div ref={editorRef} className="flash-game-cards__selected">
+                  <div className="flash-game-cards__selected-bar">
+                    <strong>Editing card {selectedCardIndex + 1}</strong>
+                    <div className="btn-row">
                       <label className="btn btn--ghost btn--small">
                         Replace
                         <input
@@ -906,63 +1250,51 @@ export function FlashWordGameAdmin() {
                           className="visually-hidden"
                           onChange={(e) => {
                             const file = e.target.files?.[0];
-                            if (file) replaceCardFile(index, file);
+                            if (file) replaceCardFile(selectedCardIndex, file);
                             e.target.value = '';
                           }}
                         />
                       </label>
                       <button
                         type="button"
-                        className="btn btn--danger btn--small"
-                        onClick={() => removeCard(index)}
+                        className="btn btn--ghost btn--small"
+                        onClick={() => openTestPlay(selectedCardIndex)}
                       >
-                        Remove
+                        Test play
                       </button>
                     </div>
-                  </li>
-                ))}
-              </ul>
+                  </div>
 
-              {zoneImageUrl && selectedCard && (
-                <FlashWordZoneEditor
-                  imageUrl={zoneImageUrl}
-                  zone={selectedCard.zone}
-                  onChange={(zone) => updateCardZone(selectedCardIndex, zone)}
-                  showDistractionZones={form.distractionZonesEnabled}
-                  distractionZones={selectedCard.distractionZones}
-                  onDistractionZonesChange={(distractionZones) =>
-                    updateCardDistractionZones(selectedCardIndex, distractionZones)
-                  }
-                  hardModeHighlightZones={selectedCard.hardModeZones}
-                  onHardModeHighlightZonesChange={(hardModeZones) =>
-                    updateCardHardModeZones(selectedCardIndex, hardModeZones)
-                  }
-                  hardDistractionZones={selectedCard.hardDistractionZones}
-                  onHardDistractionZonesChange={(hardDistractionZones) =>
-                    updateCardHardDistractionZones(selectedCardIndex, hardDistractionZones)
-                  }
-                  hardModeImages={selectedCard.hardModeImages}
-                  onHardModeImagesChange={(hardModeImages) =>
-                    updateCardHardModeImages(selectedCardIndex, hardModeImages)
-                  }
-                />
-              )}
+                  {zoneImageUrl && (
+                    <FlashWordZoneEditor
+                      imageUrl={zoneImageUrl}
+                      zone={selectedCard.zone}
+                      onChange={(zone) => updateCardZone(selectedCardIndex, zone)}
+                      showDistractionZones={form.distractionZonesEnabled}
+                      distractionZones={selectedCard.distractionZones}
+                      onDistractionZonesChange={(distractionZones) =>
+                        updateCardDistractionZones(selectedCardIndex, distractionZones)
+                      }
+                      hardModeHighlightZones={selectedCard.hardModeZones}
+                      onHardModeHighlightZonesChange={(hardModeZones) =>
+                        updateCardHardModeZones(selectedCardIndex, hardModeZones)
+                      }
+                      hardDistractionZones={selectedCard.hardDistractionZones}
+                      onHardDistractionZonesChange={(hardDistractionZones) =>
+                        updateCardHardDistractionZones(selectedCardIndex, hardDistractionZones)
+                      }
+                      hardModeImages={selectedCard.hardModeImages}
+                      onHardModeImagesChange={(hardModeImages) =>
+                        updateCardHardModeImages(selectedCardIndex, hardModeImages)
+                      }
+                    />
+                  )}
 
-              {selectedCard && (
-                <div className="flash-game-test-play">
-                  <h4 className="section-title">Test play</h4>
-                  <p className="muted">
-                    Play the selected card in sandbox mode with hard mode forced on. Uses
+                  <p className="muted flash-game-test-play__hint">
+                    Test play opens this card in sandbox mode with hard mode forced on. Uses
                     unsaved zone edits and your word combinations — streak, leaderboard, and
                     daily limits are not affected.
                   </p>
-                  <button
-                    type="button"
-                    className="btn btn--ghost btn--small"
-                    onClick={() => openTestPlay(selectedCardIndex)}
-                  >
-                    Test play card {selectedCardIndex + 1}
-                  </button>
                 </div>
               )}
             </>
@@ -988,15 +1320,15 @@ export function FlashWordGameAdmin() {
               >
                 {libraryOpen ? 'Hide library' : 'Import from library'}
               </button>
-              <button type="button" className="btn btn--ghost btn--small" onClick={() => addTriplet()}>
+              <button type="button" className="btn btn--ghost btn--small" onClick={startAddCombination}>
                 Add combination
               </button>
             </div>
           </div>
           <p className="muted">
-            Each row is three words shown as choices. On each play, a random card, a random
-            combination, and one of its three words are picked for the flash. At least one
-            combination is required to publish.
+            Each combination is three words shown as choices. On each play, a random card, a random
+            combination, and one of its three words are picked for the flash. At least one complete
+            combination is required to publish and to test play.
           </p>
 
           {!editingId && (
@@ -1021,7 +1353,7 @@ export function FlashWordGameAdmin() {
               {libraryLoading ? (
                 <p className="muted">Loading library…</p>
               ) : savedCombinations.length === 0 ? (
-                <p className="muted">No saved combinations yet. Save one from a row below.</p>
+                <p className="muted">No saved combinations yet. Edit a combination and save it to the library.</p>
               ) : (
                 <ul className="admin-library flash-game-saved-combos__list">
                   {savedCombinations.map((combination) => (
@@ -1056,53 +1388,124 @@ export function FlashWordGameAdmin() {
             </div>
           )}
 
-          {form.triplets.map((triplet, index) => (
-            <div key={index} className="flash-game-round-row">
-              <label className="form-field">
-                Word 1
-                <input
-                  type="text"
-                  value={triplet.word1}
-                  onChange={(e) => updateTriplet(index, { word1: e.target.value })}
-                />
-              </label>
-              <label className="form-field">
-                Word 2
-                <input
-                  type="text"
-                  value={triplet.word2}
-                  onChange={(e) => updateTriplet(index, { word2: e.target.value })}
-                />
-              </label>
-              <label className="form-field">
-                Word 3
-                <input
-                  type="text"
-                  value={triplet.word3}
-                  onChange={(e) => updateTriplet(index, { word3: e.target.value })}
-                />
-              </label>
-              <div className="flash-game-round-row__actions">
-                <button
-                  type="button"
-                  className="btn btn--ghost btn--small"
-                  disabled={libraryBusy}
-                  onClick={() => void saveTripletToLibrary(index)}
+          <ul className="flash-game-combos">
+            {form.triplets.map((triplet, index) => {
+              const editing = editingTripletIndex === index;
+              const incomplete = tripletIsIncomplete(triplet);
+              const label = formatTripletLabel(triplet);
+              return (
+                <li
+                  key={triplet.id ?? `new-combo-${index}`}
+                  className={
+                    editing
+                      ? 'flash-game-combo flash-game-combo--editing'
+                      : 'flash-game-combo'
+                  }
                 >
-                  Save to library
-                </button>
-                {form.triplets.length > 1 && (
-                  <button
-                    type="button"
-                    className="btn btn--danger btn--small"
-                    onClick={() => removeTriplet(index)}
-                  >
-                    Remove
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
+                  {editing ? (
+                    <>
+                      <div className="flash-game-combo__fields">
+                        <label className="form-field">
+                          Word 1
+                          <input
+                            type="text"
+                            value={triplet.word1}
+                            onChange={(e) => updateTriplet(index, { word1: e.target.value })}
+                            autoFocus
+                          />
+                        </label>
+                        <label className="form-field">
+                          Word 2
+                          <input
+                            type="text"
+                            value={triplet.word2}
+                            onChange={(e) => updateTriplet(index, { word2: e.target.value })}
+                          />
+                        </label>
+                        <label className="form-field">
+                          Word 3
+                          <input
+                            type="text"
+                            value={triplet.word3}
+                            onChange={(e) => updateTriplet(index, { word3: e.target.value })}
+                          />
+                        </label>
+                      </div>
+                      <div className="flash-game-combo__actions">
+                        <button
+                          type="button"
+                          className="btn btn--ghost btn--small"
+                          onClick={() => setEditingTripletIndex(null)}
+                        >
+                          Done
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn--ghost btn--small"
+                          disabled={libraryBusy}
+                          onClick={() => void saveTripletToLibrary(index)}
+                        >
+                          Save to library
+                        </button>
+                        {form.triplets.length > 1 && (
+                          <button
+                            type="button"
+                            className="btn btn--danger btn--small"
+                            onClick={() => removeTriplet(index)}
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="flash-game-combo__summary"
+                        onClick={() => setEditingTripletIndex(index)}
+                        aria-label={`Edit ${label}`}
+                      >
+                        <span
+                          className={
+                            incomplete
+                              ? 'flash-game-combo__label flash-game-combo__label--incomplete'
+                              : 'flash-game-combo__label'
+                          }
+                        >
+                          {label}
+                        </span>
+                      </button>
+                      <div className="flash-game-combo__actions">
+                        <button
+                          type="button"
+                          className="flash-game-combo__action"
+                          onClick={() => setEditingTripletIndex(index)}
+                          aria-label={`Edit ${label}`}
+                          title="Edit"
+                        >
+                          <PencilIcon />
+                          <span>Edit</span>
+                        </button>
+                        {form.triplets.length > 1 && (
+                          <button
+                            type="button"
+                            className="flash-game-combo__action flash-game-combo__action--danger"
+                            onClick={() => removeTriplet(index)}
+                            aria-label={`Delete ${label}`}
+                            title="Delete"
+                          >
+                            <TrashIcon />
+                            <span>Delete</span>
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         </div>
 
         <div className="flash-game-streak-rewards">
@@ -1113,99 +1516,209 @@ export function FlashWordGameAdmin() {
               className="btn btn--ghost btn--small"
               onClick={addStreakTier}
             >
-              Add tier
+              Add streak reward
             </button>
           </div>
           <p className="muted">
             When a player reaches each streak count in one session, they earn XP and optional
             message and audio shown beside the flash image (not on top of it). Each threshold
-            can only trigger once per session.
+            can only trigger once per session. Use Play audio to hear a clip, or Preview to
+            see the live in-game overlay without changing your real streak.
           </p>
 
           {form.streakTiers.length === 0 ? (
             <p className="muted">No streak tiers — add one to reward consecutive correct answers.</p>
           ) : (
             <ul className="flash-game-streak-rewards__list">
-              {form.streakTiers.map((tier, index) => (
-                <li key={tier.id ?? `new-tier-${index}`} className="flash-game-streak-tier-row">
-                  <label className="form-field">
-                    Streak count
-                    <input
-                      type="number"
-                      min={1}
-                      step={1}
-                      value={tier.streakThreshold}
-                      onChange={(e) =>
-                        updateStreakTier(index, {
-                          streakThreshold: Number(e.target.value),
-                        })
-                      }
-                    />
-                  </label>
-                  <label className="form-field">
-                    XP reward
-                    <input
-                      type="number"
-                      min={0}
-                      step={1}
-                      value={tier.xpReward}
-                      onChange={(e) =>
-                        updateStreakTier(index, { xpReward: Number(e.target.value) })
-                      }
-                    />
-                  </label>
-                  <label className="form-field flash-game-streak-tier-row__message">
-                    Message <span className="muted">(optional)</span>
-                    <input
-                      type="text"
-                      value={tier.message}
-                      placeholder="Shown beside the image at this streak"
-                      onChange={(e) => updateStreakTier(index, { message: e.target.value })}
-                    />
-                  </label>
-                  <div className="flash-game-streak-tier-row__audio">
-                    <span className="form-field__label">Audio clip</span>
-                    {(tier.pendingAudioFile || tier.audioUrl) && !tier.clearAudio ? (
-                      <p className="muted flash-game-streak-tier-row__audio-name">
-                        {tier.pendingAudioFile?.name ?? 'Saved clip'}
-                      </p>
+              {form.streakTiers.map((tier, index) => {
+                const editing = editingStreakTierIndex === index;
+                const hasAudio = tierHasAudioClip(tier);
+                const label = formatStreakTierLabel(tier);
+                return (
+                  <li
+                    key={tier.id ?? `new-tier-${index}`}
+                    className={
+                      editing
+                        ? 'flash-game-streak-tier-row flash-game-streak-tier-row--editing'
+                        : 'flash-game-streak-tier-row'
+                    }
+                  >
+                    {editing ? (
+                      <>
+                        <div className="flash-game-streak-tier-row__fields">
+                          <label className="form-field">
+                            Streak count
+                            <input
+                              type="number"
+                              min={1}
+                              step={1}
+                              value={tier.streakThreshold}
+                              autoFocus
+                              onChange={(e) =>
+                                updateStreakTier(index, {
+                                  streakThreshold: Number(e.target.value),
+                                })
+                              }
+                            />
+                          </label>
+                          <label className="form-field">
+                            XP reward
+                            <input
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={tier.xpReward}
+                              onChange={(e) =>
+                                updateStreakTier(index, { xpReward: Number(e.target.value) })
+                              }
+                            />
+                          </label>
+                          <label className="form-field flash-game-streak-tier-row__message">
+                            Message <span className="muted">(optional)</span>
+                            <input
+                              type="text"
+                              value={tier.message}
+                              placeholder="Shown beside the image at this streak"
+                              onChange={(e) =>
+                                updateStreakTier(index, { message: e.target.value })
+                              }
+                            />
+                          </label>
+                          <div className="flash-game-streak-tier-row__audio">
+                            <span className="form-field__label">Audio clip</span>
+                            {(tier.pendingAudioFile || tier.audioUrl) && !tier.clearAudio ? (
+                              <p className="muted flash-game-streak-tier-row__audio-name">
+                                {tier.pendingAudioFile?.name ?? 'Saved clip'}
+                              </p>
+                            ) : (
+                              <p className="muted">No audio</p>
+                            )}
+                            <div className="btn-row">
+                              <label className="btn btn--ghost btn--small">
+                                Upload
+                                <input
+                                  type="file"
+                                  accept={FLASH_GAME_AUDIO_ACCEPT}
+                                  className="visually-hidden"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) setStreakTierAudio(index, file);
+                                    e.target.value = '';
+                                  }}
+                                />
+                              </label>
+                              {hasAudio && (
+                                <button
+                                  type="button"
+                                  className="btn btn--ghost btn--small"
+                                  onClick={() => playStreakTierAudio(index)}
+                                >
+                                  Play audio
+                                </button>
+                              )}
+                              {hasAudio && (
+                                <button
+                                  type="button"
+                                  className="btn btn--ghost btn--small"
+                                  onClick={() => clearStreakTierAudio(index)}
+                                >
+                                  Remove audio
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flash-game-streak-tier-row__actions">
+                          <button
+                            type="button"
+                            className="btn btn--ghost btn--small"
+                            onClick={() => setEditingStreakTierIndex(null)}
+                          >
+                            Done
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn--ghost btn--small"
+                            onClick={() => openStreakRewardPreview(index)}
+                          >
+                            Preview
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn--danger btn--small"
+                            onClick={() => removeStreakTier(index)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </>
                     ) : (
-                      <p className="muted">No audio</p>
-                    )}
-                    <div className="btn-row">
-                      <label className="btn btn--ghost btn--small">
-                        Upload
-                        <input
-                          type="file"
-                          accept={FLASH_GAME_AUDIO_ACCEPT}
-                          className="visually-hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) setStreakTierAudio(index, file);
-                            e.target.value = '';
-                          }}
-                        />
-                      </label>
-                      {(tier.pendingAudioFile || tier.audioUrl) && !tier.clearAudio && (
+                      <>
                         <button
                           type="button"
-                          className="btn btn--ghost btn--small"
-                          onClick={() => clearStreakTierAudio(index)}
+                          className="flash-game-streak-tier-row__summary"
+                          onClick={() => setEditingStreakTierIndex(index)}
+                          aria-label={`Edit ${label}${hasAudio ? ', with audio' : ''}`}
                         >
-                          Remove audio
+                          <span className="flash-game-streak-tier-row__label">{label}</span>
+                          {hasAudio && (
+                            <span
+                              className="flash-game-streak-tier-row__audio-mark"
+                              title="Has audio"
+                            >
+                              <AudioIcon />
+                            </span>
+                          )}
                         </button>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn--danger btn--small flash-game-streak-tier-row__remove"
-                    onClick={() => removeStreakTier(index)}
-                  >
-                    Remove tier
-                  </button>
-                </li>
-              ))}
+                        <div className="flash-game-streak-tier-row__actions">
+                          {hasAudio && (
+                            <button
+                              type="button"
+                              className="flash-game-streak-tier-row__action"
+                              onClick={() => playStreakTierAudio(index)}
+                              aria-label="Play audio"
+                              title="Play audio"
+                            >
+                              <PlayIcon />
+                              <span>Play audio</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="flash-game-streak-tier-row__action"
+                            onClick={() => openStreakRewardPreview(index)}
+                            aria-label="Preview"
+                            title="Preview"
+                          >
+                            <EyeIcon />
+                            <span>Preview</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="flash-game-streak-tier-row__action"
+                            onClick={() => setEditingStreakTierIndex(index)}
+                            aria-label="Edit"
+                            title="Edit"
+                          >
+                            <PencilIcon />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="flash-game-streak-tier-row__action flash-game-streak-tier-row__action--danger"
+                            onClick={() => removeStreakTier(index)}
+                            aria-label="Delete"
+                            title="Delete"
+                          >
+                            <TrashIcon />
+                            <span>Delete</span>
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
@@ -1224,7 +1737,8 @@ export function FlashWordGameAdmin() {
         <FlashWordGameTestModal
           game={testPlay.game}
           cardLabel={testPlay.cardLabel}
-          onClose={() => setTestPlay(null)}
+          previewReward={testPlay.previewReward}
+          onClose={closeTestPlay}
         />
       )}
     </>

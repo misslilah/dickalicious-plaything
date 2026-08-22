@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import {
   useAdminSection,
@@ -12,18 +12,11 @@ import {
 import type {
   Badge,
   BadgeRequirement,
-  Category,
-  CategoryGroup,
   ContentTier,
   PatreonMemberTier,
   PatreonStatus,
   Reward,
   RewardTrigger,
-  Task,
-  TaskFrequency,
-  TaskLinkedMediaType,
-  TaskRecurrence,
-  TaskScope,
   Video,
   VideoCategory,
 } from '../types';
@@ -35,11 +28,13 @@ import {
 } from '../lib/badgeImage';
 import { formatBadgeRequirementSummary } from '../lib/badgeRequirementFormat';
 import {
+  formatPatreonAutoSyncSkippedMessage,
   formatPatreonLastSynced,
   formatPatreonSyncSummary,
+  markAdminPatreonBatchSyncSucceeded,
   patreonStatusLabel,
   patreonSyncStatusMessage,
-  probePatreonSync,
+  runAdminPatreonAutoSync,
   syncPatreonMembers,
 } from '../lib/patreonSync';
 import {
@@ -82,19 +77,6 @@ import {
 import { CategoryImagePicker } from '../components/CategoryImagePicker';
 import { useAppStore } from '../hooks/useAppStore';
 import {
-  CATEGORY_GROUP_LABELS,
-  CATEGORY_GROUP_ORDER,
-  getPrerequisiteTaskLabel,
-  getPrerequisiteTaskOptions,
-} from '../lib/categoryProgression';
-import { getStageLabel, USER_STAGE_OPTIONS, type TaskUserStage } from '../lib/levels';
-import { TASK_SCOPE_LABELS, TASK_SCOPE_OPTIONS } from '../lib/taskScope';
-import {
-  isCategoryImagePreview,
-  MAX_CATEGORY_IMAGE_BYTES,
-  resolveCategoryImageUrl,
-} from '../lib/categoryImage';
-import {
   appearancePartsToMs,
   deleteGifBankEntry,
   fetchGifBank,
@@ -129,17 +111,13 @@ import {
   updateAudioPlaylistOrder,
   updateAudioPlaylistsOrder,
 } from '../lib/audioPlaylist';
+import { CategoriesManager } from '../components/admin/CategoriesManager';
 import { MiniGamesAdmin } from '../components/admin/MiniGamesAdmin';
+import { PunishmentsManager } from '../components/admin/PunishmentsManager';
+import { TasksManager } from '../components/admin/TasksManager';
 import { TrainingAdmin } from '../components/admin/TrainingAdmin';
 import { InteractiveVideoAdmin } from '../components/admin/InteractiveVideoAdmin';
 import { UploadProgressBar } from '../components/UploadProgressBar';
-import {
-  emptyTaskMediaPickerValue,
-  TaskMediaPicker,
-  type TaskMediaPickerValue,
-} from '../components/admin/TaskMediaPicker';
-import { resolveTaskMediaForSave } from '../lib/taskMediaAdmin';
-import { taskHasUploadedMedia } from '../lib/taskMediaStorage';
 
 const ADMIN_SECTIONS = [
   {
@@ -152,7 +130,7 @@ const ADMIN_SECTIONS = [
     id: 'tasks' as const,
     label: 'Tasks',
     icon: '✓',
-    hint: 'Library by category',
+    hint: 'Daily, category, personal',
   },
   {
     id: 'rewards' as const,
@@ -215,12 +193,6 @@ const CATEGORY_COLORS = [
   '#f87171',
 ];
 
-const FREQUENCIES: { value: TaskFrequency; label: string }[] = [
-  { value: 'daily', label: 'Daily' },
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'once', label: 'One-time' },
-];
-
 export function Admin() {
   useRestoreAdminNavFromStorage();
   const [section, setSection] = useAdminSection();
@@ -265,10 +237,10 @@ export function Admin() {
           role="region"
           aria-label={active.label}
         >
-          {section === 'categories' && <CategoryAdmin />}
-          {section === 'tasks' && <TaskAdmin />}
+          {section === 'categories' && <CategoriesManager />}
+          {section === 'tasks' && <TasksManager />}
           {section === 'rewards' && <RewardsAdmin />}
-          {section === 'punishments' && <PunishmentsAdminLink />}
+          {section === 'punishments' && <PunishmentsManager />}
           {section === 'users' && <UserAdmin />}
           {section === 'videos' && <VideosAdmin />}
           {section === 'gifbank' && <GifBankAdmin />}
@@ -546,62 +518,6 @@ function ChipSelect<T extends string | number>({
   );
 }
 
-function CategoryChips({
-  categories,
-  value,
-  onChange,
-  includeAll,
-  disabled,
-  label = 'Category',
-}: {
-  categories: Category[];
-  value: string;
-  onChange: (categoryId: string) => void;
-  includeAll?: boolean;
-  disabled?: boolean;
-  label?: string;
-}) {
-  return (
-    <div
-      className="chip-row chip-row--scroll category-chip-row"
-      role="group"
-      aria-label={label}
-    >
-      {includeAll && (
-        <button
-          type="button"
-          className={value === '' ? 'chip chip--active' : 'chip'}
-          aria-pressed={value === ''}
-          disabled={disabled}
-          onClick={() => onChange('')}
-        >
-          All categories
-        </button>
-      )}
-      {categories.map((c) => (
-        <button
-          key={c.id}
-          type="button"
-          className={
-            value === c.id
-              ? 'chip chip--active category-chip'
-              : 'chip category-chip'
-          }
-          style={{ '--chip-accent': c.color } as CSSProperties}
-          aria-pressed={value === c.id}
-          disabled={disabled}
-          onClick={() => onChange(c.id)}
-        >
-          <span className="category-chip__icon" aria-hidden="true">
-            {c.icon}
-          </span>
-          <span className="category-chip__name">{c.name}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function ChoiceRow<T extends string>({
   label,
   name,
@@ -684,1203 +600,6 @@ function StatusMessage({
       {message}
     </p>
   );
-}
-
-function emptyCategoryDraft(): Category {
-  return {
-    id: '',
-    name: '',
-    icon: '✨',
-    color: '#f9a8d4',
-    description: '',
-    imageUrl: undefined,
-    requiredStage: null,
-    categoryGroup: 'beginner',
-    unlockAfterCategoryId: null,
-  };
-}
-
-function CategoryAdmin() {
-  const { state, addCategory, updateCategory, deleteCategory } = useAppStore();
-  const [draft, setDraft] = useState<Category>(emptyCategoryDraft());
-  const [search, setSearch] = useState('');
-  const [message, setMessage] = useState('');
-  const [imageMessage, setImageMessage] = useState('');
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return state.categories;
-    return state.categories.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.description.toLowerCase().includes(q),
-    );
-  }, [state.categories, search]);
-
-  const validate = () => {
-    const next: Record<string, string> = {};
-    if (!draft.name.trim()) next.name = 'Name is required.';
-    setErrors(next);
-    return Object.keys(next).length === 0;
-  };
-
-  const clearForm = () => {
-    setDraft(emptyCategoryDraft());
-    setErrors({});
-    setImageMessage('');
-  };
-
-  const submit = async () => {
-    if (!validate()) return;
-    setMessage('');
-    const categoryId = draft.id || crypto.randomUUID();
-    const imageResult = await resolveCategoryImageUrl(
-      categoryId,
-      draft.imageUrl,
-      'category-image.jpg',
-    );
-    if (!imageResult.ok) {
-      setImageMessage(imageResult.error);
-      return;
-    }
-    const cat: Category = {
-      ...draft,
-      id: categoryId,
-      imageUrl: imageResult.url,
-    };
-    const result = draft.id ? await updateCategory(cat) : await addCategory(cat);
-    if (!result.ok) {
-      setImageMessage(result.error);
-      return;
-    }
-    clearForm();
-    setMessage('Category saved.');
-  };
-
-  const remove = async (id: string) => {
-    if (!window.confirm('Delete this category and all its tasks?')) return;
-    const result = await deleteCategory(id);
-    if (!result.ok) {
-      setImageMessage(result.error);
-      return;
-    }
-    if (draft.id === id) clearForm();
-    setMessage('Category deleted.');
-  };
-
-  const imagePreview = isCategoryImagePreview(draft.imageUrl) ? draft.imageUrl : null;
-
-  const list = (
-    <AdminListCard
-      title="Categories"
-      count={filtered.length}
-      search={search}
-      onSearchChange={setSearch}
-    >
-      {filtered.length === 0 ? (
-        <AdminEmpty
-          title={search ? 'No matches' : 'No categories yet'}
-          hint={
-            search
-              ? 'Try a different search term.'
-              : 'Use the form below to create your first category.'
-          }
-        />
-      ) : (
-        <ul className="admin-library">
-          {filtered.map((c) => (
-            <AdminLibraryItem
-              key={c.id}
-              selected={draft.id === c.id}
-              title={`${c.icon} ${c.name}`}
-              meta={`${CATEGORY_GROUP_LABELS[c.categoryGroup ?? 'beginner']}${c.unlockAfterCategoryId ? ' · chained unlock' : ''}${c.description ? ` · ${c.description}` : ' · No description'}`}
-              onEdit={() => {
-                setDraft(c);
-                setErrors({});
-                setImageMessage('');
-              }}
-              onDelete={() => remove(c.id)}
-            />
-          ))}
-        </ul>
-      )}
-    </AdminListCard>
-  );
-
-  const form = (
-    <section className="card">
-      <h3 className="section-title">
-        {draft.id ? 'Edit category' : 'New category'}
-      </h3>
-      <StatusMessage message={message} />
-
-      <FormBlock title="Identity">
-        <Field label="Name" htmlFor="cat-name" required error={errors.name}>
-          <input
-            id="cat-name"
-            value={draft.name}
-            onChange={(e) => {
-              setDraft({ ...draft, name: e.target.value });
-              if (errors.name) setErrors((p) => ({ ...p, name: '' }));
-            }}
-          />
-        </Field>
-        <Field label="Icon" htmlFor="cat-icon" hint="Emoji shown in lists and navigation.">
-          <input
-            id="cat-icon"
-            value={draft.icon}
-            onChange={(e) => setDraft({ ...draft, icon: e.target.value })}
-            maxLength={4}
-          />
-        </Field>
-        <Field label="Color" hint="Pick a preset or use the custom picker.">
-          <div className="color-picker-row">
-            <div className="color-swatches" role="group" aria-label="Color presets">
-              {CATEGORY_COLORS.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  className={
-                    draft.color === color
-                      ? 'color-swatch color-swatch--active'
-                      : 'color-swatch'
-                  }
-                  style={{ background: color }}
-                  aria-label={`Color ${color}`}
-                  aria-pressed={draft.color === color}
-                  onClick={() => setDraft({ ...draft, color })}
-                />
-              ))}
-            </div>
-            <input
-              type="color"
-              className="color-input-native"
-              aria-label="Custom color"
-              value={draft.color}
-              onChange={(e) => setDraft({ ...draft, color: e.target.value })}
-            />
-          </div>
-        </Field>
-      </FormBlock>
-
-      <FormBlock title="Details">
-        <Field label="Description" htmlFor="cat-desc">
-          <textarea
-            id="cat-desc"
-            rows={3}
-            value={draft.description}
-            onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-          />
-        </Field>
-        <Field
-          label="Tier group"
-          hint="Home section: All appears first; other tiers unlock progressively."
-        >
-          <select
-            aria-label="Category tier group"
-            value={draft.categoryGroup ?? 'beginner'}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                categoryGroup: e.target.value as CategoryGroup,
-              })
-            }
-          >
-            {CATEGORY_GROUP_ORDER.map((group) => (
-              <option key={group} value={group}>
-                {CATEGORY_GROUP_LABELS[group]}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field
-          label="Unlock after category"
-          hint="Optional: player must 100% complete this category before joining."
-        >
-          <select
-            aria-label="Unlock after category"
-            value={draft.unlockAfterCategoryId ?? ''}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                unlockAfterCategoryId: e.target.value || null,
-              })
-            }
-          >
-            <option value="">None (tier rules only)</option>
-            {state.categories
-              .filter((c) => c.id !== draft.id)
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.icon} {c.name}
-                </option>
-              ))}
-          </select>
-        </Field>
-        <Field
-          label="Minimum stage to join"
-          hint="Leave empty for anyone. Users must reach this stage before they can join."
-        >
-          <select
-            aria-label="Required stage to join"
-            value={draft.requiredStage ?? ''}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                requiredStage: (e.target.value || null) as Category['requiredStage'],
-              })
-            }
-          >
-            <option value="">Anyone</option>
-            {USER_STAGE_OPTIONS.filter((o) => o.value !== 'any').map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field
-          label="Presentation image"
-          hint={`Optional. Choose a file (max ${Math.round(MAX_CATEGORY_IMAGE_BYTES / 1024)} KB) or paste a URL. Uploaded to Supabase when you save.`}
-        >
-          {imageMessage && <StatusMessage message={imageMessage} variant="err" />}
-          <CategoryImagePicker
-            idPrefix="cat"
-            urlInputId="cat-image"
-            previewUrl={imagePreview}
-            urlValue={draft.imageUrl?.startsWith('http') ? draft.imageUrl : ''}
-            onUrlChange={(value) => {
-              setImageMessage('');
-              const trimmed = value.trim();
-              if (trimmed) {
-                setDraft({ ...draft, imageUrl: trimmed });
-              } else {
-                setDraft({
-                  ...draft,
-                  imageUrl: draft.imageUrl?.startsWith('data:')
-                    ? draft.imageUrl
-                    : undefined,
-                });
-              }
-            }}
-            onFileSelect={(dataUrl) => {
-              setImageMessage('');
-              setDraft({ ...draft, imageUrl: dataUrl });
-            }}
-            onFileError={setImageMessage}
-          />
-        </Field>
-      </FormBlock>
-
-      <FormActions
-        editing={!!draft.id}
-        entityLabel="category"
-        onSubmit={submit}
-        onClear={() => {
-          clearForm();
-          setMessage('');
-        }}
-      />
-    </section>
-  );
-
-  return <AdminSection list={list} form={form} />;
-}
-
-function emptyTaskDraft(categoryId: string): Task {
-  return {
-    id: '',
-    title: '',
-    description: '',
-    taskScope: 'category',
-    categoryId,
-    assignedUserId: null,
-    userStage: 'any',
-    xpReward: 10,
-    pointsReward: 0,
-    frequency: 'daily',
-    malusPointsOnFail: 0,
-    sortOrder: 0,
-    prerequisiteTaskId: null,
-    isExamTask: false,
-    recurrence: 'none',
-  };
-}
-
-const LINKED_MEDIA_OPTIONS: { value: TaskLinkedMediaType; label: string }[] = [
-  { value: 'none', label: 'None' },
-  { value: 'video', label: 'Video' },
-  { value: 'audio', label: 'Audio' },
-];
-
-function TaskAdmin() {
-  const { state, addTask, updateTask, deleteTask } = useAppStore();
-  const defaultCat = state.categories[0]?.id ?? '';
-  const [draft, setDraft] = useState<Task>(() => emptyTaskDraft(defaultCat));
-  const [search, setSearch] = useState('');
-  const [filterCategory, setFilterCategory] = useState('');
-  const [message, setMessage] = useState('');
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [profiles, setProfiles] = useState<AdminProfileRow[]>([]);
-  const [audioLibrary, setAudioLibrary] = useState<AudioPlaylistItem[]>([]);
-  const [videoMediaSearch, setVideoMediaSearch] = useState('');
-  const [taskMediaPicker, setTaskMediaPicker] = useState<TaskMediaPickerValue>(
-    () => emptyTaskMediaPickerValue(),
-  );
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    void (async () => {
-      const result = await fetchAdminProfiles();
-      if (result.ok) setProfiles(result.profiles);
-    })();
-  }, []);
-
-  useEffect(() => {
-    if ((draft.linkedMediaType ?? 'none') !== 'audio') return;
-    void (async () => {
-      const result = await fetchAudioLibrary();
-      if (result.ok) setAudioLibrary(result.library.items ?? []);
-    })();
-  }, [draft.linkedMediaType]);
-
-  const taskScope = draft.taskScope ?? 'category';
-  const linkedMediaType = draft.linkedMediaType ?? 'none';
-
-  const videoPickerOptions = useMemo(() => {
-    const q = videoMediaSearch.trim().toLowerCase();
-    return [...state.videos]
-      .filter((v) => {
-        if (!q) return true;
-        return (
-          v.title.toLowerCase().includes(q) ||
-          (v.description ?? '').toLowerCase().includes(q)
-        );
-      })
-      .sort((a, b) => a.title.localeCompare(b.title));
-  }, [state.videos, videoMediaSearch]);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return state.tasks.filter((t) => {
-      if (filterCategory && t.categoryId !== filterCategory) return false;
-      if (!q) return true;
-      return (
-        t.title.toLowerCase().includes(q) ||
-        t.description.toLowerCase().includes(q)
-      );
-    });
-  }, [state.tasks, search, filterCategory]);
-
-  const categoryName = (id: string | null | undefined) =>
-    id ? state.categories.find((c) => c.id === id)?.name ?? 'Unknown' : '—';
-
-  const profileName = (id: string | null | undefined) =>
-    id ? profiles.find((p) => p.id === id)?.username ?? 'Unknown user' : '—';
-
-  const resolvedCategoryId =
-    taskScope === 'category'
-      ? draft.categoryId || state.categories[0]?.id || ''
-      : null;
-
-  const prerequisiteOptions = useMemo(() => {
-    if (taskScope !== 'category' || !resolvedCategoryId) return [];
-    return getPrerequisiteTaskOptions(
-      state.tasks,
-      resolvedCategoryId,
-      draft.id,
-      draft.isExamTask ?? false,
-    );
-  }, [
-    state.tasks,
-    taskScope,
-    resolvedCategoryId,
-    draft.id,
-    draft.isExamTask,
-  ]);
-
-  const validate = () => {
-    const next: Record<string, string> = {};
-    if (!draft.title.trim()) next.title = 'Title is required.';
-    if (taskScope === 'category' && !resolvedCategoryId) {
-      next.categoryId = 'Select a category.';
-    }
-    if (taskScope === 'custom' && !draft.assignedUserId) {
-      next.assignedUserId = 'Select a user.';
-    }
-    if (linkedMediaType === 'video' && !draft.linkedVideoId) {
-      next.linkedVideoId = 'Select a catalog video.';
-    }
-    if (
-      linkedMediaType === 'audio' &&
-      !draft.linkedAudioItemId &&
-      !draft.linkedAudioUrl?.trim()
-    ) {
-      next.linkedAudio = 'Pick a library track or enter an audio URL.';
-    }
-    setErrors(next);
-    return Object.keys(next).length === 0;
-  };
-
-  const clearForm = () => {
-    setDraft(emptyTaskDraft(state.categories[0]?.id ?? ''));
-    setTaskMediaPicker(emptyTaskMediaPickerValue());
-    setErrors({});
-  };
-
-  const submit = async () => {
-    if (!validate()) return;
-    setMessage('');
-    setSaving(true);
-
-    const isNew = !draft.id;
-    const taskId = draft.id || crypto.randomUUID();
-    const existingTask = state.tasks.find((t) => t.id === taskId);
-    const mediaResult = await resolveTaskMediaForSave(
-      taskId,
-      existingTask ?? draft,
-      taskMediaPicker,
-    );
-    if (!mediaResult.ok) {
-      setSaving(false);
-      setMessage(mediaResult.error);
-      return;
-    }
-
-    const task: Task = {
-      ...draft,
-      id: taskId,
-      taskScope,
-      categoryId: taskScope === 'category' ? resolvedCategoryId : null,
-      assignedUserId: taskScope === 'custom' ? draft.assignedUserId ?? null : null,
-      taskMediaUrl: mediaResult.taskMediaUrl,
-      taskMediaType: mediaResult.taskMediaType,
-      taskMediaPlayback: mediaResult.taskMediaUrl
-        ? draft.taskMediaPlayback ?? 'inline'
-        : undefined,
-      taskMediaAutoplayOnStart: mediaResult.taskMediaUrl
-        ? draft.taskMediaAutoplayOnStart ?? false
-        : undefined,
-    };
-    const result = isNew ? await addTask(task) : await updateTask(task);
-    setSaving(false);
-    if (!result.ok) {
-      setMessage(result.error);
-      return;
-    }
-    clearForm();
-    setMessage('Task saved.');
-  };
-
-  const remove = async (id: string) => {
-    if (!window.confirm('Delete this task?')) return;
-    const result = await deleteTask(id);
-    if (!result.ok) {
-      setMessage(result.error);
-      return;
-    }
-    if (draft.id === id) clearForm();
-    setMessage('Task deleted.');
-  };
-
-  const list = (
-    <AdminListCard
-      title="Tasks"
-      count={filtered.length}
-      search={search}
-      onSearchChange={setSearch}
-      filter={
-        state.categories.length > 0 ? (
-          <CategoryChips
-            label="Filter by category"
-            categories={state.categories}
-            value={filterCategory}
-            onChange={setFilterCategory}
-            includeAll
-            disabled={state.categories.length === 0}
-          />
-        ) : null
-      }
-    >
-      {state.categories.length === 0 && (
-        <StatusMessage
-          message="Create at least one category before category-scoped tasks can be saved."
-          variant="err"
-        />
-      )}
-      {filtered.length === 0 ? (
-        <AdminEmpty
-          title={search || filterCategory ? 'No matches' : 'No tasks yet'}
-          hint={
-            search || filterCategory
-              ? 'Adjust search or category filter.'
-              : 'Use the form below to add a task to the library.'
-          }
-        />
-      ) : (
-        <ul className="admin-library">
-          {filtered.map((t) => (
-            <AdminLibraryItem
-              key={t.id}
-              selected={draft.id === t.id}
-              title={t.title}
-              meta={`${TASK_SCOPE_LABELS[t.taskScope ?? 'category']}${(t.taskScope ?? 'category') === 'category' ? ` · ${categoryName(t.categoryId)}` : ''}${(t.taskScope ?? 'category') === 'custom' ? ` · ${profileName(t.assignedUserId)}` : ''} · ${getStageLabel(t.userStage ?? 'any')} · ${t.xpReward} XP · ${t.pointsReward ?? 0} pts · malus ${t.malusPointsOnFail ?? 0} · ${t.frequency}${(t.recurrence ?? 'none') !== 'none' ? ` · recur ${t.recurrence}` : ''}${t.isExamTask ? ' · exam' : ''}${getPrerequisiteTaskLabel(t, state.tasks) ? ` · after "${getPrerequisiteTaskLabel(t, state.tasks)}"` : ''}${(t.sortOrder ?? 0) > 0 ? ` · order ${t.sortOrder}` : ''}${t.timerSeconds ? ` · timer ${t.timerSeconds}s` : ''}${t.durationSeconds ? ` · duration ${t.durationSeconds}s` : ''}${t.openUrl ? ' · URL' : ''}${t.requiredPhrase ? ` · phrase${(t.requiredPhraseRepeatCount ?? 1) > 1 ? ` ×${t.requiredPhraseRepeatCount}` : ''}` : ''}${(t.linkedMediaType ?? 'none') !== 'none' ? ` · ${t.linkedMediaType}` : ''}${taskHasUploadedMedia(t) ? ` · task ${t.taskMediaType}${t.taskMediaAutoplayOnStart ? (t.taskMediaPlayback === 'ambient' ? ' · play ambient on start' : ' · play on start') : ''}` : ''}`}
-              onEdit={() => {
-                setDraft(t);
-                setTaskMediaPicker(emptyTaskMediaPickerValue());
-                setErrors({});
-              }}
-              onDelete={() => remove(t.id)}
-            />
-          ))}
-        </ul>
-      )}
-    </AdminListCard>
-  );
-
-  const form = (
-    <section className="card">
-      <h3 className="section-title">{draft.id ? 'Edit task' : 'New task'}</h3>
-      <StatusMessage message={message} />
-
-      <FormBlock title="Basics">
-        <Field
-          label="Task type"
-          hint="Category tasks appear on category pages. Daily tasks appear on the home daily plan. Custom tasks are assigned to one user."
-        >
-          <ChipSelect
-            label="Task type"
-            options={TASK_SCOPE_OPTIONS}
-            value={taskScope}
-            onChange={(scope) => {
-              const nextScope = scope as TaskScope;
-              setDraft({
-                ...draft,
-                taskScope: nextScope,
-                categoryId:
-                  nextScope === 'category'
-                    ? draft.categoryId || state.categories[0]?.id || ''
-                    : null,
-                assignedUserId:
-                  nextScope === 'custom' ? draft.assignedUserId ?? null : null,
-                prerequisiteTaskId:
-                  nextScope === 'category' ? draft.prerequisiteTaskId : null,
-                isExamTask: nextScope === 'category' ? draft.isExamTask : false,
-                sortOrder: nextScope === 'category' ? draft.sortOrder : 0,
-              });
-              setErrors({});
-            }}
-          />
-        </Field>
-        <Field label="Title" htmlFor="task-title" required error={errors.title}>
-          <input
-            id="task-title"
-            value={draft.title}
-            onChange={(e) => {
-              setDraft({ ...draft, title: e.target.value });
-              if (errors.title) setErrors((p) => ({ ...p, title: '' }));
-            }}
-          />
-        </Field>
-        <Field label="Description" htmlFor="task-desc">
-          <textarea
-            id="task-desc"
-            rows={3}
-            value={draft.description}
-            onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-          />
-        </Field>
-        {taskScope === 'category' && (
-          <Field
-            label="Category"
-            required
-            error={errors.categoryId}
-            hint={
-              state.categories.length === 0
-                ? 'Create a category first.'
-                : 'Scroll and tap a category to assign this task.'
-            }
-          >
-            {state.categories.length === 0 ? (
-              <p className="muted">No categories available.</p>
-            ) : (
-              <CategoryChips
-                label="Task category"
-                categories={state.categories}
-                value={resolvedCategoryId ?? ''}
-                disabled={state.categories.length === 0}
-                onChange={(categoryId) => {
-                  const prereqValid =
-                    !draft.prerequisiteTaskId ||
-                    state.tasks.some(
-                      (t) =>
-                        t.id === draft.prerequisiteTaskId &&
-                        t.categoryId === categoryId,
-                    );
-                  setDraft({
-                    ...draft,
-                    categoryId,
-                    prerequisiteTaskId: prereqValid
-                      ? draft.prerequisiteTaskId
-                      : null,
-                  });
-                  if (errors.categoryId) setErrors((p) => ({ ...p, categoryId: '' }));
-                }}
-              />
-            )}
-          </Field>
-        )}
-        {taskScope === 'custom' && (
-          <Field
-            label="Assigned user"
-            required
-            error={errors.assignedUserId}
-            hint="This task appears only on that user's home daily plan."
-          >
-            {profiles.length === 0 ? (
-              <p className="muted">No users found.</p>
-            ) : (
-              <ChipSelect
-                label="Assigned user"
-                scroll
-                options={profiles.map((p) => ({
-                  value: p.id,
-                  label: `${p.username} (${p.role})`,
-                }))}
-                value={draft.assignedUserId ?? ''}
-                onChange={(userId) => {
-                  setDraft({ ...draft, assignedUserId: userId || null });
-                  if (errors.assignedUserId) {
-                    setErrors((p) => ({ ...p, assignedUserId: '' }));
-                  }
-                }}
-              />
-            )}
-          </Field>
-        )}
-      </FormBlock>
-
-      <FormBlock title="Rules">
-        <Field
-          label="User stage"
-          hint="Who this task is for. Daily plans include tasks for the user's current stage or All users."
-        >
-          <ChipSelect
-            label="User stage"
-            scroll
-            options={USER_STAGE_OPTIONS.map((opt) => ({
-              value: opt.value,
-              label: opt.label,
-            }))}
-            value={draft.userStage ?? 'any'}
-            onChange={(userStage) =>
-              setDraft({ ...draft, userStage: userStage as TaskUserStage })
-            }
-          />
-        </Field>
-        <Field label="XP reward" htmlFor="task-xp">
-          <input
-            id="task-xp"
-            type="number"
-            min={5}
-            value={draft.xpReward}
-            onChange={(e) =>
-              setDraft({ ...draft, xpReward: Number(e.target.value) })
-            }
-          />
-        </Field>
-        <Field
-          label="Points reward"
-          htmlFor="task-points-reward"
-          hint="Earned when task is completed; spend in Rewards shop"
-        >
-          <input
-            id="task-points-reward"
-            type="number"
-            min={0}
-            value={draft.pointsReward ?? 0}
-            onChange={(e) =>
-              setDraft({ ...draft, pointsReward: Number(e.target.value) })
-            }
-          />
-        </Field>
-        <Field
-          label="Malus if not completed"
-          htmlFor="task-malus"
-          hint="Added at day end if the task is on the plan (daily/custom) or was started (category)."
-        >
-          <input
-            id="task-malus"
-            type="number"
-            min={0}
-            value={draft.malusPointsOnFail ?? 0}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                malusPointsOnFail: Number(e.target.value),
-              })
-            }
-          />
-        </Field>
-        <Field label="Frequency">
-          <ChoiceRow
-            label="Task frequency"
-            name="task-frequency"
-            options={FREQUENCIES}
-            value={draft.frequency}
-            onChange={(frequency) => setDraft({ ...draft, frequency })}
-          />
-        </Field>
-        <Field
-          label="Duration (minutes)"
-          htmlFor="task-duration"
-          hint="Optional. For timed activities."
-        >
-          <input
-            id="task-duration"
-            type="number"
-            min={1}
-            placeholder="Optional"
-            value={draft.durationMinutes ?? ''}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                durationMinutes: e.target.value
-                  ? Number(e.target.value)
-                  : undefined,
-              })
-            }
-          />
-        </Field>
-      </FormBlock>
-
-      {taskScope === 'category' && (
-        <FormBlock title="Category order & prerequisites">
-          <p className="muted" style={{ marginTop: 0 }}>
-            Control task order within this category. Players must complete the
-            prerequisite task before this one unlocks. Exam tasks unlock only
-            after all regular tasks in the category are done.
-          </p>
-          <Field
-            label="Sort order"
-            htmlFor="task-sort-order"
-            hint="Lower numbers appear first in the category task list."
-          >
-            <input
-              id="task-sort-order"
-              type="number"
-              min={0}
-              value={draft.sortOrder ?? 0}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  sortOrder: Number(e.target.value) || 0,
-                })
-              }
-            />
-          </Field>
-          <Field
-            label="Must complete first"
-            htmlFor="task-prerequisite"
-            hint={
-              prerequisiteOptions.length === 0
-                ? 'Save other category tasks first, then pick one as a prerequisite.'
-                : 'Another task in the same category that must be finished before this one is available.'
-            }
-          >
-            <select
-              id="task-prerequisite"
-              value={draft.prerequisiteTaskId ?? ''}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  prerequisiteTaskId: e.target.value || null,
-                })
-              }
-            >
-              <option value="">No prerequisite</option>
-              {prerequisiteOptions.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.isExamTask ? '[Exam] ' : ''}
-                  {t.title}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Exam task">
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={draft.isExamTask ?? false}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    isExamTask: e.target.checked,
-                    prerequisiteTaskId: e.target.checked
-                      ? draft.prerequisiteTaskId
-                      : draft.prerequisiteTaskId &&
-                          state.tasks.find(
-                            (t) => t.id === draft.prerequisiteTaskId,
-                          )?.isExamTask
-                        ? null
-                        : draft.prerequisiteTaskId,
-                  })
-                }
-              />
-              <span>Unlock only after all regular category tasks are completed</span>
-            </label>
-          </Field>
-          <Field
-            label="Category recurrence"
-            htmlFor="task-recurrence"
-            hint="Daily or weekly obligations after the player accepts the task. Stays in the category only (not Home daily tasks)."
-          >
-            <select
-              id="task-recurrence"
-              value={draft.recurrence ?? 'none'}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  recurrence: e.target.value as TaskRecurrence,
-                })
-              }
-            >
-              <option value="none">None (one-time)</option>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-            </select>
-          </Field>
-        </FormBlock>
-      )}
-
-      <FormBlock title="Completion requirements">
-        <p className="muted" style={{ marginTop: 0 }}>
-          Optional. Players must satisfy all configured requirements before marking
-          complete.
-        </p>
-        <Field
-          label="Timer (resets on leave)"
-          hint="Player clicks Start timer. Countdown resets if they leave this page before completing. Runs while the tab is hidden."
-        >
-          <div className="form-inline">
-            <input
-              type="number"
-              min={0}
-              placeholder="Min"
-              aria-label="Timer minutes"
-              value={
-                draft.timerSeconds != null
-                  ? Math.floor(draft.timerSeconds / 60)
-                  : ''
-              }
-              onChange={(e) => {
-                const mins = e.target.value ? Number(e.target.value) : 0;
-                const secs =
-                  draft.timerSeconds != null ? draft.timerSeconds % 60 : 0;
-                const total = mins * 60 + secs;
-                setDraft({
-                  ...draft,
-                  timerSeconds: total > 0 ? total : undefined,
-                });
-              }}
-            />
-            <input
-              type="number"
-              min={0}
-              max={59}
-              placeholder="Sec"
-              aria-label="Timer seconds"
-              value={
-                draft.timerSeconds != null ? draft.timerSeconds % 60 : ''
-              }
-              onChange={(e) => {
-                const secs = e.target.value ? Number(e.target.value) : 0;
-                const mins =
-                  draft.timerSeconds != null
-                    ? Math.floor(draft.timerSeconds / 60)
-                    : 0;
-                const total = mins * 60 + secs;
-                setDraft({
-                  ...draft,
-                  timerSeconds: total > 0 ? total : undefined,
-                });
-              }}
-            />
-          </div>
-        </Field>
-        <Field
-          label="Duration (persists)"
-          hint="Player clicks Start duration. Countdown continues after closing the browser until it finishes or the task is completed."
-        >
-          <div className="form-inline">
-            <input
-              type="number"
-              min={0}
-              placeholder="Min"
-              aria-label="Duration minutes"
-              value={
-                draft.durationSeconds != null
-                  ? Math.floor(draft.durationSeconds / 60)
-                  : ''
-              }
-              onChange={(e) => {
-                const mins = e.target.value ? Number(e.target.value) : 0;
-                const secs =
-                  draft.durationSeconds != null ? draft.durationSeconds % 60 : 0;
-                const total = mins * 60 + secs;
-                setDraft({
-                  ...draft,
-                  durationSeconds: total > 0 ? total : undefined,
-                });
-              }}
-            />
-            <input
-              type="number"
-              min={0}
-              max={59}
-              placeholder="Sec"
-              aria-label="Duration seconds"
-              value={
-                draft.durationSeconds != null ? draft.durationSeconds % 60 : ''
-              }
-              onChange={(e) => {
-                const secs = e.target.value ? Number(e.target.value) : 0;
-                const mins =
-                  draft.durationSeconds != null
-                    ? Math.floor(draft.durationSeconds / 60)
-                    : 0;
-                const total = mins * 60 + secs;
-                setDraft({
-                  ...draft,
-                  durationSeconds: total > 0 ? total : undefined,
-                });
-              }}
-            />
-          </div>
-        </Field>
-        <Field
-          label="Page URL"
-          htmlFor="task-open-url"
-          hint="Player must open this link before completing."
-        >
-          <input
-            id="task-open-url"
-            type="url"
-            placeholder="https://…"
-            value={draft.openUrl ?? ''}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                openUrl: e.target.value.trim() || undefined,
-              })
-            }
-          />
-        </Field>
-        <Field
-          label="Required phrase"
-          htmlFor="task-phrase"
-          hint="Exact match (case-sensitive). Leading and trailing spaces are ignored."
-        >
-          <input
-            id="task-phrase"
-            value={draft.requiredPhrase ?? ''}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                requiredPhrase: e.target.value || undefined,
-              })
-            }
-            placeholder="Phrase to type"
-          />
-        </Field>
-        <Field
-          label="Times to write"
-          htmlFor="task-phrase-repeat"
-          hint="How many times the player must type the phrase correctly (min 1)."
-        >
-          <input
-            id="task-phrase-repeat"
-            type="number"
-            min={1}
-            value={draft.requiredPhraseRepeatCount ?? 1}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                requiredPhraseRepeatCount: Math.max(1, Number(e.target.value) || 1),
-              })
-            }
-          />
-        </Field>
-      </FormBlock>
-
-      <FormBlock title="Linked media">
-        <p className="muted" style={{ marginTop: 0 }}>
-          Optional. Player must watch or listen to the end in a popup. Closing early
-          fails the task (malus applies).
-        </p>
-        <Field label="Media type">
-          <ChipSelect
-            label="Linked media type"
-            options={LINKED_MEDIA_OPTIONS}
-            value={linkedMediaType}
-            onChange={(type) => {
-              const next = type as TaskLinkedMediaType;
-              setDraft({
-                ...draft,
-                linkedMediaType: next,
-                linkedVideoId: next === 'video' ? draft.linkedVideoId : undefined,
-                linkedAudioItemId:
-                  next === 'audio' ? draft.linkedAudioItemId : undefined,
-                linkedAudioUrl: next === 'audio' ? draft.linkedAudioUrl : undefined,
-              });
-              setErrors((p) => ({
-                ...p,
-                linkedVideoId: '',
-                linkedAudio: '',
-              }));
-            }}
-          />
-        </Field>
-
-        {linkedMediaType === 'video' && (
-          <>
-            <Field
-              label="Catalog video"
-              required
-              error={errors.linkedVideoId}
-              hint="Search by title, then select a video from the catalog."
-            >
-              <input
-                type="search"
-                placeholder="Search videos…"
-                value={videoMediaSearch}
-                onChange={(e) => setVideoMediaSearch(e.target.value)}
-                aria-label="Search catalog videos"
-              />
-              {state.videos.length === 0 ? (
-                <p className="muted">Upload videos in the Videos admin section first.</p>
-              ) : (
-                <ChipSelect
-                  label="Linked video"
-                  scroll
-                  options={videoPickerOptions.map((v) => ({
-                    value: v.id,
-                    label: v.title,
-                  }))}
-                  value={draft.linkedVideoId ?? ''}
-                  onChange={(videoId) => {
-                    setDraft({ ...draft, linkedVideoId: videoId || undefined });
-                    if (errors.linkedVideoId) {
-                      setErrors((p) => ({ ...p, linkedVideoId: '' }));
-                    }
-                  }}
-                />
-              )}
-            </Field>
-          </>
-        )}
-
-        {linkedMediaType === 'audio' && (
-          <>
-            <Field
-              label="Library track"
-              error={errors.linkedAudio}
-              hint="Pick a track from audio playlists, or use an external URL below."
-            >
-              {(audioLibrary ?? []).length === 0 ? (
-                <p className="muted">No audio tracks yet — add playlists in Audio admin.</p>
-              ) : (
-                <ChipSelect
-                  label="Linked audio track"
-                  scroll
-                  options={(audioLibrary ?? []).map((item) => ({
-                    value: item.id,
-                    label: item.title,
-                  }))}
-                  value={draft.linkedAudioItemId ?? ''}
-                  onChange={(itemId) => {
-                    setDraft({
-                      ...draft,
-                      linkedAudioItemId: itemId || undefined,
-                      linkedAudioUrl: itemId ? undefined : draft.linkedAudioUrl,
-                    });
-                    if (errors.linkedAudio) {
-                      setErrors((p) => ({ ...p, linkedAudio: '' }));
-                    }
-                  }}
-                />
-              )}
-            </Field>
-            <Field label="Or audio URL" htmlFor="task-linked-audio-url">
-              <input
-                id="task-linked-audio-url"
-                type="url"
-                placeholder="https://…"
-                value={draft.linkedAudioUrl ?? ''}
-                onChange={(e) => {
-                  const url = e.target.value.trim();
-                  setDraft({
-                    ...draft,
-                    linkedAudioUrl: url || undefined,
-                    linkedAudioItemId: url ? undefined : draft.linkedAudioItemId,
-                  });
-                  if (errors.linkedAudio) {
-                    setErrors((p) => ({ ...p, linkedAudio: '' }));
-                  }
-                }}
-              />
-            </Field>
-          </>
-        )}
-      </FormBlock>
-
-      <FormBlock title="Task media">
-        <p className="muted" style={{ marginTop: 0 }}>
-          Optional. Upload a video or audio file for this task. Users can preview
-          attached media before starting. Check &quot;Play on Start&quot; to begin
-          playback when they click Start (inline player or 40% background overlay).
-        </p>
-        <TaskMediaPicker
-          existingUrl={draft.taskMediaUrl}
-          existingType={draft.taskMediaType}
-          playback={draft.taskMediaPlayback ?? 'inline'}
-          onPlaybackChange={(playback) =>
-            setDraft((d) => ({ ...d, taskMediaPlayback: playback }))
-          }
-          autoplayOnStart={draft.taskMediaAutoplayOnStart ?? false}
-          onAutoplayOnStartChange={(autoplay) =>
-            setDraft((d) => ({ ...d, taskMediaAutoplayOnStart: autoplay }))
-          }
-          value={taskMediaPicker}
-          onChange={(value) => {
-            setTaskMediaPicker(value);
-            if (value.removeExisting && !value.pendingFile) {
-              setDraft((d) => ({
-                ...d,
-                taskMediaPlayback: undefined,
-                taskMediaAutoplayOnStart: undefined,
-              }));
-            }
-          }}
-          onError={(message) => setMessage(message)}
-        />
-      </FormBlock>
-
-      <FormActions
-        editing={!!draft.id}
-        entityLabel="task"
-        onSubmit={submit}
-        disabled={state.categories.length === 0 || saving}
-        onClear={() => {
-          clearForm();
-          setMessage('');
-        }}
-      />
-    </section>
-  );
-
-  return <AdminSection list={list} form={form} />;
 }
 
 function RewardsAdmin() {
@@ -2712,31 +1431,6 @@ function RewardCatalogAdmin() {
   return <AdminSection list={list} form={form} />;
 }
 
-function PunishmentsAdminLink() {
-  const { state } = useAppStore();
-  const categoryCount = state.punishmentCategories.length;
-  const templateCount = state.punishmentTemplates.length;
-
-  return (
-    <section className="card">
-      <h3 className="section-title">Punishments catalog</h3>
-      <p className="muted">
-        Manage punishment categories under Easy, Medium, and Hard, and add
-        punishments inside each category on the Punishments page.
-      </p>
-      <p className="muted">
-        {categoryCount} categor{categoryCount === 1 ? 'y' : 'ies'} · {templateCount}{' '}
-        punishment{templateCount === 1 ? '' : 's'}
-      </p>
-      <div className="btn-row">
-        <Link to="/punishments?manage=1" className="btn btn--primary">
-          Open punishments manager
-        </Link>
-      </div>
-    </section>
-  );
-}
-
 function UserAdmin() {
   const { createAppUser, refresh } = useAppStore();
   const [username, setUsername] = useState('');
@@ -2810,10 +1504,47 @@ function UserAdmin() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     void (async () => {
-      const probe = await probePatreonSync();
-      setSyncConfigHint(patreonSyncStatusMessage(probe) ?? '');
+      const outcome = await runAdminPatreonAutoSync(() => {
+        if (cancelled) return;
+        setSyncError('');
+        setSyncMessage('Syncing Patreon…');
+        setSyncLoading(true);
+        setSyncUserId(null);
+      });
+      if (cancelled) return;
+
+      setSyncLoading(false);
+      setSyncUserId(null);
+
+      if (outcome.kind === 'unconfigured') {
+        setSyncConfigHint(patreonSyncStatusMessage(outcome.probe) ?? '');
+        setSyncMessage('');
+        return;
+      }
+
+      setSyncConfigHint('');
+
+      if (outcome.kind === 'skipped') {
+        setSyncMessage(formatPatreonAutoSyncSkippedMessage(outcome.lastSyncedAt));
+        return;
+      }
+
+      if (outcome.kind === 'failed') {
+        setSyncError(outcome.result.error);
+        setSyncMessage('');
+        return;
+      }
+
+      setSyncMessage(formatPatreonSyncSummary(outcome.result));
+      void loadProfiles();
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const runPatreonSync = async (userId?: string | null) => {
@@ -2827,6 +1558,9 @@ function UserAdmin() {
     if (!result.ok) {
       setSyncError(result.error);
       return;
+    }
+    if (!userId?.trim()) {
+      markAdminPatreonBatchSyncSucceeded();
     }
     setSyncMessage(formatPatreonSyncSummary(result));
     void loadProfiles();
@@ -2957,7 +1691,7 @@ function UserAdmin() {
     <AdminListCard
       title="Users & Patreon tiers"
       count={displayedProfiles.length}
-      intro="Verify linked Patreon accounts against live membership data, or assign tiers manually. Active status is required for tier-gated access."
+      intro="Webhooks apply Patreon membership changes in realtime. Opening this page also reconciles linked accounts automatically (at most once every 20 minutes). Use Sync Patreon tiers to force a refresh. Active status is required for tier-gated access."
       search=""
       onSearchChange={() => {}}
       filter={
@@ -3040,8 +1774,8 @@ function UserAdmin() {
         <h3 className="section-title">Manual Patreon tier</h3>
         <p className="muted">
           Override a user&apos;s tier manually when Patreon sync is unavailable or for
-          special cases. Use Sync Patreon tiers above to pull live membership status
-          for linked accounts.
+          special cases. Webhooks and auto-sync on this page keep linked accounts
+          current; use Sync Patreon tiers above to pull live membership now.
         </p>
         <StatusMessage message={tierMessage} />
         {!selectedUserId ? (
@@ -3896,6 +2630,28 @@ function VideoUploadAdmin() {
   return <AdminSection list={list} form={form} />;
 }
 
+function TrashIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 7h16" />
+      <path d="M9 7V5h6v2" />
+      <path d="M18 7l-1 14H7L6 7" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </svg>
+  );
+}
+
 function GifBankPreviewModal({
   entry,
   onClose,
@@ -4235,47 +2991,45 @@ function GifBankAdmin() {
           }
         />
       ) : (
-        <ul className="admin-library admin-library--gif-bank">
-          {filtered.map((g) => (
-            <li
-              key={g.id}
-              className={
-                previewEntry?.id === g.id
-                  ? 'admin-library-item admin-library-item--selected'
-                  : 'admin-library-item'
-              }
-            >
-              <button
-                type="button"
-                className="admin-library-item__main admin-gif-bank-item__main"
-                onClick={() => openPreview(g)}
-                aria-pressed={previewEntry?.id === g.id}
+        <ul className="admin-gif-bank-grid">
+          {filtered.map((g) => {
+            const label = g.title || 'Untitled GIF';
+            const selected = previewEntry?.id === g.id;
+            return (
+              <li
+                key={g.id}
+                className={
+                  selected
+                    ? 'admin-gif-bank-cell admin-gif-bank-cell--selected'
+                    : 'admin-gif-bank-cell'
+                }
               >
-                <img
-                  src={g.url}
-                  alt=""
-                  className="admin-gif-bank-item__thumb"
-                />
-                <span>
-                  <strong className="admin-library-item__title">
-                    {g.title || 'Untitled GIF'}
-                  </strong>
-                  <span className="admin-library-item__meta muted">
-                    {new Date(g.createdAt).toLocaleString()} · Click to preview
-                  </span>
-                </span>
-              </button>
-              <div className="admin-library-item__actions">
                 <button
                   type="button"
-                  className="btn btn--ghost btn--small btn--danger-text"
-                  onClick={() => void remove(g)}
+                  className="admin-gif-bank-cell__preview"
+                  onClick={() => openPreview(g)}
+                  aria-pressed={selected}
+                  aria-label={`Preview ${label}`}
+                  title={label}
                 >
-                  Delete
+                  <img
+                    src={g.url}
+                    alt=""
+                    className="admin-gif-bank-cell__thumb"
+                  />
                 </button>
-              </div>
-            </li>
-          ))}
+                <button
+                  type="button"
+                  className="admin-gif-bank-cell__delete"
+                  onClick={() => void remove(g)}
+                  aria-label={`Delete ${label}`}
+                  title="Delete"
+                >
+                  <TrashIcon />
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </AdminListCard>

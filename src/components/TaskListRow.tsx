@@ -28,6 +28,9 @@ interface TaskListRowProps {
   pendingAccept?: boolean;
   recurrenceStatus?: string | null;
   onOpen?: () => void;
+  /** Admin catalog: same visuals, row opens the editor. */
+  preview?: boolean;
+  selected?: boolean;
 }
 
 export function TaskListRow({
@@ -42,6 +45,8 @@ export function TaskListRow({
   pendingAccept = false,
   recurrenceStatus,
   onOpen,
+  preview = false,
+  selected = false,
 }: TaskListRowProps) {
   const to = `/category/${categoryId}/task/${task.id}`;
   const isBlocked = locked || dailyLimitBlocked;
@@ -51,6 +56,12 @@ export function TaskListRow({
     : locked && status !== 'done'
       ? 'Locked'
       : STATUS_LABELS[displayStatus];
+  const previewClass = [
+    preview ? 'task-list-row--preview' : '',
+    selected ? 'task-list-row--selected' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   if (isBlocked && status !== 'done' && !pendingAccept) {
     const message =
@@ -92,13 +103,29 @@ export function TaskListRow({
     );
   }
 
+  if (preview && !onOpen) {
+    return (
+      <div
+        className={`task-list-row task-list-row--${displayStatus} task-list-row--preview task-list-row--static${selected ? ' task-list-row--selected' : ''}`}
+      >
+        <TaskListRowContent
+          task={task}
+          status={displayStatus}
+          recurrenceStatus={recurrenceStatus}
+          pendingAccept={pendingAccept}
+        />
+      </div>
+    );
+  }
+
   if (onOpen) {
     return (
       <button
         type="button"
-        className={`task-list-row task-list-row--${displayStatus}${pendingAccept ? ' task-list-row--pending-accept' : ''}`}
+        className={`task-list-row task-list-row--${displayStatus}${pendingAccept ? ' task-list-row--pending-accept' : ''}${previewClass ? ` ${previewClass}` : ''}`}
         onClick={onOpen}
         aria-label={`${task.title} — ${statusLabel}`}
+        aria-pressed={preview ? selected : undefined}
       >
         <TaskListRowContent
           task={task}

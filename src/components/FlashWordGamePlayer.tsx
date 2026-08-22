@@ -21,6 +21,11 @@ import {
   type FlashWordHardModeImage,
 } from '../lib/flashWordGames';
 import {
+  STREAK_MESSAGE_MS,
+  playFlashWordStreakAudio,
+  stopFlashWordStreakAudio,
+} from '../lib/flashWordStreakReward';
+import {
   fetchMiniGameUserBestStreak,
   upsertMiniGameBestStreak,
 } from '../lib/miniGameLeaderboardDb';
@@ -42,8 +47,6 @@ const DISTRACTION_GAP_MIN_MS = 800;
 const DISTRACTION_GAP_RANGE_MS = 1200;
 const HARD_DISTRACTION_GAP_MIN_MS = 350;
 const HARD_DISTRACTION_GAP_RANGE_MS = 450;
-const STREAK_MESSAGE_MS = 4500;
-
 const HARD_HIGHLIGHT_COLOR_COUNT = 3;
 
 function hardHighlightPlayerClass(index: number, hardModeActive: boolean): string {
@@ -83,6 +86,13 @@ function writePersistedStreak(gameId: string, value: number): void {
 
 export type FlashWordGameQuitHandler = () => void;
 
+export type FlashWordStreakRewardPreview = {
+  streakThreshold: number;
+  xpReward: number;
+  message: string;
+  audioUrl: string | null;
+};
+
 function randomStreakSidePlacement(): StreakToastPlacement {
   return Math.random() < 0.5 ? 'left' : 'right';
 }
@@ -91,6 +101,8 @@ interface FlashWordGamePlayerProps {
   game: FlashWordGame;
   /** Sandbox play from admin — full gameplay without persistence or limits. */
   isTestMode?: boolean;
+  /** Admin: play this tier's overlay as if the player just hit that streak. */
+  previewReward?: FlashWordStreakRewardPreview | null;
   /** Called on mount with quit handler; modal should invoke before closing. */
   onRegisterQuitHandler?: (handler: FlashWordGameQuitHandler | null) => void;
   onAttemptStatusChange?: (status: DailyGameAttemptStatus) => void;
@@ -99,6 +111,7 @@ interface FlashWordGamePlayerProps {
 export function FlashWordGamePlayer({
   game,
   isTestMode = false,
+  previewReward = null,
   onRegisterQuitHandler,
   onAttemptStatusChange,
 }: FlashWordGamePlayerProps) {
@@ -113,8 +126,14 @@ export function FlashWordGamePlayer({
   const [choices, setChoices] = useState<string[]>([]);
   const [selectedWord, setSelectedWord] = useState<string | null>(null);
   const [correct, setCorrect] = useState<boolean | null>(null);
+  const isPreviewMode = previewReward != null;
+  const [previewPlayId, setPreviewPlayId] = useState(0);
   const [streak, setStreak] = useState(() =>
-    isTestMode ? 0 : readPersistedStreak(game.id),
+    previewReward
+      ? Math.max(0, previewReward.streakThreshold)
+      : isTestMode
+        ? 0
+        : readPersistedStreak(game.id),
   );
   const [roundCommitted, setRoundCommitted] = useState(false);
   const [sessionBestStreak, setSessionBestStreak] = useState(0);
@@ -139,6 +158,7 @@ export function FlashWordGamePlayer({
   const popHardImageTimerRef = useRef<number | null>(null);
   const streakToastTimerRef = useRef<number | null>(null);
   const awardedStreakThresholdsRef = useRef<Set<number>>(new Set());
+  const streakAudioRef = useRef<HTMLAudioElement | null>(null);
   const phaseRef = useRef<GamePhase>('ready');
   const streakAtRiskRef = useRef(false);
   const streakRef = useRef(streak);
@@ -183,15 +203,13 @@ export function FlashWordGamePlayer({
   );
 
   const playStreakAudio = useCallback((url: string) => {
-    const audio = new Audio(url);
-    audio.volume = 1;
-    void audio.play().catch(() => undefined);
+    stopFlashWordStreakAudio(streakAudioRef.current);
+    const audio = playFlashWordStreakAudio(url);
+    streakAudioRef.current = audio;
   }, []);
 
   const applyStreakRewards = useCallback(
     (newStreak: number) => {
-      if (isTestMode) return;
-
       const matching = streakTiers.filter(
         (tier) => tier.streakThreshold === newStreak,
       );
@@ -200,7 +218,9 @@ export function FlashWordGamePlayer({
         awardedStreakThresholdsRef.current.add(tier.streakThreshold);
 
         if (tier.xpReward > 0) {
-          awardBonusXp(tier.xpReward);
+          if (!isTestMode) {
+            awardBonusXp(tier.xpReward);
+          }
           xpToast?.showXpGain(tier.xpReward);
         }
         if (tier.message?.trim()) {
@@ -213,6 +233,36 @@ export function FlashWordGamePlayer({
     },
     [awardBonusXp, isTestMode, playStreakAudio, showStreakMessage, streakTiers, xpToast],
   );
+
+  const firePreviewReward = useCallback(() => {
+    if (!previewReward) return;
+    if (previewReward.xpReward > 0) {
+      xpToast?.showXpGain(previewReward.xpReward);
+    }
+    if (previewReward.message.trim()) {
+      showStreakMessage(previewReward.message.trim(), randomStreakSidePlacement());
+    }
+    if (previewReward.audioUrl) {
+      playStreakAudio(previewReward.audioUrl);
+    }
+  }, [playStreakAudio, previewReward, showStreakMessage, xpToast]);
+
+  useEffect(() => {
+    if (!previewReward) return;
+
+    const card = game.cards[0] ?? null;
+    const hasImage = Boolean(card?.imageUrl.trim());
+    setActiveCard(hasImage ? card : null);
+    setStreak(Math.max(0, previewReward.streakThreshold));
+    setPhase(hasImage ? 'waiting' : 'ready');
+    setCorrect(true);
+
+    const timer = window.setTimeout(() => {
+      firePreviewReward();
+    }, 80);
+
+    return () => window.clearTimeout(timer);
+  }, [firePreviewReward, game.cards, previewPlayId, previewReward]);
 
   const clearTimers = useCallback(() => {
     if (waitTimerRef.current != null) {
@@ -236,6 +286,8 @@ export function FlashWordGamePlayer({
   useEffect(() => () => {
     clearTimers();
     clearStreakToastTimer();
+    stopFlashWordStreakAudio(streakAudioRef.current);
+    streakAudioRef.current = null;
   }, [clearTimers, clearStreakToastTimer]);
 
   useEffect(() => {
@@ -332,11 +384,13 @@ export function FlashWordGamePlayer({
     setImageFailed(false);
   }, [activeCard?.imageUrl]);
 
-  const hardModeActive = isTestMode || isFlashHardModeActive(streak);
+  const hardModeActive = isPreviewMode
+    ? isFlashHardModeActive(streak)
+    : isTestMode || isFlashHardModeActive(streak);
 
   useEffect(() => {
     const distractionsEnabled = game.distractionZonesEnabled || hardModeActive;
-    if (phase !== 'waiting' || !distractionsEnabled || !activeCard) {
+    if (isPreviewMode || phase !== 'waiting' || !distractionsEnabled || !activeCard) {
       setDistractionFlash(null);
       if (distractionTimerRef.current != null) {
         window.clearTimeout(distractionTimerRef.current);
@@ -395,12 +449,12 @@ export function FlashWordGamePlayer({
       }
       setDistractionFlash(null);
     };
-  }, [phase, activeCard, game.distractionZonesEnabled, hardModeActive]);
+  }, [phase, activeCard, game.distractionZonesEnabled, hardModeActive, isPreviewMode]);
 
   const hardOverlayPhaseActive = phase === 'waiting' || phase === 'flash';
 
   useEffect(() => {
-    if (!hardModeActive || !hardOverlayPhaseActive || !activeCard) {
+    if (isPreviewMode || !hardModeActive || !hardOverlayPhaseActive || !activeCard) {
       setPopHardImageIds(new Set());
       if (popHardImageTimerRef.current != null) {
         window.clearTimeout(popHardImageTimerRef.current);
@@ -445,7 +499,7 @@ export function FlashWordGamePlayer({
       }
       setPopHardImageIds(new Set());
     };
-  }, [phase, activeCard, hardModeActive, hardOverlayPhaseActive]);
+  }, [phase, activeCard, hardModeActive, hardOverlayPhaseActive, isPreviewMode]);
 
   const shouldShowHardModeImage = (image: FlashWordHardModeImage): boolean => {
     if (!hardModeActive || !hardOverlayPhaseActive) return false;
@@ -600,8 +654,9 @@ export function FlashWordGamePlayer({
       <FlashWordStreakPortal toast={streakToast} anchorRef={playerRootRef} />
       {isTestMode && (
         <p className="flash-word-player__test-banner" role="status">
-          Test play — sandbox mode. Streak, leaderboard, and daily limits are not
-          affected. Hard mode is forced on.
+          {isPreviewMode && previewReward
+            ? `Previewing streak ${previewReward.streakThreshold} reward. Sandbox — streak, leaderboard, and XP are not affected.`
+            : 'Test play — sandbox mode. Streak, leaderboard, and daily limits are not affected. Hard mode is forced on.'}
         </p>
       )}
       <div className="flash-word-player__stats">
@@ -775,7 +830,24 @@ export function FlashWordGamePlayer({
       </div>
 
       <div className="flash-word-player__panel">
-        {phase === 'ready' && (
+        {isPreviewMode && previewReward && (
+          <>
+            <p className="flash-word-player__instruction">
+              Live preview of the streak {previewReward.streakThreshold} reward —
+              message, audio, and XP toast as they appear in game. Your real streak
+              and XP are not affected.
+            </p>
+            <button
+              type="button"
+              className="btn btn--primary btn--block"
+              onClick={() => setPreviewPlayId((id) => id + 1)}
+            >
+              Replay preview
+            </button>
+          </>
+        )}
+
+        {phase === 'ready' && !isPreviewMode && (
           <>
             <p className="flash-word-player__instruction">
               Stay focused. A flash card image appears with a highlight zone — watch
@@ -798,19 +870,19 @@ export function FlashWordGamePlayer({
           </p>
         )}
 
-        {phase === 'waiting' && (
+        {phase === 'waiting' && !isPreviewMode && (
           <p className="flash-word-player__waiting muted" aria-live="polite">
             Watch the highlight zone — a word will flash soon.
           </p>
         )}
 
-        {phase === 'flash' && (
+        {phase === 'flash' && !isPreviewMode && (
           <p className="flash-word-player__waiting muted" aria-live="polite">
             Look!
           </p>
         )}
 
-        {phase === 'choose' && (
+        {phase === 'choose' && !isPreviewMode && (
           <>
             <p className="flash-word-player__instruction">Which word did you see?</p>
             <div className="flash-word-player__choices">
@@ -828,7 +900,7 @@ export function FlashWordGamePlayer({
           </>
         )}
 
-        {phase === 'result' && activeTriplet && (
+        {phase === 'result' && activeTriplet && !isPreviewMode && (
           <>
             <p
               className={

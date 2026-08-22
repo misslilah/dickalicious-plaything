@@ -1,6 +1,9 @@
 import { getStageLabel } from '../lib/levels';
 import type { Category, Task } from '../types';
-import { TaskCompletionGate, type TaskCompleteResult } from './TaskCompletionGate';
+import {
+  TaskCompletionGate,
+  type TaskCompleteResult,
+} from './TaskCompletionGate';
 import { getPhraseRepeatCount } from '../lib/phraseChallenge';
 import { getTaskLinkedMediaType } from '../lib/taskLinkedMedia';
 import { taskHasRequirements } from '../lib/taskRequirements';
@@ -16,6 +19,10 @@ interface TaskCardProps {
   onUncomplete?: () => void;
   showXp?: boolean;
   disabled?: boolean;
+  /** Admin catalog: same visuals, card opens the editor. */
+  preview?: boolean;
+  selected?: boolean;
+  onSelect?: () => void;
 }
 
 const frequencyLabels: Record<Task['frequency'], string> = {
@@ -105,6 +112,9 @@ export function TaskCard({
   onUncomplete,
   showXp = true,
   disabled = false,
+  preview = false,
+  selected = false,
+  onSelect,
 }: TaskCardProps) {
   const handleComplete =
     onComplete ??
@@ -115,13 +125,51 @@ export function TaskCard({
         }
       : undefined);
   const handleUncomplete = onUncomplete ?? onToggle;
-  const interactive = Boolean(handleComplete);
+  const interactive = Boolean(handleComplete) && !preview;
   const gated = interactive && taskHasRequirements(task);
+  const className = [
+    'task-card',
+    completed ? 'task-card--done' : '',
+    disabled ? 'task-card--disabled' : '',
+    gated ? 'task-card--gated' : '',
+    preview ? 'task-card--preview' : '',
+    selected ? 'task-card--selected' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const body = (
+    <TaskCardBody
+      task={task}
+      category={category}
+      scopeBadge={scopeBadge}
+      showXp={showXp}
+      interactive={interactive}
+    />
+  );
+
+  if (preview) {
+    if (onSelect) {
+      return (
+        <button
+          type="button"
+          className={className}
+          onClick={onSelect}
+          aria-pressed={selected}
+        >
+          <div className="task-card__shell">{body}</div>
+        </button>
+      );
+    }
+    return (
+      <article className={className}>
+        <div className="task-card__shell">{body}</div>
+      </article>
+    );
+  }
 
   return (
-    <article
-      className={`task-card${completed ? ' task-card--done' : ''}${disabled ? ' task-card--disabled' : ''}${gated ? ' task-card--gated' : ''}`}
-    >
+    <article className={className}>
       {interactive && handleComplete ? (
         <TaskCompletionGate
           task={task}

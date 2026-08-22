@@ -15,6 +15,11 @@ interface CategoryCardProps {
   joinDisabledReason?: string | null;
   onJoin?: () => void;
   joining?: boolean;
+  /** Admin picker: render as a button instead of linking to the category page. */
+  onSelect?: () => void;
+  selected?: boolean;
+  /** Static preview (no link / no button). */
+  preview?: boolean;
 }
 
 export function CategoryCard({
@@ -30,9 +35,12 @@ export function CategoryCard({
   joinDisabledReason,
   onJoin,
   joining,
+  onSelect,
+  selected = false,
+  preview = false,
 }: CategoryCardProps) {
-  const locked = !isUnlocked;
-  const showJoin = isUnlocked && !isMember && onJoin != null;
+  const locked = !isUnlocked && !preview && !onSelect;
+  const showJoin = isUnlocked && !isMember && onJoin != null && !preview && !onSelect;
 
   const body = (
     <>
@@ -112,23 +120,48 @@ export function CategoryCard({
     </>
   );
 
+  const className = [
+    'category-card',
+    locked ? 'category-card--locked' : '',
+    onSelect ? 'punishment-category-card' : '',
+    selected ? 'punishment-category-card--selected' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const style = { '--cat-color': category.color } as CSSProperties;
+
+  if (preview) {
+    return (
+      <div className="category-card" style={style}>
+        {body}
+      </div>
+    );
+  }
+
+  if (onSelect) {
+    return (
+      <button
+        type="button"
+        className={className}
+        style={style}
+        aria-pressed={selected}
+        onClick={onSelect}
+      >
+        {body}
+      </button>
+    );
+  }
+
   if (locked) {
     return (
-      <div
-        className="category-card category-card--locked"
-        style={{ '--cat-color': category.color } as CSSProperties}
-      >
+      <div className={className} style={style}>
         {body}
       </div>
     );
   }
 
   return (
-    <Link
-      to={`/category/${category.id}`}
-      className="category-card"
-      style={{ '--cat-color': category.color } as CSSProperties}
-    >
+    <Link to={`/category/${category.id}`} className={className} style={style}>
       {body}
     </Link>
   );
