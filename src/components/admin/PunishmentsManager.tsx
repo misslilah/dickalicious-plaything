@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { CategoryImagePicker } from '../CategoryImagePicker';
 import { PunishmentCategoryCard } from '../PunishmentCategoryCard';
 import { PunishmentListRow } from '../PunishmentListRow';
@@ -47,6 +54,39 @@ function emptyTemplateDraft(categoryId: string): PunishmentTemplate {
   };
 }
 
+function Field({
+  label,
+  htmlFor,
+  hint,
+  children,
+}: {
+  label: string;
+  htmlFor?: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="field">
+      {htmlFor ? (
+        <label htmlFor={htmlFor}>{label}</label>
+      ) : (
+        <span>{label}</span>
+      )}
+      {hint && <p className="muted field__hint">{hint}</p>}
+      {children}
+    </div>
+  );
+}
+
+function FormBlock({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="admin-form-block">
+      <h4 className="section-title">{title}</h4>
+      {children}
+    </div>
+  );
+}
+
 export function PunishmentsManager() {
   const {
     state,
@@ -57,6 +97,9 @@ export function PunishmentsManager() {
     updatePunishmentTemplate,
     deletePunishmentTemplate,
   } = useAppStore();
+
+  const pickerRef = useRef<HTMLElement>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
 
   const categoriesByDifficulty = useMemo(
     () => groupCategoriesByDifficulty(state.punishmentCategories),
@@ -94,6 +137,20 @@ export function PunishmentsManager() {
     state.punishmentCategories.find((c) => c.id === manageCategoryId) ?? null;
   const difficultyCategories = categoriesByDifficulty[selectedDifficulty];
   const throneUsername = getThroneUsername();
+  const editorOpen = editorPanel !== 'idle';
+  const showPicker = manageCategory == null && editorPanel !== 'category';
+  const showWorkspace = manageCategory != null || editorPanel === 'category';
+
+  const previewCategory: PunishmentCategory = {
+    ...catDraft,
+    id: catDraft.id || '__draft__',
+    name: catDraft.name.trim() || 'Untitled category',
+    description: catDraft.description?.trim() || '',
+    difficulty: catDraft.difficulty ?? selectedDifficulty,
+  };
+
+  const catalogCategory =
+    editorPanel === 'category' ? previewCategory : manageCategory;
 
   const catalogTemplates = useMemo(() => {
     if (!manageCategory) return [];
@@ -129,6 +186,11 @@ export function PunishmentsManager() {
         : null,
     };
   }, [tplDraft, phrasesText, timerMinutes, timerSecondsPart, throneAmountEur]);
+
+  useEffect(() => {
+    const target = showWorkspace ? workspaceRef.current : pickerRef.current;
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [showWorkspace, selectedDifficulty, manageCategoryId]);
 
   const loadThroneGifts = useCallback(async () => {
     setThroneGiftsLoading(true);
@@ -189,23 +251,20 @@ export function PunishmentsManager() {
     setSelectedDifficulty(difficulty);
     setError('');
     setMessage('');
-    if (manageCategory && categoryDifficulty(manageCategory) !== difficulty) {
-      setManageCategoryId(null);
-      setEditorPanel('idle');
-      setCatDraft(emptyCategoryDraft(difficulty));
-      syncTemplateDraft(emptyTemplateDraft(''));
-    }
+    setManageCategoryId(null);
+    setEditorPanel('idle');
+    setCatDraft(emptyCategoryDraft(difficulty));
+    syncTemplateDraft(emptyTemplateDraft(''));
   };
 
   const selectCategory = (category: PunishmentCategory) => {
-    if (manageCategoryId === category.id) return;
     setError('');
     setMessage('');
     setImageMessage('');
     setManageCategoryId(category.id);
     setCatDraft(category);
     setSelectedDifficulty(categoryDifficulty(category));
-    setEditorPanel('punishment');
+    setEditorPanel('idle');
     syncTemplateDraft(emptyTemplateDraft(category.id));
   };
 
@@ -243,6 +302,16 @@ export function PunishmentsManager() {
     syncTemplateDraft(template);
   };
 
+  const backToCategories = () => {
+    setError('');
+    setMessage('');
+    setImageMessage('');
+    setManageCategoryId(null);
+    setEditorPanel('idle');
+    setCatDraft(emptyCategoryDraft(selectedDifficulty));
+    syncTemplateDraft(emptyTemplateDraft(''));
+  };
+
   const closeEditor = () => {
     setEditorPanel('idle');
     setImageMessage('');
@@ -269,6 +338,7 @@ export function PunishmentsManager() {
       sortOrder: catDraft.sortOrder ?? 0,
       difficulty: catDraft.difficulty ?? selectedDifficulty,
     };
+    const wasEdit = Boolean(catDraft.id);
     const result = catDraft.id
       ? await updatePunishmentCategory(payload)
       : await addPunishmentCategory(payload);
@@ -282,17 +352,20 @@ export function PunishmentsManager() {
       setManageCategoryId(savedId);
       setSelectedDifficulty(payload.difficulty ?? selectedDifficulty);
       setCatDraft({ ...payload, id: savedId });
-      setEditorPanel('punishment');
-      syncTemplateDraft(emptyTemplateDraft(savedId));
-    } else {
-      setCatDraft(emptyCategoryDraft(selectedDifficulty));
-      setEditorPanel('idle');
+      if (wasEdit) {
+        setEditorPanel('idle');
+        syncTemplateDraft(emptyTemplateDraft(savedId));
+        setMessage('Category saved.');
+      } else {
+        setEditorPanel('punishment');
+        syncTemplateDraft(emptyTemplateDraft(savedId));
+        setMessage('Category saved. Add the first punishment.');
+      }
+      return;
     }
-    setMessage(
-      savedId
-        ? 'Category saved. Add punishments in this category.'
-        : 'Category saved.',
-    );
+    setCatDraft(emptyCategoryDraft(selectedDifficulty));
+    setEditorPanel('idle');
+    setMessage('Category saved.');
   };
 
   const removeCategory = async (id: string) => {
@@ -304,12 +377,10 @@ export function PunishmentsManager() {
       setError(result.error);
       return;
     }
-    if (catDraft.id === id) setCatDraft(emptyCategoryDraft(selectedDifficulty));
-    if (manageCategoryId === id) {
-      setManageCategoryId(null);
-      setEditorPanel('idle');
-      syncTemplateDraft(emptyTemplateDraft(''));
-    }
+    setCatDraft(emptyCategoryDraft(selectedDifficulty));
+    setManageCategoryId(null);
+    setEditorPanel('idle');
+    syncTemplateDraft(emptyTemplateDraft(''));
     setMessage('Category deleted.');
   };
 
@@ -380,7 +451,7 @@ export function PunishmentsManager() {
     }
     syncTemplateDraft(emptyTemplateDraft(categoryId));
     setEditorPanel('punishment');
-    setMessage('Punishment saved.');
+    setMessage('Punishment saved. Add another, or click a preview to edit.');
   };
 
   const removeTemplate = async (id: string) => {
@@ -396,13 +467,11 @@ export function PunishmentsManager() {
     setMessage('Punishment deleted.');
   };
 
-  const showWorkspace = manageCategory != null || editorPanel !== 'idle';
-
   return (
     <div className="admin-punishments">
       <p className="muted">
-        Choose Easy, Medium, or Hard, then a category. The catalog on the left
-        is the same view users see. Click a punishment to edit it.
+        Choose Easy, Medium, or Hard, then a category. Previews use the same
+        cards as the Punishments tab. Click a punishment to edit it.
       </p>
 
       {message && (
@@ -444,65 +513,73 @@ export function PunishmentsManager() {
         })}
       </div>
 
-      <section className="card">
-        <div className="admin-list-card__title-row">
-          <h3 className="section-title">
-            {PUNISHMENT_DIFFICULTY_LABELS[selectedDifficulty]} categories
-          </h3>
-        </div>
-        <div className="category-grid">
-          {difficultyCategories.map((category) => (
-            <PunishmentCategoryCard
-              key={category.id}
-              category={category}
-              selected={manageCategoryId === category.id}
-              onSelect={() => selectCategory(category)}
-            />
-          ))}
-          <button
-            type="button"
-            className={`category-card punishment-category-card punishment-category-card--new${
-              editorPanel === 'category' && !catDraft.id
-                ? ' punishment-category-card--selected'
-                : ''
-            }`}
-            aria-pressed={editorPanel === 'category' && !catDraft.id}
-            onClick={startNewCategory}
-          >
-            <div className="category-card__image-wrap">
-              <div className="category-card__placeholder" aria-hidden>
-                <span className="category-card__icon">+</span>
-              </div>
-            </div>
-            <div className="category-card__body">
-              <h3 className="category-card__name">New category</h3>
-              <p className="category-card__meta muted">
-                Add to {PUNISHMENT_DIFFICULTY_LABELS[selectedDifficulty]}
-              </p>
-            </div>
-          </button>
-        </div>
-        {difficultyCategories.length === 0 && (
+      {showPicker && (
+        <section ref={pickerRef} className="card">
+          <div className="admin-list-card__title-row">
+            <h3 className="section-title">
+              {PUNISHMENT_DIFFICULTY_LABELS[selectedDifficulty]} categories
+            </h3>
+            <span className="admin-count">{difficultyCategories.length}</span>
+          </div>
           <p className="muted punishment-selected-hint">
-            No categories in {PUNISHMENT_DIFFICULTY_LABELS[selectedDifficulty]} yet.
-            Create one to start adding punishments.
+            Same cards as the Punishments tab. Click a category to see its
+            punishments.
           </p>
-        )}
-      </section>
-
-      {showWorkspace && (
-        <div className="admin-punishments-workspace">
-          {manageCategory && (
-            <section className="card punishment-selected-panel admin-punishments-catalog">
-              <div className="page-header__row">
-                <div>
-                  <h3 className="section-title">{manageCategory.name}</h3>
-                  <p className="muted">
-                    {catalogTemplates.length} punishment
-                    {catalogTemplates.length === 1 ? '' : 's'} · same layout as
-                    the Punishments tab
-                  </p>
+          <div className="category-grid">
+            {difficultyCategories.map((category) => (
+              <PunishmentCategoryCard
+                key={category.id}
+                category={category}
+                selected={manageCategoryId === category.id}
+                onSelect={() => selectCategory(category)}
+              />
+            ))}
+            <button
+              type="button"
+              className="category-card punishment-category-card punishment-category-card--new"
+              onClick={startNewCategory}
+            >
+              <div className="category-card__image-wrap">
+                <div className="category-card__placeholder" aria-hidden>
+                  <span className="category-card__icon">+</span>
                 </div>
+              </div>
+              <div className="category-card__body">
+                <h3 className="category-card__name">New category</h3>
+                <p className="category-card__meta muted">
+                  Add to {PUNISHMENT_DIFFICULTY_LABELS[selectedDifficulty]}
+                </p>
+              </div>
+            </button>
+          </div>
+          {difficultyCategories.length === 0 && (
+            <p className="muted punishment-selected-hint">
+              No categories in {PUNISHMENT_DIFFICULTY_LABELS[selectedDifficulty]}{' '}
+              yet. Create one to start adding punishments.
+            </p>
+          )}
+        </section>
+      )}
+
+      {showWorkspace && catalogCategory && (
+        <div
+          ref={workspaceRef}
+          className={
+            editorOpen
+              ? 'admin-punishments-workspace admin-punishments-workspace--editing'
+              : 'admin-punishments-workspace'
+          }
+        >
+          <section className="card punishment-selected-panel admin-punishments-catalog">
+            <div className="page-header__row">
+              <button
+                type="button"
+                className="btn btn--ghost btn--small"
+                onClick={backToCategories}
+              >
+                ← All categories
+              </button>
+              {manageCategory && (
                 <div className="btn-row">
                   <button
                     type="button"
@@ -519,145 +596,167 @@ export function PunishmentsManager() {
                     New punishment
                   </button>
                 </div>
+              )}
+            </div>
+            {isCategoryImagePreview(catalogCategory.imageUrl) && (
+              <div className="punishment-category-hero">
+                <img
+                  src={catalogCategory.imageUrl}
+                  alt=""
+                  className="category-card__image"
+                />
               </div>
-              {isCategoryImagePreview(manageCategory.imageUrl) && (
-                <div className="punishment-category-hero">
-                  <img
-                    src={manageCategory.imageUrl}
-                    alt=""
-                    className="category-card__image"
-                  />
-                </div>
-              )}
-              {manageCategory.description && (
-                <p className="punishment-category-desc muted">
-                  {manageCategory.description}
-                </p>
-              )}
-              {catalogTemplates.length === 0 ? (
-                <p className="muted punishment-category-empty">
-                  No punishments in this category yet.
-                </p>
-              ) : (
-                <ul className="task-list">
-                  {catalogTemplates.map((template) => (
-                    <li key={template.id}>
-                      <PunishmentListRow
-                        template={template}
-                        preview
-                        selected={
-                          editorPanel === 'punishment' && tplDraft.id === template.id
-                        }
-                        onSelect={() => startEditPunishment(template)}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          )}
+            )}
+            <h3 className="section-title">{catalogCategory.name}</h3>
+            {catalogCategory.description ? (
+              <p className="punishment-category-desc muted">
+                {catalogCategory.description}
+              </p>
+            ) : null}
+            {catalogTemplates.length === 0 ? (
+              <p className="muted punishment-category-empty">
+                {manageCategory
+                  ? 'No punishments in this category yet.'
+                  : 'Save this category, then add punishments.'}
+              </p>
+            ) : (
+              <ul className="task-list">
+                {catalogTemplates.map((template) => (
+                  <li key={template.id}>
+                    <PunishmentListRow
+                      template={template}
+                      preview
+                      selected={
+                        editorPanel === 'punishment' && tplDraft.id === template.id
+                      }
+                      onSelect={() => startEditPunishment(template)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
 
-          {editorPanel !== 'idle' && (
+          {editorOpen && (
             <section className="card admin-punishments-editor">
               {editorPanel === 'category' ? (
                 <>
                   <h3 className="section-title">
                     {catDraft.id ? 'Edit category' : 'New category'}
                   </h3>
-                  <div className="field">
-                    <span>Difficulty section</span>
-                    <div className="chip-row chip-row--scroll" role="group" aria-label="Difficulty tier">
-                      {PUNISHMENT_DIFFICULTY_ORDER.map((difficulty) => (
-                        <button
-                          key={difficulty}
-                          type="button"
-                          className={
-                            (catDraft.difficulty ?? selectedDifficulty) === difficulty
-                              ? 'chip chip--active'
-                              : 'chip'
-                          }
-                          aria-pressed={
-                            (catDraft.difficulty ?? selectedDifficulty) === difficulty
-                          }
-                          onClick={() =>
-                            setCatDraft({ ...catDraft, difficulty })
-                          }
-                        >
-                          {PUNISHMENT_DIFFICULTY_LABELS[difficulty]}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="pcat-name">Name</label>
-                    <input
-                      id="pcat-name"
-                      value={catDraft.name}
-                      onChange={(e) =>
-                        setCatDraft({ ...catDraft, name: e.target.value })
-                      }
+                  <p className="muted admin-punishments-preview-label">
+                    User preview
+                  </p>
+                  <div className="admin-punishments-category-preview">
+                    <PunishmentCategoryCard
+                      category={previewCategory}
+                      preview
                     />
                   </div>
-                  <div className="field">
-                    <label htmlFor="pcat-desc">Description</label>
-                    <textarea
-                      id="pcat-desc"
-                      rows={2}
-                      value={catDraft.description ?? ''}
-                      onChange={(e) =>
-                        setCatDraft({ ...catDraft, description: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <span>Category image</span>
-                    <CategoryImagePicker
-                      idPrefix="pcat"
-                      urlInputId="pcat-image"
-                      previewUrl={imagePreview}
-                      urlValue={
-                        catDraft.imageUrl?.startsWith('http') ? catDraft.imageUrl : ''
-                      }
-                      onUrlChange={(value) => {
-                        setImageMessage('');
-                        const trimmed = value.trim();
-                        if (trimmed) {
-                          setCatDraft({ ...catDraft, imageUrl: trimmed });
-                        } else {
+
+                  <FormBlock title="Basics">
+                    <Field label="Difficulty section">
+                      <div
+                        className="chip-row chip-row--scroll"
+                        role="group"
+                        aria-label="Difficulty tier"
+                      >
+                        {PUNISHMENT_DIFFICULTY_ORDER.map((difficulty) => (
+                          <button
+                            key={difficulty}
+                            type="button"
+                            className={
+                              (catDraft.difficulty ?? selectedDifficulty) ===
+                              difficulty
+                                ? 'chip chip--active'
+                                : 'chip'
+                            }
+                            aria-pressed={
+                              (catDraft.difficulty ?? selectedDifficulty) ===
+                              difficulty
+                            }
+                            onClick={() =>
+                              setCatDraft({ ...catDraft, difficulty })
+                            }
+                          >
+                            {PUNISHMENT_DIFFICULTY_LABELS[difficulty]}
+                          </button>
+                        ))}
+                      </div>
+                    </Field>
+                    <Field label="Name" htmlFor="pcat-name">
+                      <input
+                        id="pcat-name"
+                        value={catDraft.name}
+                        onChange={(e) =>
+                          setCatDraft({ ...catDraft, name: e.target.value })
+                        }
+                      />
+                    </Field>
+                    <Field label="Description" htmlFor="pcat-desc">
+                      <textarea
+                        id="pcat-desc"
+                        rows={2}
+                        value={catDraft.description ?? ''}
+                        onChange={(e) =>
                           setCatDraft({
                             ...catDraft,
-                            imageUrl: catDraft.imageUrl?.startsWith('data:')
-                              ? catDraft.imageUrl
-                              : undefined,
-                          });
+                            description: e.target.value,
+                          })
                         }
-                      }}
-                      onFileSelect={(dataUrl) => {
-                        setImageMessage('');
-                        setCatDraft({ ...catDraft, imageUrl: dataUrl });
-                      }}
-                      onFileError={setImageMessage}
-                    />
-                    {imageMessage && (
-                      <p className="login-error" role="alert">
-                        {imageMessage}
-                      </p>
-                    )}
-                  </div>
-                  <div className="field">
-                    <label htmlFor="pcat-order">Sort order</label>
-                    <input
-                      id="pcat-order"
-                      type="number"
-                      value={catDraft.sortOrder}
-                      onChange={(e) =>
-                        setCatDraft({
-                          ...catDraft,
-                          sortOrder: Number(e.target.value),
-                        })
-                      }
-                    />
-                  </div>
+                      />
+                    </Field>
+                    <Field label="Category image">
+                      <CategoryImagePicker
+                        idPrefix="pcat"
+                        urlInputId="pcat-image"
+                        previewUrl={imagePreview}
+                        urlValue={
+                          catDraft.imageUrl?.startsWith('http')
+                            ? catDraft.imageUrl
+                            : ''
+                        }
+                        onUrlChange={(value) => {
+                          setImageMessage('');
+                          const trimmed = value.trim();
+                          if (trimmed) {
+                            setCatDraft({ ...catDraft, imageUrl: trimmed });
+                          } else {
+                            setCatDraft({
+                              ...catDraft,
+                              imageUrl: catDraft.imageUrl?.startsWith('data:')
+                                ? catDraft.imageUrl
+                                : undefined,
+                            });
+                          }
+                        }}
+                        onFileSelect={(dataUrl) => {
+                          setImageMessage('');
+                          setCatDraft({ ...catDraft, imageUrl: dataUrl });
+                        }}
+                        onFileError={setImageMessage}
+                      />
+                      {imageMessage && (
+                        <p className="login-error" role="alert">
+                          {imageMessage}
+                        </p>
+                      )}
+                    </Field>
+                    <Field label="Sort order" htmlFor="pcat-order">
+                      <input
+                        id="pcat-order"
+                        type="number"
+                        value={catDraft.sortOrder}
+                        onChange={(e) =>
+                          setCatDraft({
+                            ...catDraft,
+                            sortOrder: Number(e.target.value),
+                          })
+                        }
+                      />
+                    </Field>
+                  </FormBlock>
+
                   <div className="btn-row admin-form-actions">
                     <button
                       type="button"
@@ -666,7 +765,13 @@ export function PunishmentsManager() {
                     >
                       {catDraft.id ? 'Save category' : 'Create category'}
                     </button>
-                    <button type="button" className="btn btn--ghost" onClick={closeEditor}>
+                    <button
+                      type="button"
+                      className="btn btn--ghost"
+                      onClick={
+                        catDraft.id ? closeEditor : backToCategories
+                      }
+                    >
                       Cancel
                     </button>
                     {catDraft.id && (
@@ -689,220 +794,235 @@ export function PunishmentsManager() {
                     User preview
                   </p>
                   <PunishmentListRow template={draftPreviewTemplate} preview />
-                  <div className="field">
-                    <label htmlFor="ptpl-title">Title</label>
-                    <input
-                      id="ptpl-title"
-                      value={tplDraft.title}
-                      onChange={(e) =>
-                        setTplDraft({ ...tplDraft, title: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="ptpl-desc">Description</label>
-                    <textarea
-                      id="ptpl-desc"
-                      rows={3}
-                      value={tplDraft.description}
-                      onChange={(e) =>
-                        setTplDraft({ ...tplDraft, description: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="ptpl-malus">Malus points relieved</label>
-                    <input
-                      id="ptpl-malus"
-                      type="number"
-                      min={1}
-                      value={tplDraft.malusPointsRelieved}
-                      onChange={(e) =>
-                        setTplDraft({
-                          ...tplDraft,
-                          malusPointsRelieved: Number(e.target.value),
-                        })
-                      }
-                    />
-                  </div>
 
-                  <h4 className="admin-punishments-subheading">
-                    Completion requirements
-                  </h4>
-                  <div className="field">
-                    <label className="checkbox-label">
+                  <FormBlock title="Basics">
+                    <Field label="Title" htmlFor="ptpl-title">
                       <input
-                        type="checkbox"
-                        checked={Boolean(tplDraft.thronePayment)}
+                        id="ptpl-title"
+                        value={tplDraft.title}
+                        onChange={(e) =>
+                          setTplDraft({ ...tplDraft, title: e.target.value })
+                        }
+                      />
+                    </Field>
+                    <Field label="Description" htmlFor="ptpl-desc">
+                      <textarea
+                        id="ptpl-desc"
+                        rows={3}
+                        value={tplDraft.description}
                         onChange={(e) =>
                           setTplDraft({
                             ...tplDraft,
-                            thronePayment: e.target.checked,
+                            description: e.target.value,
                           })
                         }
                       />
-                      Throne payment (webhook verifies gift amount)
-                    </label>
+                    </Field>
+                    <Field
+                      label="Malus points relieved"
+                      htmlFor="ptpl-malus"
+                    >
+                      <input
+                        id="ptpl-malus"
+                        type="number"
+                        min={1}
+                        value={tplDraft.malusPointsRelieved}
+                        onChange={(e) =>
+                          setTplDraft({
+                            ...tplDraft,
+                            malusPointsRelieved: Number(e.target.value),
+                          })
+                        }
+                      />
+                    </Field>
+                  </FormBlock>
+
+                  <FormBlock title="Completion requirements">
+                    <div className="field">
+                      <label className="checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(tplDraft.thronePayment)}
+                          onChange={(e) =>
+                            setTplDraft({
+                              ...tplDraft,
+                              thronePayment: e.target.checked,
+                            })
+                          }
+                        />
+                        Throne payment (webhook verifies gift amount)
+                      </label>
+                      {tplDraft.thronePayment && (
+                        <p className="muted field__hint">
+                          Recommended tiers: €5 → 1 malus, €25 → 10 malus, €125
+                          → 50 malus. Pick a gift below or enter amount/URL
+                          manually if fetch fails.
+                        </p>
+                      )}
+                    </div>
                     {tplDraft.thronePayment && (
-                      <p className="muted">
-                        Recommended tiers: €5 → 1 malus, €25 → 10 malus, €125 → 50
-                        malus. Pick a gift below or enter amount/URL manually if
-                        fetch fails.
-                      </p>
-                    )}
-                  </div>
-                  {tplDraft.thronePayment && (
-                    <div className="field">
-                      <label htmlFor="ptpl-throne-gift">Select Throne gift</label>
-                      <div className="field-row">
-                        <select
-                          id="ptpl-throne-gift"
-                          value={selectedThroneGiftId}
-                          disabled={throneGiftsLoading || throneGifts.length === 0}
-                          onChange={(e) => applyThroneGiftSelection(e.target.value)}
-                        >
-                          <option value="">
-                            {throneGiftsLoading
-                              ? 'Loading gifts from Throne…'
-                              : throneGifts.length > 0
-                                ? 'Choose a gift…'
-                                : 'No gifts loaded — refresh or enter manually'}
-                          </option>
-                          {throneGifts.map((gift) => (
-                            <option key={gift.id} value={gift.id}>
-                              {formatThroneGiftOptionLabel(gift)}
+                      <Field
+                        label="Select Throne gift"
+                        htmlFor="ptpl-throne-gift"
+                      >
+                        <div className="field-row">
+                          <select
+                            id="ptpl-throne-gift"
+                            value={selectedThroneGiftId}
+                            disabled={
+                              throneGiftsLoading || throneGifts.length === 0
+                            }
+                            onChange={(e) =>
+                              applyThroneGiftSelection(e.target.value)
+                            }
+                          >
+                            <option value="">
+                              {throneGiftsLoading
+                                ? 'Loading gifts from Throne…'
+                                : throneGifts.length > 0
+                                  ? 'Choose a gift…'
+                                  : 'No gifts loaded — refresh or enter manually'}
                             </option>
-                          ))}
-                        </select>
-                        <button
-                          type="button"
-                          className="btn btn--ghost btn--small"
-                          disabled={throneGiftsLoading}
-                          onClick={() => void loadThroneGifts()}
-                        >
-                          {throneGiftsLoading ? 'Refreshing…' : 'Refresh gifts'}
-                        </button>
+                            {throneGifts.map((gift) => (
+                              <option key={gift.id} value={gift.id}>
+                                {formatThroneGiftOptionLabel(gift)}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="btn btn--ghost btn--small"
+                            disabled={throneGiftsLoading}
+                            onClick={() => void loadThroneGifts()}
+                          >
+                            {throneGiftsLoading ? 'Refreshing…' : 'Refresh gifts'}
+                          </button>
+                        </div>
+                        {throneUsername ? (
+                          <p className="muted">
+                            Throne profile: throne.com/u/{throneUsername}
+                          </p>
+                        ) : (
+                          <p className="muted">
+                            Set VITE_THRONE_URL=https://throne.com/u/your-username
+                            in .env (and Vercel) to auto-load gifts, or set
+                            THRONE_USERNAME in Supabase Edge Function secrets.
+                          </p>
+                        )}
+                        {throneGiftsError && (
+                          <p className="login-error" role="alert">
+                            {throneGiftsError}
+                          </p>
+                        )}
+                        {throneGiftsWarning && (
+                          <p className="muted" role="status">
+                            {throneGiftsWarning}
+                          </p>
+                        )}
+                      </Field>
+                    )}
+                    {tplDraft.thronePayment && (
+                      <Field
+                        label="Throne gift amount (EUR) — manual fallback"
+                        htmlFor="ptpl-throne-eur"
+                        hint="Webhook matching uses this amount in cents. Prefer EUR gifts so it matches Throne checkout."
+                      >
+                        <input
+                          id="ptpl-throne-eur"
+                          type="number"
+                          min={0.01}
+                          step={0.01}
+                          placeholder="e.g. 5, 25, 125"
+                          value={throneAmountEur}
+                          onChange={(e) => {
+                            setThroneAmountEur(e.target.value);
+                            setSelectedThroneGiftId('');
+                            setTplDraft((draft) => ({
+                              ...draft,
+                              throneGiftId: null,
+                            }));
+                          }}
+                        />
+                      </Field>
+                    )}
+                    <Field
+                      label="Required phrases (one per line)"
+                      htmlFor="ptpl-phrases"
+                    >
+                      <textarea
+                        id="ptpl-phrases"
+                        rows={3}
+                        value={phrasesText}
+                        placeholder="Optional — user must type each phrase to complete"
+                        onChange={(e) => setPhrasesText(e.target.value)}
+                      />
+                    </Field>
+                    <Field
+                      label="Times each phrase must be typed"
+                      htmlFor="ptpl-phrase-repeat"
+                    >
+                      <input
+                        id="ptpl-phrase-repeat"
+                        type="number"
+                        min={1}
+                        value={tplDraft.requiredPhraseRepeatCount ?? 1}
+                        onChange={(e) =>
+                          setTplDraft({
+                            ...tplDraft,
+                            requiredPhraseRepeatCount: Math.max(
+                              1,
+                              Number(e.target.value) || 1,
+                            ),
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field label="Timer before completion">
+                      <div className="field-row">
+                        <label className="sr-only" htmlFor="ptpl-timer-min">
+                          Minutes
+                        </label>
+                        <input
+                          id="ptpl-timer-min"
+                          type="number"
+                          min={0}
+                          placeholder="Min"
+                          value={timerMinutes}
+                          onChange={(e) => setTimerMinutes(e.target.value)}
+                        />
+                        <label className="sr-only" htmlFor="ptpl-timer-sec">
+                          Seconds
+                        </label>
+                        <input
+                          id="ptpl-timer-sec"
+                          type="number"
+                          min={0}
+                          max={59}
+                          placeholder="Sec"
+                          value={timerSecondsPart}
+                          onChange={(e) => setTimerSecondsPart(e.target.value)}
+                        />
                       </div>
-                      {throneUsername ? (
-                        <p className="muted">
-                          Throne profile: throne.com/u/{throneUsername}
-                        </p>
-                      ) : (
-                        <p className="muted">
-                          Set VITE_THRONE_URL=https://throne.com/u/your-username in
-                          .env (and Vercel) to auto-load gifts, or set
-                          THRONE_USERNAME in Supabase Edge Function secrets.
-                        </p>
-                      )}
-                      {throneGiftsError && (
-                        <p className="login-error" role="alert">
-                          {throneGiftsError}
-                        </p>
-                      )}
-                      {throneGiftsWarning && (
-                        <p className="muted" role="status">
-                          {throneGiftsWarning}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  {tplDraft.thronePayment && (
-                    <div className="field">
-                      <label htmlFor="ptpl-throne-eur">
-                        Throne gift amount (EUR) — manual fallback
-                      </label>
+                    </Field>
+                    <Field
+                      label="Site to open (http or https)"
+                      htmlFor="ptpl-url"
+                    >
                       <input
-                        id="ptpl-throne-eur"
-                        type="number"
-                        min={0.01}
-                        step={0.01}
-                        placeholder="e.g. 5, 25, 125"
-                        value={throneAmountEur}
-                        onChange={(e) => {
-                          setThroneAmountEur(e.target.value);
-                          setSelectedThroneGiftId('');
-                          setTplDraft((draft) => ({ ...draft, throneGiftId: null }));
-                        }}
+                        id="ptpl-url"
+                        type="url"
+                        value={tplDraft.openUrl ?? ''}
+                        placeholder="https://example.com"
+                        onChange={(e) =>
+                          setTplDraft({
+                            ...tplDraft,
+                            openUrl: e.target.value.trim() || undefined,
+                          })
+                        }
                       />
-                      <p className="muted">
-                        Webhook matching uses this amount in cents. Prefer EUR gifts
-                        so it matches Throne checkout.
-                      </p>
-                    </div>
-                  )}
-                  <div className="field">
-                    <label htmlFor="ptpl-phrases">Required phrases (one per line)</label>
-                    <textarea
-                      id="ptpl-phrases"
-                      rows={3}
-                      value={phrasesText}
-                      placeholder="Optional — user must type each phrase to complete"
-                      onChange={(e) => setPhrasesText(e.target.value)}
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="ptpl-phrase-repeat">
-                      Times each phrase must be typed
-                    </label>
-                    <input
-                      id="ptpl-phrase-repeat"
-                      type="number"
-                      min={1}
-                      value={tplDraft.requiredPhraseRepeatCount ?? 1}
-                      onChange={(e) =>
-                        setTplDraft({
-                          ...tplDraft,
-                          requiredPhraseRepeatCount: Math.max(
-                            1,
-                            Number(e.target.value) || 1,
-                          ),
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="field">
-                    <span>Timer before completion</span>
-                    <div className="field-row">
-                      <label className="sr-only" htmlFor="ptpl-timer-min">
-                        Minutes
-                      </label>
-                      <input
-                        id="ptpl-timer-min"
-                        type="number"
-                        min={0}
-                        placeholder="Min"
-                        value={timerMinutes}
-                        onChange={(e) => setTimerMinutes(e.target.value)}
-                      />
-                      <label className="sr-only" htmlFor="ptpl-timer-sec">
-                        Seconds
-                      </label>
-                      <input
-                        id="ptpl-timer-sec"
-                        type="number"
-                        min={0}
-                        max={59}
-                        placeholder="Sec"
-                        value={timerSecondsPart}
-                        onChange={(e) => setTimerSecondsPart(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="ptpl-url">Site to open (http or https)</label>
-                    <input
-                      id="ptpl-url"
-                      type="url"
-                      value={tplDraft.openUrl ?? ''}
-                      placeholder="https://example.com"
-                      onChange={(e) =>
-                        setTplDraft({
-                          ...tplDraft,
-                          openUrl: e.target.value.trim() || undefined,
-                        })
-                      }
-                    />
-                  </div>
+                    </Field>
+                  </FormBlock>
+
                   <div className="btn-row admin-form-actions">
                     <button
                       type="button"

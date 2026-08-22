@@ -9,6 +9,7 @@ import {
   truncateMessagePreview,
   type CommunityUnreadView,
 } from '../lib/communityChatUnread';
+import { playCommunityChatNotifySound } from '../lib/communityChatNotifySound';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 
 export type CommunityChatView = CommunityChannel | 'admin-contact' | 'admin-inbox';
@@ -83,6 +84,9 @@ export function useCommunityChatUnread({
   }, []);
 
   const incrementUnread = useCallback((view: CommunityUnreadView) => {
+    if (!openRef.current) {
+      playCommunityChatNotifySound();
+    }
     setUnreadByView((prev) => ({
       ...prev,
       [view]: prev[view] + 1,

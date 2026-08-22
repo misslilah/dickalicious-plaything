@@ -4,27 +4,24 @@ import { isCategoryImagePreview } from '../lib/categoryImage';
 
 interface PunishmentCategoryCardProps {
   category: PunishmentCategory;
-  onSelect: () => void;
+  onSelect?: () => void;
   selected?: boolean;
+  /** Static preview (no button). */
+  preview?: boolean;
 }
 
 export function PunishmentCategoryCard({
   category,
   onSelect,
   selected = false,
+  preview = false,
 }: PunishmentCategoryCardProps) {
   const imagePreview = isCategoryImagePreview(category.imageUrl)
     ? category.imageUrl
     : null;
 
-  return (
-    <button
-      type="button"
-      className={`category-card punishment-category-card${selected ? ' punishment-category-card--selected' : ''}`}
-      style={{ '--cat-color': 'var(--accent)' } as CSSProperties}
-      aria-pressed={selected}
-      onClick={onSelect}
-    >
+  const body = (
+    <>
       <div className="category-card__image-wrap">
         {imagePreview ? (
           <img src={imagePreview} alt="" className="category-card__image" />
@@ -40,6 +37,31 @@ export function PunishmentCategoryCard({
           <p className="category-card__meta muted">{category.description}</p>
         )}
       </div>
+    </>
+  );
+
+  const className = `category-card punishment-category-card${
+    selected ? ' punishment-category-card--selected' : ''
+  }`;
+  const style = { '--cat-color': 'var(--accent)' } as CSSProperties;
+
+  if (preview) {
+    return (
+      <div className="category-card punishment-category-card" style={style}>
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className={className}
+      style={style}
+      aria-pressed={selected}
+      onClick={onSelect}
+    >
+      {body}
     </button>
   );
 }

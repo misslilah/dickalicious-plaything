@@ -106,7 +106,6 @@ export function Punishments() {
 
   const selectCategory = (categoryId: string | null) => {
     const next = new URLSearchParams(searchParams);
-    next.delete('manage');
     if (categoryId) {
       next.set('category', categoryId);
     } else {

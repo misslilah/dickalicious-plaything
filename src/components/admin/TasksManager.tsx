@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { TaskCard } from '../TaskCard';
 import { TaskListRow } from '../TaskListRow';
 import { useAppStore } from '../../hooks/useAppStore';
@@ -113,7 +121,7 @@ export function TasksManager() {
     })();
   }, [draft.linkedMediaType]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (filterScope !== 'category') return;
     const target = selectedCategoryId
       ? workspaceRef.current

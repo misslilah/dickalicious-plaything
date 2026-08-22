@@ -150,7 +150,7 @@ If **Connect Patreon** shows `{"code":"NOT_FOUND",...}` on a black page, the fun
 Admins open **Settings → Open admin panel** or `/admin`:
 
 - Categories, tasks, rewards, punishments, video categories, video uploads
-- **Users** — create accounts; **Sync Patreon tiers** for linked users (live membership check); assign tier manually when needed
+- **Users** — create accounts; opening this section auto-reconciles linked Patreon tiers (throttled). Webhooks already apply membership changes in realtime; **Sync Patreon tiers** forces a refresh anytime. Assign a tier manually when needed.
 
 Only users with `profiles.role = 'admin'` can write shared catalog rows (enforced by RLS).
 

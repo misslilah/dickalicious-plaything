@@ -22,9 +22,9 @@ export const THRONE_WEBHOOK_SETUP_STEPS = [
   'In Throne: Settings → Alerts & Integrations → Webhook Integration (if shown). Paste the webhook URL below.',
   'Add the same secret as Authorization: Bearer <secret> or X-Throne-Webhook-Secret header (per Throne dashboard).',
   'Create a training task with "Throne payment task" enabled and set Open URL to the Throne gift/item link.',
-  'Or create punishments (Manage punishments) with "Throne payment punishment": €5 → 1 malus, €25 → 10 malus, €125 → 50 malus (amounts admin-configurable).',
+  'Or create punishments in Admin → Punishments with "Throne payment": €5 → 1 malus, €25 → 10 malus, €125 → 50 malus (amounts admin-configurable).',
   'Run migrations 074–079 in Supabase SQL Editor (077 punishment tiers, 078 throne_gift_id, 079 gift catalog).',
   'Deploy throne-fetch-gifts for admin punishment gift picker: supabase functions deploy throne-fetch-gifts',
-  'Set VITE_THRONE_URL=https://throne.com/u/your-username so Manage punishments can load your Throne gifts.',
+  'Set VITE_THRONE_URL=https://throne.com/u/your-username so Admin → Punishments can load your Throne gifts.',
   'If Throne has no webhook field in your account, use Admin → Training → Throne to confirm pending payments manually.',
 ] as const;

@@ -131,6 +131,10 @@ export function PuzzleGameAdmin() {
   };
 
   const startCreate = () => {
+    if (isCreating) {
+      scrollEditorIntoView();
+      return;
+    }
     clearBlobPreview();
     setEditingId(null);
     setIsCreating(true);
@@ -142,6 +146,10 @@ export function PuzzleGameAdmin() {
   };
 
   const startEdit = (puzzle: PuzzleGame) => {
+    if (editingId === puzzle.id && !isCreating) {
+      scrollEditorIntoView();
+      return;
+    }
     clearBlobPreview();
     setIsCreating(false);
     setEditingId(puzzle.id);
@@ -348,6 +356,31 @@ export function PuzzleGameAdmin() {
               </li>
             );
           })}
+          {isCreating && (
+            <li className="puzzle-admin__cell puzzle-admin__cell--selected puzzle-admin__cell--new">
+              <button
+                type="button"
+                className="puzzle-admin__cell-preview"
+                aria-pressed
+                aria-label="New puzzle"
+                title="New puzzle"
+              >
+                {form.imagePreview ? (
+                  <img src={form.imagePreview} alt="" className="puzzle-admin__cell-thumb" />
+                ) : (
+                  <span className="puzzle-admin__cell-empty">New</span>
+                )}
+              </button>
+              <span className="puzzle-admin__cell-meta">
+                <span className="puzzle-admin__cell-index">
+                  {gridSize}×{gridSize}
+                </span>
+                <span className="puzzle-admin__cell-type">
+                  {ROTATION_SHORT_LABELS[form.rotationDirection]}
+                </span>
+              </span>
+            </li>
+          )}
         </ul>
 
         {showEditor && (
