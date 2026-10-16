@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   FlashWordGamePlayer,
   type FlashWordGameQuitHandler,
 } from './FlashWordGamePlayer';
+import {
+  GameWindowCelebration,
+  useGameWindowCelebration,
+} from './FocusTrainingCelebration';
 import type { DailyGameAttemptStatus } from '../lib/dailyGameAttempts';
 import {
   fetchFlashWordGame,
@@ -26,6 +31,7 @@ export function FlashWordGameModal({
   const [quitHandler, setQuitHandler] = useState<FlashWordGameQuitHandler | null>(
     null,
   );
+  const { panelRef, playId, celebrating, triggerSuccess } = useGameWindowCelebration();
 
   const handleClose = useCallback(() => {
     quitHandler?.();
@@ -76,7 +82,7 @@ export function FlashWordGameModal({
     };
   }, [gameId]);
 
-  return (
+  return createPortal(
     <div
       className="flash-word-game-modal"
       role="dialog"
@@ -84,7 +90,15 @@ export function FlashWordGameModal({
       aria-labelledby="flash-word-game-modal-title"
     >
       <div className="flash-word-game-modal__backdrop" aria-hidden="true" />
-      <div className="flash-word-game-modal__panel">
+      <div
+        className={[
+          'flash-word-game-modal__panel',
+          celebrating ? 'flash-word-game-modal__panel--celebrate' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        ref={panelRef}
+      >
         <header className="flash-word-game-modal__header">
           <div className="flash-word-game-modal__heading">
             <h2 id="flash-word-game-modal-title">
@@ -121,10 +135,13 @@ export function FlashWordGameModal({
               game={game}
               onRegisterQuitHandler={setQuitHandler}
               onAttemptStatusChange={onAttemptStatusChange}
+              onLevelSuccess={triggerSuccess}
             />
           )}
         </div>
+        <GameWindowCelebration playId={playId} panelRef={panelRef} />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

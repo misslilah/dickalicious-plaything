@@ -8,6 +8,7 @@ interface PunishmentCategoryCardProps {
   selected?: boolean;
   /** Static preview (no button). */
   preview?: boolean;
+  count?: number;
 }
 
 export function PunishmentCategoryCard({
@@ -15,6 +16,7 @@ export function PunishmentCategoryCard({
   onSelect,
   selected = false,
   preview = false,
+  count,
 }: PunishmentCategoryCardProps) {
   const imagePreview = isCategoryImagePreview(category.imageUrl)
     ? category.imageUrl
@@ -33,6 +35,11 @@ export function PunishmentCategoryCard({
       </div>
       <div className="category-card__body">
         <h3 className="category-card__name">{category.name}</h3>
+        {count != null && (
+          <p className="category-card__meta muted">
+            {count} {count === 1 ? 'punishment' : 'punishments'}
+          </p>
+        )}
         {category.description && (
           <p className="category-card__meta muted">{category.description}</p>
         )}

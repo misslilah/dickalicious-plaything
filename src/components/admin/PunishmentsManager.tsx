@@ -620,12 +620,14 @@ export function PunishmentsManager() {
                   : 'Save this category, then add punishments.'}
               </p>
             ) : (
-              <ul className="task-list">
-                {catalogTemplates.map((template) => (
-                  <li key={template.id}>
+              <ol className="category-task-path punishment-path">
+                {catalogTemplates.map((template, index) => (
+                  <li key={template.id} className="category-task-path__item">
                     <PunishmentListRow
                       template={template}
                       preview
+                      imageUrl={catalogCategory.imageUrl}
+                      stepNumber={index + 1}
                       selected={
                         editorPanel === 'punishment' && tplDraft.id === template.id
                       }
@@ -633,7 +635,7 @@ export function PunishmentsManager() {
                     />
                   </li>
                 ))}
-              </ul>
+              </ol>
             )}
           </section>
 
@@ -793,7 +795,12 @@ export function PunishmentsManager() {
                   <p className="muted admin-punishments-preview-label">
                     User preview
                   </p>
-                  <PunishmentListRow template={draftPreviewTemplate} preview />
+                  <PunishmentListRow
+                    template={draftPreviewTemplate}
+                    preview
+                    imageUrl={catalogCategory?.imageUrl}
+                    stepNumber={1}
+                  />
 
                   <FormBlock title="Basics">
                     <Field label="Title" htmlFor="ptpl-title">

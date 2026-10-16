@@ -8,6 +8,9 @@ import {
   probePatreonOAuthStart,
 } from '../lib/patreon';
 import { areBubblesEnabled } from '../lib/appSettings';
+import { requestCategoryTutorial } from '../lib/categoryTutorial';
+import { requestSiteTutorial } from '../lib/siteTutorial';
+import { requestVideosTutorial } from '../lib/videosTutorial';
 import { tierLabel } from '../lib/tiers';
 
 export function Settings() {
@@ -228,6 +231,38 @@ export function Settings() {
           )}
         </section>
       )}
+
+      <section className="card">
+        <h3 className="section-title">Site guide</h3>
+        <p className="muted">
+          Replay the clickable walkthrough of Home, categories, tasks, games,
+          punishments, and rewards — the category path guide, or the Videos
+          guide.
+        </p>
+        <button
+          type="button"
+          className="btn btn--primary btn--block"
+          onClick={() => requestSiteTutorial()}
+        >
+          Replay tutorial
+        </button>
+        <button
+          type="button"
+          className="btn btn--ghost btn--block"
+          style={{ marginTop: '0.55rem' }}
+          onClick={() => requestCategoryTutorial()}
+        >
+          Replay category guide
+        </button>
+        <button
+          type="button"
+          className="btn btn--ghost btn--block"
+          style={{ marginTop: '0.55rem' }}
+          onClick={() => requestVideosTutorial()}
+        >
+          Replay videos guide
+        </button>
+      </section>
 
       <section className="card">
         <h3 className="section-title">Appearance</h3>

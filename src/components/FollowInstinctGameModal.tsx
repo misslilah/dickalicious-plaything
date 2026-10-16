@@ -1,10 +1,15 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { DailyGameAttemptStatus } from '../lib/dailyGameAttempts';
 import {
   fetchFollowInstinctGame,
   type FollowInstinctGame,
 } from '../lib/followInstinctGames';
 import type { FollowInstinctGameQuitHandler } from './FollowInstinctGamePlayer';
+import {
+  GameWindowCelebration,
+  useGameWindowCelebration,
+} from './FocusTrainingCelebration';
 
 const FollowInstinctGamePlayer = lazy(() =>
   import('./FollowInstinctGamePlayer').then((m) => ({
@@ -29,6 +34,7 @@ export function FollowInstinctGameModal({
   const [quitHandler, setQuitHandler] = useState<FollowInstinctGameQuitHandler | null>(
     null,
   );
+  const { panelRef, playId, celebrating, triggerSuccess } = useGameWindowCelebration();
 
   const handleClose = useCallback(() => {
     quitHandler?.();
@@ -71,7 +77,7 @@ export function FollowInstinctGameModal({
     };
   }, [gameId]);
 
-  return (
+  return createPortal(
     <div
       className="flash-word-game-modal follow-instinct-game-modal"
       role="dialog"
@@ -79,7 +85,16 @@ export function FollowInstinctGameModal({
       aria-labelledby="follow-instinct-game-modal-title"
     >
       <div className="flash-word-game-modal__backdrop" aria-hidden="true" />
-      <div className="flash-word-game-modal__panel follow-instinct-game-modal__panel">
+      <div
+        className={[
+          'flash-word-game-modal__panel',
+          'follow-instinct-game-modal__panel',
+          celebrating ? 'flash-word-game-modal__panel--celebrate' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        ref={panelRef}
+      >
         <header className="flash-word-game-modal__header">
           <div className="flash-word-game-modal__heading">
             <h2 id="follow-instinct-game-modal-title">
@@ -117,11 +132,14 @@ export function FollowInstinctGameModal({
                 game={game}
                 onRegisterQuitHandler={setQuitHandler}
                 onAttemptStatusChange={onAttemptStatusChange}
+                onRoundSuccess={triggerSuccess}
               />
             </Suspense>
           )}
         </div>
+        <GameWindowCelebration playId={playId} panelRef={panelRef} />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -34,7 +34,7 @@ export function DailyTasksSection() {
 
   if (!plan) {
     return (
-      <section className="card">
+      <section className="card" data-tutorial="daily-tasks">
         <h2 className="section-title">Daily tasks</h2>
         <p className="muted">Loading plan…</p>
       </section>
@@ -49,7 +49,7 @@ export function DailyTasksSection() {
     }, 0);
 
   return (
-    <section className="card daily-tasks">
+    <section className="card daily-tasks" data-tutorial="daily-tasks">
       <header className="daily-tasks__header">
         <div>
           <h2 className="section-title">Daily tasks</h2>

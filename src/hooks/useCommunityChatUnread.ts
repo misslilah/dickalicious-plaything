@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommunityChannel } from '../lib/communityChannels';
 import { fetchAdminDirectInbox } from '../lib/adminDirectMessages';
+import { countUnreadUserDirectMessages } from '../lib/userDirectMessages';
 import {
   COMMUNITY_UNREAD_CHANNEL_VIEWS,
   emptyUnreadCounts,
@@ -12,7 +13,11 @@ import {
 import { playCommunityChatNotifySound } from '../lib/communityChatNotifySound';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
 
-export type CommunityChatView = CommunityChannel | 'admin-contact' | 'admin-inbox';
+export type CommunityChatView =
+  | CommunityChannel
+  | 'admin-contact'
+  | 'admin-inbox'
+  | 'inbox';
 
 type UseCommunityChatUnreadArgs = {
   userId: string | undefined;
@@ -20,6 +25,7 @@ type UseCommunityChatUnreadArgs = {
   open: boolean;
   activeView: CommunityChatView;
   adminThreadUserId?: string | null;
+  userDmPeerId?: string | null;
 };
 
 export type AdminDmToastState = {
@@ -34,6 +40,7 @@ export function useCommunityChatUnread({
   open,
   activeView,
   adminThreadUserId = null,
+  userDmPeerId = null,
 }: UseCommunityChatUnreadArgs) {
   const [unreadByView, setUnreadByView] =
     useState<Record<CommunityUnreadView, number>>(emptyUnreadCounts);
@@ -43,10 +50,12 @@ export function useCommunityChatUnread({
   const openRef = useRef(open);
   const activeViewRef = useRef(activeView);
   const adminThreadUserIdRef = useRef(adminThreadUserId);
+  const userDmPeerIdRef = useRef(userDmPeerId);
 
   openRef.current = open;
   activeViewRef.current = activeView;
   adminThreadUserIdRef.current = adminThreadUserId;
+  userDmPeerIdRef.current = userDmPeerId;
 
   const advanceAdminDmToast = useCallback(() => {
     if (toastTimerRef.current != null) {
@@ -152,6 +161,8 @@ export function useCommunityChatUnread({
       }
     }
 
+    next.inbox = await countUnreadUserDirectMessages(userId);
+
     setUnreadByView(next);
   }, [isAdmin, userId]);
 
@@ -164,6 +175,7 @@ export function useCommunityChatUnread({
 
     // Admins clear DM unread per thread when opening a member thread, not on tab open.
     if (isAdmin && activeView === 'admin-contact') return;
+    if (activeView === 'inbox') return;
 
     markCommunityViewRead(userId, activeView);
     setUnreadByView((prev) => ({
@@ -226,6 +238,38 @@ export function useCommunityChatUnread({
       incrementUnread('admin-contact');
     };
 
+    const handleUserDmInsert = (payload: { new: unknown }) => {
+      const row = payload.new as {
+        id?: string;
+        from_id?: string;
+        to_id?: string;
+      };
+      if (!row?.id || row.to_id !== userId || row.from_id === userId) return;
+
+      const viewingThread =
+        openRef.current &&
+        activeViewRef.current === 'inbox' &&
+        userDmPeerIdRef.current === row.from_id;
+      if (viewingThread) return;
+
+      incrementUnread('inbox');
+    };
+
+    const handleUserDmUpdate = (payload: { new: unknown; old: unknown }) => {
+      const nextRow = payload.new as {
+        to_id?: string;
+        read_at?: string | null;
+      };
+      const prevRow = payload.old as { read_at?: string | null };
+      if (nextRow.to_id !== userId) return;
+      if (nextRow.read_at && !prevRow.read_at) {
+        setUnreadByView((prev) => ({
+          ...prev,
+          inbox: Math.max(0, prev.inbox - 1),
+        }));
+      }
+    };
+
     const handleAdminInboxUpdate = (payload: { new: unknown; old: unknown }) => {
       const nextRow = payload.new as { read_at?: string | null; from_admin?: boolean };
       const prevRow = payload.old as { read_at?: string | null; from_admin?: boolean };
@@ -285,6 +329,27 @@ export function useCommunityChatUnread({
       );
     }
 
+    channelRef.on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'user_direct_messages',
+        filter: `to_id=eq.${userId}`,
+      },
+      handleUserDmInsert,
+    );
+    channelRef.on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'user_direct_messages',
+        filter: `to_id=eq.${userId}`,
+      },
+      handleUserDmUpdate,
+    );
+
     channelRef.subscribe();
 
     return () => {
@@ -338,4 +403,14 @@ export function getUnreadCountForAdminInboxTab(
 ): number {
   if (open && activeView === 'admin-inbox') return 0;
   return unreadByView['admin-inbox'] ?? 0;
+}
+
+export function getUnreadCountForInboxTab(
+  unreadByView: Record<CommunityUnreadView, number>,
+  activeView: CommunityChatView,
+  open: boolean,
+  hasOpenThread = false,
+): number {
+  if (open && activeView === 'inbox' && hasOpenThread) return 0;
+  return unreadByView.inbox ?? 0;
 }

@@ -1,9 +1,17 @@
 import type {
+  CharacterEquipped,
   PatreonMemberTier,
   PatreonStatus,
   Session as AppSession,
   UserRole,
 } from '../types';
+import {
+  emptyEquipped,
+  parseCharacterBodySize,
+  parseCharacterGender,
+  parseEquipped,
+} from './characterSprite';
+import { DEFAULT_BANNER_ID, parseOwnedBannerIds } from './profileBanners';
 import {
   EMAIL_NOT_CONFIRMED_MESSAGE,
   formatSupabaseAuthError,
@@ -22,8 +30,20 @@ export interface AuthSession {
   patreonTier: PatreonMemberTier | null;
   patreonStatus: PatreonStatus;
   patreonUserId: string | null;
+  characterGender: AppSession['characterGender'];
+  characterBreastSize: AppSession['characterBreastSize'];
+  characterPenisSize: AppSession['characterPenisSize'];
+  characterEquipped: CharacterEquipped;
+  avatarUrl: string | null;
+  bio: string;
+  bannerId: string;
+  ownedBannerIds: string[];
 }
 
+const PROFILE_SELECT_SOCIAL =
+  'username, role, patreon_tier, patreon_status, patreon_user_id, character_gender, character_breast_size, character_penis_size, character_equipped, avatar_url, bio, banner_id, owned_banner_ids';
+const PROFILE_SELECT_WITH_CHARACTER =
+  'username, role, patreon_tier, patreon_status, patreon_user_id, character_gender, character_breast_size, character_penis_size, character_equipped';
 const PROFILE_SELECT_WITH_PATREON =
   'username, role, patreon_tier, patreon_status, patreon_user_id';
 const PROFILE_SELECT_BASE = 'username, role';
@@ -36,6 +56,14 @@ type ProfileRow = {
   patreon_tier?: PatreonMemberTier | null;
   patreon_status?: PatreonStatus | null;
   patreon_user_id?: string | null;
+  character_gender?: string | null;
+  character_breast_size?: string | null;
+  character_penis_size?: string | null;
+  character_equipped?: unknown;
+  avatar_url?: string | null;
+  bio?: string | null;
+  banner_id?: string | null;
+  owned_banner_ids?: unknown;
 };
 
 /** Map username to internal email for legacy-style usernames. */
@@ -101,6 +129,14 @@ function profileRowToSession(
     patreonTier: row.patreon_tier ?? null,
     patreonStatus: row.patreon_status ?? 'none',
     patreonUserId: row.patreon_user_id ?? null,
+    characterGender: parseCharacterGender(row.character_gender),
+    characterBreastSize: parseCharacterBodySize(row.character_breast_size),
+    characterPenisSize: parseCharacterBodySize(row.character_penis_size),
+    characterEquipped: parseEquipped(row.character_equipped),
+    avatarUrl: row.avatar_url?.trim() || null,
+    bio: row.bio ?? '',
+    bannerId: row.banner_id?.trim() || DEFAULT_BANNER_ID,
+    ownedBannerIds: parseOwnedBannerIds(row.owned_banner_ids),
   };
 }
 
@@ -110,29 +146,31 @@ async function fetchProfileRow(
   const supabase = getSupabase();
   if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
 
-  const full = await supabase
-    .from('profiles')
-    .select(PROFILE_SELECT_WITH_PATREON)
-    .eq('id', userId)
-    .maybeSingle();
+  const selects = [
+    PROFILE_SELECT_SOCIAL,
+    PROFILE_SELECT_WITH_CHARACTER,
+    PROFILE_SELECT_WITH_PATREON,
+    PROFILE_SELECT_BASE,
+  ];
 
-  if (!full.error && full.data) {
-    return { ok: true, row: full.data as ProfileRow };
-  }
-
-  if (full.error && isSupabaseColumnMissingError(full.error)) {
-    const base = await supabase
+  let lastError: string | null = null;
+  for (const columns of selects) {
+    const result = await supabase
       .from('profiles')
-      .select(PROFILE_SELECT_BASE)
+      .select(columns)
       .eq('id', userId)
       .maybeSingle();
-    if (base.error) return { ok: false, error: base.error.message };
-    if (!base.data) return { ok: false, error: 'Profile not found.' };
-    return { ok: true, row: base.data as ProfileRow };
+
+    if (!result.error && result.data) {
+      return { ok: true, row: result.data as ProfileRow };
+    }
+    if (result.error && !isSupabaseColumnMissingError(result.error)) {
+      return { ok: false, error: result.error.message };
+    }
+    lastError = result.error?.message ?? 'Profile not found.';
   }
 
-  if (full.error) return { ok: false, error: full.error.message };
-  return { ok: false, error: 'Profile not found.' };
+  return { ok: false, error: lastError ?? 'Profile not found.' };
 }
 
 export async function getCurrentSession(): Promise<AuthSession | null> {
@@ -161,6 +199,14 @@ export function sessionToApp(session: AuthSession): AppSession {
     patreonTier: session.patreonTier,
     patreonStatus: session.patreonStatus,
     patreonUserId: session.patreonUserId,
+    characterGender: session.characterGender,
+    characterBreastSize: session.characterBreastSize,
+    characterPenisSize: session.characterPenisSize,
+    characterEquipped: session.characterEquipped ?? emptyEquipped(),
+    avatarUrl: session.avatarUrl ?? null,
+    bio: session.bio ?? '',
+    bannerId: session.bannerId || DEFAULT_BANNER_ID,
+    ownedBannerIds: session.ownedBannerIds ?? parseOwnedBannerIds(null),
   };
 }
 

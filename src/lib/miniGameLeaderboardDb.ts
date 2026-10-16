@@ -5,7 +5,7 @@ export type MiniGameType = 'flash_cards' | 'follow_instinct';
 const MIGRATION_HINT =
   'Mini-game leaderboards are not set up yet. In Supabase SQL Editor, run supabase/migrations/046_mini_game_leaderboard.sql, then retry.';
 
-const LEADERBOARD_LIMIT = 20;
+const LEADERBOARD_LIMIT = 13;
 
 export interface MiniGameLeaderboardEntry {
   rank: number;

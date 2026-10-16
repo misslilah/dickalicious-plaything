@@ -64,6 +64,10 @@ export function Dashboard() {
   const plan = getTodayPlan(state);
   const stats = homePlanCompletionStats(state, plan, session?.userId ?? null);
   const malus = state.progress.malusPoints;
+  const tutorialCategoryId =
+    CATEGORY_GROUP_ORDER.map((group) =>
+      state.categories.find((cat) => getCategoryGroup(cat) === group),
+    ).find((cat) => cat != null)?.id ?? null;
 
   const taskCountByCategory = (categoryId: string) =>
     state.tasks.filter(
@@ -124,24 +128,27 @@ export function Dashboard() {
   return (
     <div className="page page--home">
       <section className="home-stats card card--hero">
-        <XpBar
-          totalXp={progress.totalXp}
-          currentLevel={progress.currentLevel}
-          levelName={formatLevelDisplay(progress.currentLevel)}
-        />
+        <div data-tutorial="home-xp">
+          <p className="home-hero__kicker">Train. Obey. Level up.</p>
+          <XpBar
+            totalXp={progress.totalXp}
+            currentLevel={progress.currentLevel}
+            levelName={formatLevelDisplay(progress.currentLevel)}
+          />
+        </div>
         <div className="home-stats__row">
-          <span className="home-stats__chip">
+          <span className="home-stats__chip home-stats__chip--streak">
             🔥 {progress.streak}d streak
           </span>
-          <span className="home-stats__chip">
+          <span className="home-stats__chip home-stats__chip--points">
             ⭐ {progress.points} pts
           </span>
           {plan && stats.total > 0 && (
-            <span className="home-stats__chip">
+            <span className="home-stats__chip home-stats__chip--today">
               ✓ {stats.completed}/{stats.total} today
             </span>
           )}
-          <span className="home-stats__chip">
+          <span className="home-stats__chip home-stats__chip--joined">
             📂 {state.joinedCategoryIds.length}/{MAX_ACTIVE_CATEGORY_JOINS} joined
           </span>
         </div>
@@ -345,7 +352,7 @@ export function Dashboard() {
       )}
 
       {state.categories.length === 0 ? (
-        <section className="card">
+        <section className="card" data-tutorial="category-card">
           <h2 className="section-title">Categories</h2>
           <p className="muted">
             No categories yet. An admin can create categories from the admin panel.
@@ -416,6 +423,9 @@ export function Dashboard() {
                         isAdmin ? undefined : () => void handleJoin(cat.id)
                       }
                       joining={joiningId === cat.id}
+                      tutorialTarget={
+                        cat.id === tutorialCategoryId ? 'category-card' : undefined
+                      }
                     />
                   );
                 })}

@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { CategoryImagePicker } from '../components/CategoryImagePicker';
 import { CategoryTaskDetailModal } from '../components/CategoryTaskDetailModal';
-import { TaskListRow } from '../components/TaskListRow';
+import { CategoryTaskPathCard } from '../components/CategoryTaskPathCard';
 import {
   emptyTaskMediaPickerValue,
   TaskMediaPicker,
@@ -12,7 +12,6 @@ import { useAppStore } from '../hooks/useAppStore';
 import {
   areRegularCategoryTasksComplete,
   canJoinCategory,
-  getCategoryCompletionStats,
   getCategoryTaskBlockReason,
   getCategoryUnlockBlockReason,
   getExamCategoryTasks,
@@ -21,6 +20,7 @@ import {
   getRegularCategoryTasks,
   isCategoryFullyComplete,
   isCategoryTaskAvailable,
+  isCategoryTaskEverCompleted,
   isCategoryUnlocked,
   sortCategoryTasks,
 } from '../lib/categoryProgression';
@@ -48,14 +48,6 @@ import {
   fetchAdminProfiles,
   type AdminProfileRow,
 } from '../lib/profileDb';
-
-const STAGE_GROUP_ORDER: TaskUserStage[] = [
-  'beginner',
-  'intermediate',
-  'trained',
-  'mindless',
-  'any',
-];
 
 function newId(prefix: string): string {
   return `${prefix}-${Date.now()}`;
@@ -98,9 +90,6 @@ export function CategoryDetail() {
   const joinBlocked = category != null && !isMember && !joinGate.ok;
   const categoryLocked =
     category != null && !isAdmin && !isCategoryUnlocked(state, category);
-  const completion = category
-    ? getCategoryCompletionStats(state, category.id)
-    : { completed: 0, total: 0, percent: 0 };
   const categoryComplete =
     category != null && isCategoryFullyComplete(state, category.id);
 
@@ -128,31 +117,60 @@ export function CategoryDetail() {
     [regularTasks, examTasks],
   );
 
-  const groupedRegular = useMemo(() => {
-    const map = new Map<TaskUserStage, Task[]>();
-    for (const t of regularTasks) {
-      const key = t.userStage ?? 'any';
-      const list = map.get(key) ?? [];
-      list.push(t);
-      map.set(key, list);
-    }
-    return STAGE_GROUP_ORDER.filter((stage) => map.has(stage)).map(
-      (stage) => [stage, map.get(stage)!] as const,
-    );
-  }, [regularTasks]);
+  const oneTimeRegular = useMemo(
+    () => regularTasks.filter((t) => !isRecurringCategoryTask(t)),
+    [regularTasks],
+  );
 
-  const groupedExam = useMemo(() => {
-    const map = new Map<TaskUserStage, Task[]>();
-    for (const t of examTasks) {
-      const key = t.userStage ?? 'any';
-      const list = map.get(key) ?? [];
-      list.push(t);
-      map.set(key, list);
-    }
-    return STAGE_GROUP_ORDER.filter((stage) => map.has(stage)).map(
-      (stage) => [stage, map.get(stage)!] as const,
+  const recurringRegular = useMemo(
+    () => regularTasks.filter((t) => isRecurringCategoryTask(t)),
+    [regularTasks],
+  );
+
+  const trainingStats = useMemo(() => {
+    const total = regularTasks.length;
+    const completed = regularTasks.filter((t) =>
+      isCategoryTaskEverCompleted(state, t.id),
+    ).length;
+    return {
+      completed,
+      total,
+      percent: total === 0 ? 0 : Math.round((completed / total) * 100),
+    };
+  }, [regularTasks, state]);
+
+  const examStats = useMemo(() => {
+    const total = examTasks.length;
+    const completed = examTasks.filter((t) =>
+      isCategoryTaskEverCompleted(state, t.id),
+    ).length;
+    return {
+      completed,
+      total,
+      percent: total === 0 ? 0 : Math.round((completed / total) * 100),
+    };
+  }, [examTasks, state]);
+
+  const recurringChapterTitle = useMemo(() => {
+    const hasDaily = recurringRegular.some((t) => t.recurrence === 'daily');
+    const hasWeekly = recurringRegular.some((t) => t.recurrence === 'weekly');
+    if (hasDaily && hasWeekly) return 'Do today / This week';
+    if (hasWeekly) return 'This week';
+    return 'Do today';
+  }, [recurringRegular]);
+
+  const nextTrainingTaskId = useMemo(() => {
+    if (!categoryId) return null;
+    return (
+      oneTimeRegular.find((task) => {
+        const done = isCategoryTaskEverCompleted(state, task.id);
+        if (done) return false;
+        const available =
+          isAdmin || isCategoryTaskAvailable(state, task, categoryId);
+        return available;
+      })?.id ?? null
     );
-  }, [examTasks]);
+  }, [oneTimeRegular, state, categoryId, isAdmin]);
 
   const [imageUrlInput, setImageUrlInput] = useState(
     () => category?.imageUrl?.startsWith('http') ? category.imageUrl : '',
@@ -227,7 +245,17 @@ export function CategoryDetail() {
     );
   }
 
-  const renderTaskRow = (task: Task) => {
+  const firstTutorialCardId =
+    oneTimeRegular[0]?.id ?? recurringRegular[0]?.id ?? examTasks[0]?.id ?? null;
+
+  const renderPathCard = (
+    task: Task,
+    options: {
+      stepNumber?: number;
+      variant?: 'path' | 'recurring' | 'exam';
+      isNext?: boolean;
+    } = {},
+  ) => {
     const available =
       isAdmin ||
       !categoryId ||
@@ -245,10 +273,19 @@ export function CategoryDetail() {
     const recurrenceStatus = recurring
       ? getRecurringTaskStatusLabel(state, task)
       : null;
+    const variant = options.variant ?? (task.isExamTask ? 'exam' : 'path');
+    const isNext =
+      options.isNext ??
+      (variant === 'recurring'
+        ? !pendingAccept &&
+          getCategoryTaskStatus(state, task.id) !== 'done' &&
+          available
+        : task.id === nextTrainingTaskId);
     return (
-      <TaskListRow
+      <CategoryTaskPathCard
         task={task}
-        categoryId={category.id}
+        category={category}
+        stepNumber={options.stepNumber}
         status={getCategoryTaskStatus(state, task.id)}
         dailyLimitBlocked={atDailyTaskLimit && !pendingAccept}
         dailyLimitMessage={dailyTaskLimitMessage}
@@ -256,6 +293,12 @@ export function CategoryDetail() {
         lockReason={lockReason}
         pendingAccept={pendingAccept}
         recurrenceStatus={recurrenceStatus}
+        prerequisiteLabel={getPrerequisiteTaskLabel(task, state.tasks)}
+        isNext={Boolean(isNext)}
+        variant={variant}
+        tutorialTarget={
+          task.id === firstTutorialCardId ? 'training-path-card' : undefined
+        }
         onOpen={
           isMember && !categoryLocked
             ? () => setSelectedTaskId(task.id)
@@ -264,6 +307,33 @@ export function CategoryDetail() {
       />
     );
   };
+
+  const renderTrainingPath = (tasks: Task[], variant: 'path' | 'exam') => (
+    <ol
+      className="category-task-path"
+      style={{ '--cat-color': category.color } as CSSProperties}
+    >
+      {tasks.map((task, index) => (
+        <li key={task.id} className="category-task-path__item">
+          {renderPathCard(task, {
+            stepNumber: index + 1,
+            variant,
+            isNext:
+              variant === 'path'
+                ? task.id === nextTrainingTaskId
+                : examUnlocked &&
+                  !isCategoryTaskEverCompleted(state, task.id) &&
+                  (isAdmin ||
+                    !categoryId ||
+                    isCategoryTaskAvailable(state, task, categoryId)) &&
+                  tasks
+                    .slice(0, index)
+                    .every((t) => isCategoryTaskEverCompleted(state, t.id)),
+          })}
+        </li>
+      ))}
+    </ol>
+  );
 
   const handleJoin = async () => {
     if (!categoryId) return;
@@ -415,6 +485,7 @@ export function CategoryDetail() {
         sortOrder: 0,
         prerequisiteTaskId: null,
         isExamTask: false,
+        recurrence: 'none',
       });
     }
     setTaskMessage('Task deleted.');
@@ -458,24 +529,70 @@ export function CategoryDetail() {
               Join requirement: {getStageLabel(category.requiredStage)}
             </p>
           )}
-          {completion.total > 0 && (
-            <div className="category-detail__completion">
-              <div
-                className="category-detail__progress-bar"
-                role="progressbar"
-                aria-valuenow={completion.percent}
-                aria-valuemin={0}
-                aria-valuemax={100}
-              >
-                <span
-                  className="category-detail__progress-fill"
-                  style={{ width: `${completion.percent}%` }}
-                />
-              </div>
-              <p className="muted">
-                {completion.percent}% complete ({completion.completed}/
-                {completion.total} tasks)
-              </p>
+          {(trainingStats.total > 0 || examStats.total > 0) && (
+            <div className="category-path-progress">
+              {trainingStats.total > 0 && (
+                <div className="category-path-progress__row">
+                  <div className="category-path-progress__label">
+                    <span className="category-path-progress__name">
+                      Training {trainingStats.completed}/{trainingStats.total}
+                    </span>
+                    <span className="category-path-progress__count">
+                      {trainingStats.percent}%
+                    </span>
+                  </div>
+                  <div
+                    className="category-path-progress__bar"
+                    role="progressbar"
+                    aria-label={`Training ${trainingStats.completed} of ${trainingStats.total}`}
+                    aria-valuenow={trainingStats.percent}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                  >
+                    <span
+                      className="category-path-progress__fill"
+                      style={{ width: `${trainingStats.percent}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+              {examStats.total > 0 && (
+                <div className="category-path-progress__row">
+                  <div className="category-path-progress__label">
+                    <span className="category-path-progress__name">
+                      {!examUnlocked
+                        ? 'Exam locked'
+                        : examStats.completed >= examStats.total
+                          ? 'Exam complete'
+                          : `Exam ${examStats.completed}/${examStats.total}`}
+                    </span>
+                    <span className="category-path-progress__count">
+                      {examUnlocked
+                        ? `${examStats.percent}%`
+                        : 'Finish training first'}
+                    </span>
+                  </div>
+                  <div
+                    className="category-path-progress__bar"
+                    role="progressbar"
+                    aria-label={
+                      examUnlocked
+                        ? `Exam ${examStats.completed} of ${examStats.total}`
+                        : 'Exam locked'
+                    }
+                    aria-valuenow={examUnlocked ? examStats.percent : 0}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                  >
+                    <span
+                      className={`category-path-progress__fill category-path-progress__fill--exam${examUnlocked ? '' : ' category-path-progress__fill--locked'}`}
+                      style={{
+                        width: `${examUnlocked ? examStats.percent : 0}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {categoryLimitLabel && isMember && (
@@ -520,6 +637,7 @@ export function CategoryDetail() {
               <button
                 type="button"
                 className="btn btn--primary btn--block"
+                data-tutorial="category-join"
                 disabled={joining}
                 onClick={() => void handleJoin()}
               >
@@ -536,6 +654,7 @@ export function CategoryDetail() {
           <button
             type="button"
             className="btn btn--ghost btn--small"
+            data-tutorial="category-leave"
             disabled={leaving}
             onClick={() => void handleLeave()}
           >
@@ -553,7 +672,7 @@ export function CategoryDetail() {
       )}
 
       {isMember && !categoryLocked ? (
-        groupedRegular.length === 0 && examTasks.length === 0 ? (
+        regularTasks.length === 0 && examTasks.length === 0 ? (
           <section className="card">
             <p className="muted">
               No tasks in this category yet.
@@ -562,51 +681,67 @@ export function CategoryDetail() {
           </section>
         ) : (
           <>
-            {groupedRegular.map(([stage, tasks]) => (
-              <section key={stage} className="library-section">
-                <h3 className="library-level">{getStageLabel(stage)}</h3>
-                <ul className="task-list">
-                  {tasks.map((task) => (
-                    <li key={task.id}>
-                      {renderTaskRow(task)}
-                      {(task.malusPointsOnFail ?? 0) > 0 && (
-                        <p className="muted task-malus-hint">
-                          +{task.malusPointsOnFail} malus if started and not completed today
-                        </p>
-                      )}
-                    </li>
+            {recurringRegular.length > 0 && (
+              <section
+                className="category-chapter category-chapter--recurring"
+                data-tutorial="do-today"
+              >
+                <div className="category-chapter__head">
+                  <h3 className="category-chapter__title">{recurringChapterTitle}</h3>
+                  <p className="category-chapter__hint muted">
+                    Recurring tasks stay on your path until the category is complete.
+                  </p>
+                </div>
+                <div className="category-recurring-strip">
+                  {recurringRegular.map((task) => (
+                    <div key={task.id}>
+                      {renderPathCard(task, { variant: 'recurring' })}
+                    </div>
                   ))}
-                </ul>
+                </div>
               </section>
-            ))}
+            )}
+
+            {oneTimeRegular.length > 0 && (
+              <section
+                className="category-chapter category-chapter--training"
+                data-tutorial="training-path"
+              >
+                <div className="category-chapter__head">
+                  <h3 className="category-chapter__title">Training path</h3>
+                  <p className="category-chapter__hint muted">
+                    Follow the steps in order
+                  </p>
+                </div>
+                {renderTrainingPath(oneTimeRegular, 'path')}
+              </section>
+            )}
 
             {examTasks.length > 0 && (
-              <section className="library-section library-section--exam">
-                <h3 className="library-level">Exam mode</h3>
-                {!examUnlocked && !isAdmin ? (
+              <section
+                className="category-chapter category-chapter--exam"
+                data-tutorial="exam-chapter"
+              >
+                <div className="category-chapter__head">
+                  <h3 className="category-chapter__title">Exam</h3>
+                  {categoryComplete ? (
+                    <span className="tag tag--ok">Completed</span>
+                  ) : examUnlocked ? (
+                    <p className="category-chapter__hint muted">
+                      {examStats.completed}/{examStats.total} complete
+                    </p>
+                  ) : (
+                    <p className="category-chapter__hint muted">
+                      Locked until training is finished
+                    </p>
+                  )}
+                </div>
+                {!examUnlocked && !isAdmin && (
                   <p className="muted">
                     Complete all regular tasks to unlock exam tasks.
                   </p>
-                ) : groupedExam.length === 0 ? (
-                  <p className="muted">No exam tasks in this section.</p>
-                ) : (
-                  groupedExam.map(([stage, tasks]) => (
-                    <div key={`exam-${stage}`}>
-                      {groupedExam.length > 1 && (
-                        <h4 className="library-level library-level--sub">
-                          {getStageLabel(stage)}
-                        </h4>
-                      )}
-                      <ul className="task-list">
-                        {tasks.map((task) => (
-                          <li key={task.id}>
-                            {renderTaskRow(task)}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))
                 )}
+                {renderTrainingPath(examTasks, 'exam')}
               </section>
             )}
           </>
@@ -788,7 +923,7 @@ export function CategoryDetail() {
                 min={0}
                 aria-label="Points reward"
                 placeholder="Points reward (shop)"
-                title="Earned when task is completed; spend in Rewards shop"
+                title="Earned when task is completed; spend in the Shop"
                 value={taskDraft.pointsReward ?? 0}
                 onChange={(e) =>
                   setTaskDraft({ ...taskDraft, pointsReward: Number(e.target.value) })
@@ -1062,26 +1197,6 @@ export function CategoryDetail() {
             </button>
           </section>
 
-          {groupedRegular.map(([stage, tasks]) => (
-            <section key={`admin-preview-${stage}`} className="library-section">
-              <h3 className="library-level">{getStageLabel(stage)} (preview)</h3>
-              <ul className="task-list">
-                {tasks.map((task) => (
-                  <li key={task.id}>{renderTaskRow(task)}</li>
-                ))}
-              </ul>
-            </section>
-          ))}
-          {examTasks.length > 0 && (
-            <section className="library-section library-section--exam">
-              <h3 className="library-level">Exam mode (preview)</h3>
-              <ul className="task-list">
-                {examTasks.map((task) => (
-                  <li key={task.id}>{renderTaskRow(task)}</li>
-                ))}
-              </ul>
-            </section>
-          )}
         </>
       )}
       {selectedTask && categoryId && (

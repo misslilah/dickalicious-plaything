@@ -10,7 +10,7 @@ export function XpBar({ totalXp, currentLevel, levelName }: XpBarProps) {
   const { current, max, percent } = xpProgressInLevel(totalXp, currentLevel);
 
   return (
-    <div className="xp-bar">
+    <div className="xp-bar" data-xp-bar>
       <div className="xp-bar__header">
         <span className="xp-bar__level">{levelName}</span>
         <span className="xp-bar__xp">

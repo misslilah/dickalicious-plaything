@@ -80,6 +80,7 @@ import {
 import { todayKey } from '../lib/dates';
 import {
   acceptPunishment,
+  addBonusPoints,
   addVideoXp,
   applyPunishmentCompletionFromServer,
   applyTaskMalus,
@@ -232,6 +233,8 @@ interface AppStoreValue {
   ) => Promise<void>;
   /** Adds XP immediately (e.g. mini-game streak rewards). */
   awardBonusXp: (amount: number) => void;
+  /** Adds points immediately (admin debug grant). */
+  awardBonusPoints: (amount: number) => void;
   joinCategory: (categoryId: string) => Promise<MutateResult>;
   leaveCategory: (categoryId: string) => Promise<MutateResult>;
   acceptRecurringCategoryTask: (taskId: string) => Promise<MutateResult>;
@@ -1039,6 +1042,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
           return;
         }
         applyUserState(addVideoXp(state, amount));
+      },
+      awardBonusPoints: (amount) => {
+        if (amount <= 0) return;
+        if (previewActive) {
+          commitSandboxState(addBonusPoints(working, amount));
+          return;
+        }
+        applyUserState(addBonusPoints(state, amount));
       },
       joinCategory: async (categoryId) => {
         const userId = userIdRef.current;

@@ -3,13 +3,25 @@ import { AdminMessageListener } from './AdminMessageListener';
 import { LockCardOverlay } from './LockCardOverlay';
 import { AudioPlaylistBubble } from './AudioPlaylistBubble';
 import { CommunityChatBubble } from './CommunityChatBubble';
+import { CategoryTutorial } from './CategoryTutorial';
+import { SiteTutorial } from './SiteTutorial';
+import { VideosTutorial } from './VideosTutorial';
 import { PatreonBubble } from './PatreonBubble';
 import { ThroneBubble } from './ThroneBubble';
+import { CommunityChatProvider } from '../contexts/CommunityChatProvider';
+import { needsCharacterSetup } from '../lib/characterSprite';
 import { useAppStore } from '../hooks/useAppStore';
 
 export function ProtectedRoute() {
-  const { session, authReady, dataLoading, dataError, refresh, logout } =
-    useAppStore();
+  const {
+    session,
+    authReady,
+    dataLoading,
+    dataError,
+    refresh,
+    logout,
+    adminUserPreview,
+  } = useAppStore();
   const location = useLocation();
 
   if (!authReady || (session && dataLoading)) {
@@ -22,6 +34,13 @@ export function ProtectedRoute() {
 
   if (!session) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  }
+
+  if (
+    needsCharacterSetup(session, adminUserPreview) &&
+    location.pathname !== '/character'
+  ) {
+    return <Navigate to="/character" replace />;
   }
 
   if (dataError) {
@@ -61,14 +80,17 @@ export function ProtectedRoute() {
   }
 
   return (
-    <>
+    <CommunityChatProvider>
       <AdminMessageListener />
       <LockCardOverlay />
       <AudioPlaylistBubble />
       <CommunityChatBubble />
+      <SiteTutorial />
+      <CategoryTutorial />
+      <VideosTutorial />
       <ThroneBubble />
       <PatreonBubble />
       <Outlet />
-    </>
+    </CommunityChatProvider>
   );
 }

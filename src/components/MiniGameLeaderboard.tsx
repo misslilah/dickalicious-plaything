@@ -7,6 +7,15 @@ import {
   type MiniGameType,
 } from '../lib/miniGameLeaderboardDb';
 
+const PODIUM_SIZE = 3;
+const FOLLOWER_SIZE = 10;
+
+const PODIUM_SLOTS = [
+  { place: 2 as const, trophy: '🥈', label: 'Silver' },
+  { place: 1 as const, trophy: '🥇', label: 'Gold' },
+  { place: 3 as const, trophy: '🥉', label: 'Bronze' },
+];
+
 interface MiniGameLeaderboardProps {
   gameType: MiniGameType;
   gameId: string;
@@ -14,6 +23,48 @@ interface MiniGameLeaderboardProps {
   userId: string | null;
   isAdmin?: boolean;
   refreshKey?: number;
+}
+
+function MiniGamePodiumPlace({
+  entry,
+  place,
+  trophy,
+  label,
+  isYou,
+}: {
+  entry: MiniGameLeaderboardEntry | undefined;
+  place: 1 | 2 | 3;
+  trophy: string;
+  label: string;
+  isYou: boolean;
+}) {
+  return (
+    <li
+      className={[
+        'mini-game-leaderboard__podium-place',
+        `mini-game-leaderboard__podium-place--${place}`,
+        isYou ? 'mini-game-leaderboard__podium-place--you' : '',
+        !entry ? 'mini-game-leaderboard__podium-place--empty' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      <span className="mini-game-leaderboard__trophy" aria-hidden="true">
+        {trophy}
+      </span>
+      <span className="mini-game-leaderboard__podium-medal">{label}</span>
+      {entry ? (
+        <>
+          <span className="visually-hidden">Rank {entry.rank}</span>
+          <span className="mini-game-leaderboard__podium-name">{entry.username}</span>
+          <span className="mini-game-leaderboard__podium-score">{entry.bestStreak}</span>
+          {isYou && <span className="mini-game-leaderboard__you-badge">You</span>}
+        </>
+      ) : (
+        <span className="mini-game-leaderboard__podium-empty muted">Open</span>
+      )}
+    </li>
+  );
 }
 
 export function MiniGameLeaderboard({
@@ -82,10 +133,12 @@ export function MiniGameLeaderboard({
     })();
   }, [gameId, gameType, resetBusy, title]);
 
-  const userInTop =
+  const podiumEntries = entries.slice(0, PODIUM_SIZE);
+  const followerEntries = entries.slice(PODIUM_SIZE, PODIUM_SIZE + FOLLOWER_SIZE);
+  const userOnBoard =
     userId != null && entries.some((entry) => entry.userId === userId);
   const showOutsideRank =
-    userRank != null && !userInTop && userRank.bestStreak > 0;
+    userRank != null && !userOnBoard && userRank.bestStreak > 0;
 
   return (
     <article className="mini-game-leaderboard">
@@ -138,30 +191,57 @@ export function MiniGameLeaderboard({
       )}
 
       {!loading && !error && entries.length > 0 && (
-        <ol className="mini-game-leaderboard__list">
-          {entries.map((entry) => (
-            <li
-              key={entry.userId}
-              className={[
-                'mini-game-leaderboard__row',
-                entry.userId === userId ? 'mini-game-leaderboard__row--you' : '',
-              ]
-                .filter(Boolean)
-                .join(' ')}
-            >
-              <span className="mini-game-leaderboard__rank">#{entry.rank}</span>
-              <span className="mini-game-leaderboard__name">{entry.username}</span>
-              <span className="mini-game-leaderboard__score">{entry.bestStreak}</span>
-            </li>
-          ))}
-        </ol>
+        <>
+          <ol className="mini-game-leaderboard__podium" aria-label="Podium">
+            {PODIUM_SLOTS.map((slot) => {
+              const entry = podiumEntries.find((item) => item.rank === slot.place);
+              return (
+                <MiniGamePodiumPlace
+                  key={slot.place}
+                  entry={entry}
+                  place={slot.place}
+                  trophy={slot.trophy}
+                  label={slot.label}
+                  isYou={entry != null && entry.userId === userId}
+                />
+              );
+            })}
+          </ol>
+
+          {followerEntries.length > 0 && (
+            <>
+              <p className="mini-game-leaderboard__list-kicker">Next 10</p>
+              <ol className="mini-game-leaderboard__list" start={PODIUM_SIZE + 1}>
+                {followerEntries.map((entry) => (
+                  <li
+                    key={entry.userId}
+                    className={[
+                      'mini-game-leaderboard__row',
+                      entry.userId === userId ? 'mini-game-leaderboard__row--you' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                  >
+                    <span className="mini-game-leaderboard__rank">#{entry.rank}</span>
+                    <span className="mini-game-leaderboard__name">{entry.username}</span>
+                    <span className="mini-game-leaderboard__score">{entry.bestStreak}</span>
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
+        </>
       )}
 
-      {showOutsideRank && (
-        <p className="mini-game-leaderboard__you">
-          Your rank: <strong>#{userRank.rank}</strong> — best streak{' '}
-          <strong>{userRank.bestStreak}</strong>
-        </p>
+      {showOutsideRank && userRank && (
+        <div
+          className="mini-game-leaderboard__you mini-game-leaderboard__row mini-game-leaderboard__row--you"
+          role="status"
+        >
+          <span className="mini-game-leaderboard__rank">#{userRank.rank}</span>
+          <span className="mini-game-leaderboard__name">Your rank</span>
+          <span className="mini-game-leaderboard__score">{userRank.bestStreak}</span>
+        </div>
       )}
     </article>
   );

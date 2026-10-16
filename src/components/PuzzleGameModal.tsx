@@ -1,7 +1,12 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { DailyGameAttemptStatus } from '../lib/dailyGameAttempts';
 import type { PuzzleSessionQuitHandler } from './PuzzleSessionPlayer';
 import { fetchActivePuzzleGames, type PuzzleGame } from '../lib/puzzleGames';
+import {
+  GameWindowCelebration,
+  useGameWindowCelebration,
+} from './FocusTrainingCelebration';
 
 const PuzzleSessionPlayerLazy = lazy(() =>
   import('./PuzzleSessionPlayer').then((m) => ({
@@ -22,6 +27,7 @@ export function PuzzleGameModal({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [quitHandler, setQuitHandler] = useState<PuzzleSessionQuitHandler | null>(null);
+  const { panelRef, playId, celebrating, triggerSuccess } = useGameWindowCelebration();
 
   const handleClose = useCallback(() => {
     quitHandler?.();
@@ -68,7 +74,7 @@ export function PuzzleGameModal({
     };
   }, []);
 
-  return (
+  return createPortal(
     <div
       className="flash-word-game-modal puzzle-game-modal"
       role="dialog"
@@ -76,7 +82,16 @@ export function PuzzleGameModal({
       aria-labelledby="puzzle-game-modal-title"
     >
       <div className="flash-word-game-modal__backdrop" aria-hidden="true" />
-      <div className="flash-word-game-modal__panel puzzle-game-modal__panel">
+      <div
+        className={[
+          'flash-word-game-modal__panel',
+          'puzzle-game-modal__panel',
+          celebrating ? 'flash-word-game-modal__panel--celebrate' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        ref={panelRef}
+      >
         <header className="flash-word-game-modal__header">
           <div className="flash-word-game-modal__heading">
             <h2 id="puzzle-game-modal-title">Puzzle</h2>
@@ -111,11 +126,14 @@ export function PuzzleGameModal({
                 puzzles={puzzles}
                 onRegisterQuitHandler={setQuitHandler}
                 onAttemptStatusChange={onAttemptStatusChange}
+                onPuzzleSolved={triggerSuccess}
               />
             </Suspense>
           )}
         </div>
+        <GameWindowCelebration playId={playId} panelRef={panelRef} />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

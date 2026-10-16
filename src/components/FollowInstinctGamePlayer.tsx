@@ -142,12 +142,15 @@ interface FollowInstinctGamePlayerProps {
   /** Called on mount with quit handler; modal should invoke before closing. */
   onRegisterQuitHandler?: (handler: FollowInstinctGameQuitHandler | null) => void;
   onAttemptStatusChange?: (status: DailyGameAttemptStatus) => void;
+  /** Fired once when a round is judged successful (not on fail or timeout). */
+  onRoundSuccess?: () => void;
 }
 
 export function FollowInstinctGamePlayer({
   game,
   onRegisterQuitHandler,
   onAttemptStatusChange,
+  onRoundSuccess,
 }: FollowInstinctGamePlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const landmarkerRef = useRef<FaceLandmarker | null>(null);
@@ -529,6 +532,7 @@ export function FollowInstinctGamePlayer({
     clearCommandTimer();
     setDetecting(false);
     setFeedback('success');
+    onRoundSuccess?.();
     setStreak((value) => {
       const next = value + 1;
       streakRef.current = next;
@@ -536,7 +540,7 @@ export function FollowInstinctGamePlayer({
       return next;
     });
     scheduleAdvance(roundIndex, SUCCESS_ADVANCE_MS);
-  }, [clearCommandTimer, recordStreak, roundIndex, scheduleAdvance]);
+  }, [clearCommandTimer, onRoundSuccess, recordStreak, roundIndex, scheduleAdvance]);
 
   useEffect(() => {
     if (!orderRevealed || !activeRound || feedback !== 'idle' || sessionDone) {

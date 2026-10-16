@@ -26,12 +26,15 @@ interface PuzzleSessionPlayerProps {
   puzzles: PuzzleGame[];
   onRegisterQuitHandler?: (handler: PuzzleSessionQuitHandler | null) => void;
   onAttemptStatusChange?: (status: DailyGameAttemptStatus) => void;
+  /** Fired once when the current puzzle is solved. */
+  onPuzzleSolved?: () => void;
 }
 
 export function PuzzleSessionPlayer({
   puzzles,
   onRegisterQuitHandler,
   onAttemptStatusChange,
+  onPuzzleSolved,
 }: PuzzleSessionPlayerProps) {
   const { isEffectiveAdmin } = useAppStore();
   const isAdmin = isEffectiveAdmin;
@@ -74,6 +77,7 @@ export function PuzzleSessionPlayer({
       setLastMoveCount(moveCount);
       setLastSolveTimeMs(solveTimeMs);
       setPhase('complete');
+      onPuzzleSolved?.();
       void (async () => {
         const result = await upsertPuzzleBestTime(currentPuzzle.id, solveTimeMs);
         if (result.ok) {
@@ -81,7 +85,7 @@ export function PuzzleSessionPlayer({
         }
       })();
     },
-    [currentPuzzle, loadBestSolver],
+    [currentPuzzle, loadBestSolver, onPuzzleSolved],
   );
 
   const handleNextRandom = useCallback(() => {

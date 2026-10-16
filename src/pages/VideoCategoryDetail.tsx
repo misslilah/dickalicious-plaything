@@ -58,7 +58,7 @@ function VideoPlayModePicker({
   const showXpHint = (xpReward ?? 0) > 0;
 
   return (
-    <div className="video-play-mode">
+    <div className="video-play-mode" data-tutorial="videos-play">
       <p className="muted">How do you want to watch?</p>
       <div className="video-play-mode__actions">
         <button type="button" className="btn btn--primary" onClick={onNormal}>
@@ -352,7 +352,7 @@ export function VideoCategoryDetail() {
             </section>
           )}
 
-          <section>
+          <section data-tutorial="videos-play">
             <h3 className="section-title">All videos</h3>
             <div className="video-list">
               {videos.map((v) => {

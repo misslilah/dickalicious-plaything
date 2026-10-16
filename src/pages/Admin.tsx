@@ -1431,6 +1431,98 @@ function RewardCatalogAdmin() {
   return <AdminSection list={list} form={form} />;
 }
 
+function parseGrantAmount(raw: string): number | null {
+  const amount = Number.parseInt(raw.trim(), 10);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return amount;
+}
+
+function DebugGrantAdmin() {
+  const { awardBonusXp, awardBonusPoints, isEffectiveAdmin, state } = useAppStore();
+  const [xpAmount, setXpAmount] = useState('50');
+  const [pointsAmount, setPointsAmount] = useState('100');
+  const [status, setStatus] = useState('');
+  const [error, setError] = useState('');
+
+  if (!isEffectiveAdmin) return null;
+
+  const grantXp = () => {
+    setError('');
+    setStatus('');
+    const amount = parseGrantAmount(xpAmount);
+    if (amount == null) {
+      setError('Enter a positive XP amount.');
+      return;
+    }
+    awardBonusXp(amount);
+    setStatus(`Granted ${amount} XP.`);
+  };
+
+  const grantPoints = () => {
+    setError('');
+    setStatus('');
+    const amount = parseGrantAmount(pointsAmount);
+    if (amount == null) {
+      setError('Enter a positive points amount.');
+      return;
+    }
+    awardBonusPoints(amount);
+    setStatus(`Granted ${amount} points.`);
+  };
+
+  return (
+    <section className="card">
+      <h3 className="section-title">Debug / Grant</h3>
+      <p className="muted">
+        Add XP or points to your logged-in admin account. XP uses the same award
+        path as videos and mini-games so the +XP pop and sound play. Saved to
+        your progress. No confirmation.
+      </p>
+      <p className="muted">
+        Current: {state.progress.totalXp} XP · {state.progress.points} pts
+      </p>
+      <StatusMessage message={error} variant="err" />
+      <StatusMessage message={status} />
+      <Field label="Grant XP" htmlFor="debug-grant-xp" hint="Default 50.">
+        <input
+          id="debug-grant-xp"
+          type="number"
+          min={1}
+          step={1}
+          inputMode="numeric"
+          value={xpAmount}
+          onChange={(e) => setXpAmount(e.target.value)}
+        />
+      </Field>
+      <div className="btn-row">
+        <button type="button" className="btn btn--primary" onClick={grantXp}>
+          Grant XP
+        </button>
+      </div>
+      <Field
+        label="Grant points"
+        htmlFor="debug-grant-points"
+        hint="Default 100."
+      >
+        <input
+          id="debug-grant-points"
+          type="number"
+          min={1}
+          step={1}
+          inputMode="numeric"
+          value={pointsAmount}
+          onChange={(e) => setPointsAmount(e.target.value)}
+        />
+      </Field>
+      <div className="btn-row">
+        <button type="button" className="btn btn--primary" onClick={grantPoints}>
+          Grant points
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function UserAdmin() {
   const { createAppUser, refresh } = useAppStore();
   const [username, setUsername] = useState('');
@@ -1704,6 +1796,9 @@ function UserAdmin() {
             scroll
           />
           <div className="btn-row" style={{ marginTop: '0.75rem' }}>
+            <Link to="/u/demo" className="btn btn--ghost">
+              View test public profile
+            </Link>
             <button
               type="button"
               className="btn btn--secondary"
@@ -1770,6 +1865,7 @@ function UserAdmin() {
 
   const form = (
     <>
+      <DebugGrantAdmin />
       <section className="card">
         <h3 className="section-title">Manual Patreon tier</h3>
         <p className="muted">
@@ -2568,7 +2664,7 @@ function VideoUploadAdmin() {
         <Field
           label="Shop price (points)"
           htmlFor="vid-shop-cost"
-          hint="Reward points to unlock this video individually in the Rewards shop. Leave empty or 0 to disable shop purchase."
+          hint="Reward points to unlock this video individually in the Shop. Leave empty or 0 to disable shop purchase."
         >
           <input
             id="vid-shop-cost"

@@ -74,6 +74,10 @@ export function maskSessionForUserPreview(session: Session): Session {
     ...session,
     patreonTier: null,
     patreonStatus: 'none',
+    characterGender: null,
+    characterBreastSize: null,
+    characterPenisSize: null,
+    characterEquipped: {},
   };
 }
 

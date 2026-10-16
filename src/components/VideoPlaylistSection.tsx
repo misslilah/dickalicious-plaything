@@ -216,7 +216,7 @@ export function VideoPlaylistSection({ type }: VideoPlaylistSectionProps) {
   if (loading) {
     return (
       <>
-        <section className="card video-playlist-section">
+        <section className="card video-playlist-section" data-tutorial="videos-playlists">
           <p className="muted">Loading your playlists…</p>
         </section>
         {managerDialog}
@@ -227,7 +227,7 @@ export function VideoPlaylistSection({ type }: VideoPlaylistSectionProps) {
   if (error) {
     return (
       <>
-        <section className="card video-playlist-section">
+        <section className="card video-playlist-section" data-tutorial="videos-playlists">
           <p className="login-error" role="alert">
             {error}
           </p>
@@ -241,7 +241,7 @@ export function VideoPlaylistSection({ type }: VideoPlaylistSectionProps) {
   const items = library?.items ?? [];
 
   return (
-    <section className="video-playlist-section">
+    <section className="video-playlist-section" data-tutorial="videos-playlists">
       <div className="video-playlist-section__header">
         <h3 className="section-title">
           {type === 'normal' ? 'Video playlists' : 'Interactive playlists'}

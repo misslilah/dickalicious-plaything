@@ -3,6 +3,10 @@ import {
   FlashWordGamePlayer,
   type FlashWordStreakRewardPreview,
 } from './FlashWordGamePlayer';
+import {
+  GameWindowCelebration,
+  useGameWindowCelebration,
+} from './FocusTrainingCelebration';
 import type { FlashWordGame } from '../lib/flashWordGames';
 
 interface FlashWordGameTestModalProps {
@@ -21,6 +25,7 @@ export function FlashWordGameTestModal({
   const handleClose = useCallback(() => {
     onClose();
   }, [onClose]);
+  const { panelRef, playId, celebrating, triggerSuccess } = useGameWindowCelebration();
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -51,7 +56,15 @@ export function FlashWordGameTestModal({
       aria-labelledby="flash-word-game-test-modal-title"
     >
       <div className="flash-word-game-modal__backdrop" aria-hidden="true" />
-      <div className="flash-word-game-modal__panel">
+      <div
+        className={[
+          'flash-word-game-modal__panel',
+          celebrating ? 'flash-word-game-modal__panel--celebrate' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        ref={panelRef}
+      >
         <header className="flash-word-game-modal__header">
           <div className="flash-word-game-modal__heading">
             <h2 id="flash-word-game-test-modal-title">{title}</h2>
@@ -76,8 +89,10 @@ export function FlashWordGameTestModal({
             game={game}
             isTestMode
             previewReward={previewReward ?? null}
+            onLevelSuccess={triggerSuccess}
           />
         </div>
+        <GameWindowCelebration playId={playId} panelRef={panelRef} />
       </div>
     </div>
   );

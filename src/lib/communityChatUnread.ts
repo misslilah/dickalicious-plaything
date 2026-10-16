@@ -1,7 +1,11 @@
 import type { CommunityChannel } from './communityChannels';
 import { COMMUNITY_CHANNELS } from './communityChannels';
 
-export type CommunityUnreadView = CommunityChannel | 'admin-contact' | 'admin-inbox';
+export type CommunityUnreadView =
+  | CommunityChannel
+  | 'admin-contact'
+  | 'admin-inbox'
+  | 'inbox';
 
 const STORAGE_PREFIX = 'community-chat-last-read:';
 
@@ -53,5 +57,6 @@ export function emptyUnreadCounts(): Record<CommunityUnreadView, number> {
     ...counts,
     'admin-contact': 0,
     'admin-inbox': 0,
+    inbox: 0,
   };
 }

@@ -4,12 +4,16 @@ import { PunishmentCategoryCard } from '../components/PunishmentCategoryCard';
 import { PunishmentCompletionModal } from '../components/PunishmentCompletionModal';
 import { PunishmentListRow } from '../components/PunishmentListRow';
 import { useAppStore } from '../hooks/useAppStore';
+import { isPunishmentSessionInProgress } from '../hooks/usePunishmentCompletion';
 import { usePunishmentCooldowns } from '../hooks/usePunishmentCooldowns';
 import { isCategoryImagePreview } from '../lib/categoryImage';
 import {
+  categoryDifficulty,
   groupPunishmentsByDifficultyAndCategory,
   PUNISHMENT_DIFFICULTY_LABELS,
   PUNISHMENT_DIFFICULTY_ORDER,
+  resolvePunishmentCategoryId,
+  resolvePunishmentDifficulty,
   templatesForCategory,
 } from '../lib/gameLogic';
 import { getSupabase } from '../lib/supabase';
@@ -21,18 +25,29 @@ import type {
   ThronePaymentPending,
 } from '../types';
 
-const UNCategorized_PREFIX = '__uncategorized__';
+const UNCATEGORIZED_PREFIX = '__uncategorized__';
+
+const TIER_COPY: Record<PunishmentDifficulty, { icon: string; hint: string }> = {
+  easy: { icon: '💗', hint: 'Softer relief' },
+  medium: { icon: '⚡', hint: 'Standard heat' },
+  hard: { icon: '🔥', hint: 'Serious atonement' },
+};
 
 function uncategorizedCategoryId(difficulty: PunishmentDifficulty): string {
-  return `${UNCategorized_PREFIX}:${difficulty}`;
+  return `${UNCATEGORIZED_PREFIX}:${difficulty}`;
 }
 
 function parseUncategorizedDifficulty(
   categoryId: string,
 ): PunishmentDifficulty | null {
-  if (!categoryId.startsWith(`${UNCategorized_PREFIX}:`)) return null;
+  if (!categoryId.startsWith(`${UNCATEGORIZED_PREFIX}:`)) return null;
   const tier = categoryId.split(':')[1];
   if (tier === 'easy' || tier === 'medium' || tier === 'hard') return tier;
+  return null;
+}
+
+function parseDifficulty(raw: string | null): PunishmentDifficulty | null {
+  if (raw === 'easy' || raw === 'medium' || raw === 'hard') return raw;
   return null;
 }
 
@@ -104,13 +119,12 @@ export function Punishments() {
     };
   }, [userId, loadThronePending]);
 
-  const selectCategory = (categoryId: string | null) => {
+  const setPath = (difficulty: PunishmentDifficulty | null, categoryId: string | null) => {
     const next = new URLSearchParams(searchParams);
-    if (categoryId) {
-      next.set('category', categoryId);
-    } else {
-      next.delete('category');
-    }
+    if (difficulty) next.set('difficulty', difficulty);
+    else next.delete('difficulty');
+    if (categoryId) next.set('category', categoryId);
+    else next.delete('category');
     setSearchParams(next, { replace: true });
   };
 
@@ -151,6 +165,30 @@ export function Punishments() {
     return state.punishmentCategories.find((c) => c.id === selectedCategoryId) ?? null;
   }, [selectedCategoryId, state.punishmentCategories]);
 
+  const inferredDifficulty = useMemo<PunishmentDifficulty | null>(() => {
+    const fromUrl = parseDifficulty(searchParams.get('difficulty'));
+    if (fromUrl) return fromUrl;
+    if (selectedCategory) {
+      const uncategorizedTier = parseUncategorizedDifficulty(selectedCategory.id);
+      if (uncategorizedTier) return uncategorizedTier;
+      return categoryDifficulty(selectedCategory);
+    }
+    return null;
+  }, [searchParams, selectedCategory]);
+
+  const firstAvailableDifficulty = useMemo<PunishmentDifficulty>(() => {
+    for (const difficulty of PUNISHMENT_DIFFICULTY_ORDER) {
+      const tier = punishmentsByDifficultyAndCategory[difficulty];
+      if (tier.categories.length > 0 || tier.uncategorized.length > 0) {
+        return difficulty;
+      }
+    }
+    return 'easy';
+  }, [punishmentsByDifficultyAndCategory]);
+
+  const selectedDifficulty = inferredDifficulty ?? firstAvailableDifficulty;
+  const selectedTier = punishmentsByDifficultyAndCategory[selectedDifficulty];
+
   const selectedTemplates = useMemo(() => {
     if (!selectedCategoryId) return [];
     const uncategorizedTier = parseUncategorizedDifficulty(selectedCategoryId);
@@ -170,8 +208,8 @@ export function Punishments() {
   ]);
 
   const cooldownTemplateIds = useMemo(
-    () => selectedTemplates.map((template) => template.id),
-    [selectedTemplates],
+    () => reliefTemplates.map((template) => template.id),
+    [reliefTemplates],
   );
   const { getCooldownLabel, isOnCooldown, markTemplateCompleted } =
     usePunishmentCooldowns(
@@ -180,8 +218,54 @@ export function Punishments() {
       session != null,
     );
 
+  const inProgressIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const pending of thronePending) {
+      if (pending.status === 'waiting' && pending.punishmentTemplateId) {
+        ids.add(pending.punishmentTemplateId);
+      }
+    }
+    for (const template of reliefTemplates) {
+      if (isPunishmentSessionInProgress(template.id)) ids.add(template.id);
+    }
+    return ids;
+  }, [thronePending, reliefTemplates]);
+
+  const activePunishment = useMemo(() => {
+    const waiting = thronePending.find(
+      (pending) => pending.status === 'waiting' && pending.punishmentTemplateId,
+    );
+    if (waiting?.punishmentTemplateId) {
+      const template = reliefTemplates.find((t) => t.id === waiting.punishmentTemplateId);
+      if (template) {
+        return { template, reason: 'throne' as const };
+      }
+    }
+    const sessionTemplate = reliefTemplates.find((template) =>
+      isPunishmentSessionInProgress(template.id),
+    );
+    if (sessionTemplate) {
+      return { template: sessionTemplate, reason: 'session' as const };
+    }
+    return null;
+  }, [thronePending, reliefTemplates]);
+
   const handleAcceptClick = (template: PunishmentTemplate) => {
     if (malus <= 0 || isOnCooldown(template.id)) return;
+    setCompletionError(null);
+    setCompletingTemplate(template);
+  };
+
+  const continueActivePunishment = (template: PunishmentTemplate) => {
+    const categoryId =
+      resolvePunishmentCategoryId(template, state.punishmentCategories) ??
+      uncategorizedCategoryId(
+        resolvePunishmentDifficulty(template, state.punishmentCategories),
+      );
+    setPath(
+      resolvePunishmentDifficulty(template, state.punishmentCategories),
+      categoryId,
+    );
     setCompletionError(null);
     setCompletingTemplate(template);
   };
@@ -206,15 +290,29 @@ export function Punishments() {
   };
 
   return (
-    <div className="page">
-      <header className="page-header">
-        <div className="page-header__row">
-          <div>
-            <h2>Punishments</h2>
-            <p className="muted">
-              Incomplete started or daily tasks add malus at day end. Choose a
-              category, then accept a punishment to reduce your malus balance.
-            </p>
+    <div className="page page--punishments">
+      <header className="page-header punishments-hero">
+        <div className="punishments-hero__copy">
+          <p className="punishments-hero__kicker">Pay the debt</p>
+          <h2>Punishments</h2>
+          <p className="muted">
+            Incomplete tasks add malus at day end. Pick a difficulty, choose a
+            category, then accept a punishment to unlock your tasks again.
+          </p>
+        </div>
+        <div className="punishments-hero__aside">
+          <div
+            className={`punishments-malus-pill${
+              malus > 0 ? ' punishments-malus-pill--hot' : ' punishments-malus-pill--clear'
+            }`}
+          >
+            <span className="punishments-malus-pill__gem" aria-hidden>
+              {malus > 0 ? '⚡' : '✓'}
+            </span>
+            <div>
+              <strong className="punishments-malus-pill__value">{malus}</strong>
+              <span className="punishments-malus-pill__label">malus</span>
+            </div>
           </div>
           {isAdmin && (
             <Link to="/admin?section=punishments" className="btn btn--ghost btn--small">
@@ -224,16 +322,47 @@ export function Punishments() {
         </div>
       </header>
 
-      <section className={`card${malus > 0 ? ' card--warn' : ' card--success'}`}>
-        <h3 className="section-title">Malus balance</h3>
+      <section
+        className={`card punishments-balance${
+          malus > 0 ? ' card--warn' : ' card--success'
+        }`}
+      >
         {malus > 0 ? (
-          <p className="punishment-malus-balance">
-            You have <strong>{malus}</strong> malus point{malus === 1 ? '' : 's'}.
-          </p>
+          <>
+            <h3 className="section-title">Tasks are locked</h3>
+            <p>
+              You have <strong>{malus}</strong> malus point{malus === 1 ? '' : 's'}.
+              Clear them here before you can start or complete tasks.
+            </p>
+          </>
         ) : (
-          <p>No malus points. Keep completing your tasks!</p>
+          <>
+            <h3 className="section-title">All clear</h3>
+            <p>No malus points. Keep completing your tasks!</p>
+          </>
         )}
       </section>
+
+      {activePunishment && (
+        <section className="card punishments-active">
+          <div className="punishments-active__copy">
+            <p className="punishments-hero__kicker">Active punishment</p>
+            <h3>{activePunishment.template.title}</h3>
+            <p className="muted">
+              {activePunishment.reason === 'throne'
+                ? 'Waiting for your Throne gift to land. Continue to finish it.'
+                : 'You already started the gates. Continue to finish and clear malus.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={() => continueActivePunishment(activePunishment.template)}
+          >
+            Continue
+          </button>
+        </section>
+      )}
 
       {!showPunishmentLibrary && (
         <section className="card">
@@ -261,119 +390,185 @@ export function Punishments() {
         </section>
       )}
 
-      {showPunishmentLibrary && !selectedCategory && (
+      {showPunishmentLibrary && (
         <>
-          {PUNISHMENT_DIFFICULTY_ORDER.map((difficulty) => {
-            const tier = punishmentsByDifficultyAndCategory[difficulty];
-            const hasTierContent =
-              tier.categories.length > 0 || tier.uncategorized.length > 0;
-            if (!hasTierContent) return null;
-            return (
-              <section key={difficulty} className="card category-tier">
-                <h3 className="section-title">
-                  {PUNISHMENT_DIFFICULTY_LABELS[difficulty]}
-                </h3>
-                <div className="category-grid">
-                  {tier.categories.map(({ category }) => (
-                    <PunishmentCategoryCard
-                      key={category.id}
-                      category={category}
-                      onSelect={() => selectCategory(category.id)}
-                    />
-                  ))}
-                  {tier.uncategorized.length > 0 && (
-                    <PunishmentCategoryCard
-                      category={{
-                        id: uncategorizedCategoryId(difficulty),
-                        name: 'Other',
-                        description: 'Punishments without a category',
-                        sortOrder: 9999,
-                        difficulty,
-                      }}
-                      onSelect={() =>
-                        selectCategory(uncategorizedCategoryId(difficulty))
-                      }
-                    />
-                  )}
-                </div>
-              </section>
-            );
-          })}
-          {hasPunishments && malus <= 0 && (
-            <p className="muted punishment-selected-hint">
-              You need malus points before you can accept a punishment.
-            </p>
+          <section className="punishments-tiers" aria-label="Difficulty">
+            <p className="item-shop-shelf__kicker">Choose your heat</p>
+            <div className="punishments-tier-grid" role="tablist" aria-label="Difficulty">
+              {PUNISHMENT_DIFFICULTY_ORDER.map((difficulty) => {
+                const tier = punishmentsByDifficultyAndCategory[difficulty];
+                const count =
+                  tier.categories.reduce(
+                    (sum, group) => sum + group.templates.length,
+                    0,
+                  ) + tier.uncategorized.length;
+                const categoryCount =
+                  tier.categories.length + (tier.uncategorized.length > 0 ? 1 : 0);
+                const active = selectedDifficulty === difficulty && !selectedCategory;
+                const onPath = selectedDifficulty === difficulty;
+                return (
+                  <button
+                    key={difficulty}
+                    type="button"
+                    role="tab"
+                    aria-selected={onPath}
+                    className={`punishments-tier${
+                      onPath ? ' punishments-tier--active' : ''
+                    }${active ? ' punishments-tier--current' : ''} punishments-tier--${difficulty}`}
+                    onClick={() => setPath(difficulty, null)}
+                  >
+                    <span className="punishments-tier__icon" aria-hidden>
+                      {TIER_COPY[difficulty].icon}
+                    </span>
+                    <span className="punishments-tier__name">
+                      {PUNISHMENT_DIFFICULTY_LABELS[difficulty]}
+                    </span>
+                    <span className="punishments-tier__hint">
+                      {TIER_COPY[difficulty].hint}
+                    </span>
+                    <span className="punishments-tier__count">
+                      {categoryCount} {categoryCount === 1 ? 'path' : 'paths'}
+                      {count > 0 ? ` · ${count}` : ''}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {!selectedCategory && (
+            <section className="card punishments-categories">
+              <header className="item-shop-shelf__header">
+                <p className="item-shop-shelf__kicker">
+                  {PUNISHMENT_DIFFICULTY_LABELS[selectedDifficulty]}
+                </p>
+                <h3 className="item-shop-shelf__title">Pick a category</h3>
+              </header>
+              <div className="category-grid">
+                {selectedTier.categories.map(({ category, templates }) => (
+                  <PunishmentCategoryCard
+                    key={category.id}
+                    category={category}
+                    count={templates.length}
+                    onSelect={() => setPath(selectedDifficulty, category.id)}
+                  />
+                ))}
+                {selectedTier.uncategorized.length > 0 && (
+                  <PunishmentCategoryCard
+                    category={{
+                      id: uncategorizedCategoryId(selectedDifficulty),
+                      name: 'Other',
+                      description: 'Punishments without a category',
+                      sortOrder: 9999,
+                      difficulty: selectedDifficulty,
+                    }}
+                    count={selectedTier.uncategorized.length}
+                    onSelect={() =>
+                      setPath(
+                        selectedDifficulty,
+                        uncategorizedCategoryId(selectedDifficulty),
+                      )
+                    }
+                  />
+                )}
+              </div>
+              {selectedTier.categories.length === 0 &&
+                selectedTier.uncategorized.length === 0 && (
+                  <p className="muted punishment-selected-hint">
+                    No {PUNISHMENT_DIFFICULTY_LABELS[selectedDifficulty].toLowerCase()}{' '}
+                    categories yet.
+                  </p>
+                )}
+              {hasPunishments && malus <= 0 && (
+                <p className="muted punishment-selected-hint">
+                  You need malus points before you can accept a punishment.
+                </p>
+              )}
+              {isAdmin && hiddenTemplateCount > 0 && (
+                <p className="muted punishment-hidden-hint">
+                  {hiddenTemplateCount} punishment template
+                  {hiddenTemplateCount === 1 ? ' is' : 's are'} hidden because{' '}
+                  {hiddenTemplateCount === 1 ? 'it is' : 'they are'} not set up for malus
+                  relief. Edit them in Admin and set a malus relief value.
+                </p>
+              )}
+            </section>
           )}
-          {isAdmin && hiddenTemplateCount > 0 && (
-            <p className="muted punishment-hidden-hint">
-              {hiddenTemplateCount} punishment template
-              {hiddenTemplateCount === 1 ? ' is' : 's are'} hidden because{' '}
-              {hiddenTemplateCount === 1 ? 'it is' : 'they are'} not set up for malus
-              relief. Edit them in Admin and set a malus relief value.
-            </p>
+
+          {selectedCategory && (
+            <section className="card punishment-selected-panel punishments-path-panel">
+              <div className="page-header__row">
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--small"
+                  onClick={() => setPath(selectedDifficulty, null)}
+                >
+                  ← {PUNISHMENT_DIFFICULTY_LABELS[selectedDifficulty]} categories
+                </button>
+              </div>
+              {isCategoryImagePreview(selectedCategory.imageUrl) && (
+                <div className="punishment-category-hero">
+                  <img
+                    src={selectedCategory.imageUrl}
+                    alt=""
+                    className="category-card__image"
+                  />
+                </div>
+              )}
+              <p className="item-shop-shelf__kicker">
+                {PUNISHMENT_DIFFICULTY_LABELS[selectedDifficulty]}
+              </p>
+              <h3 className="item-shop-shelf__title">{selectedCategory.name}</h3>
+              {selectedCategory.description && (
+                <p className="punishment-category-desc muted">
+                  {selectedCategory.description}
+                </p>
+              )}
+              {selectedTemplates.length === 0 ? (
+                <p className="muted punishment-category-empty">
+                  No punishments in this category yet.
+                </p>
+              ) : (
+                <ol className="category-task-path punishment-path">
+                  {selectedTemplates.map((tpl, index) => (
+                    <li key={tpl.id} className="category-task-path__item">
+                      <PunishmentListRow
+                        template={tpl}
+                        malus={malus}
+                        cooldownLabel={getCooldownLabel(tpl.id)}
+                        imageUrl={selectedCategory.imageUrl}
+                        stepNumber={index + 1}
+                        inProgress={inProgressIds.has(tpl.id)}
+                        onAccept={() =>
+                          inProgressIds.has(tpl.id)
+                            ? continueActivePunishment(tpl)
+                            : handleAcceptClick(tpl)
+                        }
+                      />
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {selectedTemplates.length > 0 && malus <= 0 && (
+                <p className="muted punishment-selected-hint">
+                  You need malus points before you can accept a punishment.
+                </p>
+              )}
+            </section>
           )}
         </>
       )}
 
-      {showPunishmentLibrary && selectedCategory && (
-        <section className="card punishment-selected-panel">
-          <div className="page-header__row">
-            <button
-              type="button"
-              className="btn btn--ghost btn--small"
-              onClick={() => selectCategory(null)}
-            >
-              ← All categories
-            </button>
-          </div>
-          {isCategoryImagePreview(selectedCategory.imageUrl) && (
-            <div className="punishment-category-hero">
-              <img
-                src={selectedCategory.imageUrl}
-                alt=""
-                className="category-card__image"
-              />
-            </div>
-          )}
-          <h3 className="section-title">{selectedCategory.name}</h3>
-          {selectedCategory.description && (
-            <p className="punishment-category-desc muted">
-              {selectedCategory.description}
-            </p>
-          )}
-          {selectedTemplates.length === 0 ? (
-            <p className="muted punishment-category-empty">
-              No punishments in this category yet.
-            </p>
-          ) : (
-            <ul className="task-list">
-              {selectedTemplates.map((tpl) => (
-                <li key={tpl.id}>
-                  <PunishmentListRow
-                    template={tpl}
-                    malus={malus}
-                    cooldownLabel={getCooldownLabel(tpl.id)}
-                    onAccept={() => handleAcceptClick(tpl)}
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-          {selectedTemplates.length > 0 && malus <= 0 && (
-            <p className="muted punishment-selected-hint">
-              You need malus points before you can accept a punishment.
-            </p>
-          )}
-        </section>
-      )}
-
       {history.length > 0 && (
-        <section className="card">
-          <h3 className="section-title">Recent history</h3>
-          <ul className="history-list">
+        <section className="card punishments-history">
+          <header className="item-shop-shelf__header">
+            <p className="item-shop-shelf__kicker">Cleared</p>
+            <h3 className="item-shop-shelf__title">Recent history</h3>
+          </header>
+          <ul className="punishments-history-list">
             {history.map((p) => (
               <li key={p.id}>
-                <span>{p.title}</span>
+                <span className="punishments-history-list__title">{p.title}</span>
                 <span className="muted">{p.date}</span>
               </li>
             ))}

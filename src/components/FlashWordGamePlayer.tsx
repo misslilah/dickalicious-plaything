@@ -106,6 +106,8 @@ interface FlashWordGamePlayerProps {
   /** Called on mount with quit handler; modal should invoke before closing. */
   onRegisterQuitHandler?: (handler: FlashWordGameQuitHandler | null) => void;
   onAttemptStatusChange?: (status: DailyGameAttemptStatus) => void;
+  /** Fired only when the player picks the correct flashed word. */
+  onLevelSuccess?: () => void;
 }
 
 export function FlashWordGamePlayer({
@@ -114,6 +116,7 @@ export function FlashWordGamePlayer({
   previewReward = null,
   onRegisterQuitHandler,
   onAttemptStatusChange,
+  onLevelSuccess,
 }: FlashWordGamePlayerProps) {
   const { awardBonusXp } = useAppStore();
   const xpToast = useOptionalXpToast();
@@ -220,8 +223,9 @@ export function FlashWordGamePlayer({
         if (tier.xpReward > 0) {
           if (!isTestMode) {
             awardBonusXp(tier.xpReward);
+          } else {
+            xpToast?.showXpGain(tier.xpReward);
           }
-          xpToast?.showXpGain(tier.xpReward);
         }
         if (tier.message?.trim()) {
           showStreakMessage(tier.message.trim(), randomStreakSidePlacement());
@@ -556,6 +560,7 @@ export function FlashWordGamePlayer({
     const isCorrect = word === flashedWord;
     setCorrect(isCorrect);
     if (isCorrect) {
+      if (!isPreviewMode) onLevelSuccess?.();
       setStreak((prev) => {
         const next = prev + 1;
         applyStreakRewards(next);

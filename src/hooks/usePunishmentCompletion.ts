@@ -24,6 +24,11 @@ function scopedId(templateId: string): string {
   return `punishment:${templateId}`;
 }
 
+export function isPunishmentSessionInProgress(templateId: string): boolean {
+  const scopeId = scopedId(templateId);
+  return getEndAt(scopeId) != null || isPageOpened(scopeId);
+}
+
 export function usePunishmentCompletion(template: PunishmentTemplate) {
   const scopeId = scopedId(template.id);
   const hasTimer = punishmentHasTimer(template);

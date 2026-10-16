@@ -11,7 +11,6 @@ import {
 import { createPortal } from 'react-dom';
 import { useAppStore } from '../hooks/useAppStore';
 import { useOptionalAudioPlayer } from './AudioPlayerProvider';
-import { useOptionalXpToast } from './XpToastContext';
 import { useVideoPlaybackActive } from './VideoPlaybackContext';
 import { createVideoWatchTracker } from '../lib/videoWatchTracker';
 import { getVideoPlaybackUrl } from '../lib/videoStorage';
@@ -65,7 +64,6 @@ const VideoPlayerContext = createContext<VideoPlayerContextValue | null>(null);
 export function VideoPlayerProvider({ children }: { children: ReactNode }) {
   const audio = useOptionalAudioPlayer();
   const { awardVideoCompletion, recordVideoPartialView } = useAppStore();
-  const xpToast = useOptionalXpToast();
   const [session, setSession] = useState<NormalVideoSession | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -315,9 +313,7 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
       }
 
       if (!tracker.qualifiesForReward(el.duration, 'normal')) return;
-      void awardVideoCompletion(videoId).then((xp) => {
-        if (xp > 0) xpToast?.showXpGain(xp);
-      });
+      void awardVideoCompletion(videoId);
     };
 
     el.addEventListener('timeupdate', onTimeUpdate);
@@ -333,7 +329,6 @@ export function VideoPlayerProvider({ children }: { children: ReactNode }) {
     url,
     awardVideoCompletion,
     flushPartialForVideo,
-    xpToast,
     playPlaylistEntry,
   ]);
 

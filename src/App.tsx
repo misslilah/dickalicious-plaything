@@ -25,11 +25,13 @@ import { Training } from './pages/Training';
 import { VideoCategoryDetail } from './pages/VideoCategoryDetail';
 import { Login } from './pages/Login';
 import { Punishments } from './pages/Punishments';
-import { Rewards } from './pages/Rewards';
+import { Shop } from './pages/Shop';
+import { CharacterCreator } from './pages/CharacterCreator';
 import { Profile } from './pages/Profile';
 import { Settings } from './pages/Settings';
 import { Today } from './pages/Today';
 import { MiniGames } from './pages/MiniGames';
+import { Community } from './pages/Community';
 import { FlashWordGamePage } from './pages/FlashWordGamePage';
 import { InteractiveVideos } from './pages/InteractiveVideos';
 import { InteractiveVideoPlay } from './pages/InteractiveVideoPlay';
@@ -62,6 +64,7 @@ const router = createBrowserRouter([
       {
         element: <ProtectedRoute />,
         children: [
+          { path: 'character', element: <CharacterCreator /> },
           {
             element: <Layout />,
             children: [
@@ -88,13 +91,13 @@ const router = createBrowserRouter([
                 path: 'library',
                 element: <Navigate to="/videos" replace />,
               },
-              {
-                path: 'community',
-                element: <Navigate to="/" replace />,
-              },
-              { path: 'rewards', element: <Rewards /> },
+              { path: 'community', element: <Community /> },
+              { path: 'shop', element: <Shop /> },
+              { path: 'rewards', element: <Navigate to="/shop" replace /> },
               { path: 'punishments', element: <Punishments /> },
               { path: 'profile', element: <Profile /> },
+              { path: 'profile/:userId', element: <Profile /> },
+              { path: 'u/:username', element: <Profile /> },
               { path: 'mini-games', element: <MiniGames /> },
               { path: 'mini-games/:gameId', element: <FlashWordGamePage /> },
               { path: 'settings', element: <Settings /> },

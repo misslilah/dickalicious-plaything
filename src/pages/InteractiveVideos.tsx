@@ -52,7 +52,11 @@ export function InteractiveVideos({ embedded = false }: InteractiveVideosProps) 
 
   const content = (
     <>
-      <div className="interactive-videos__warning card" role="note">
+      <div
+        className="interactive-videos__warning card"
+        role="note"
+        data-tutorial="videos-interactive"
+      >
         <strong>Camera permission required</strong>
         <p className="muted">
           Interactive playback uses your front camera to detect sniffing, mouth open, and tongue-out

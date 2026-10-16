@@ -20,6 +20,7 @@ interface CategoryCardProps {
   selected?: boolean;
   /** Static preview (no link / no button). */
   preview?: boolean;
+  tutorialTarget?: string;
 }
 
 export function CategoryCard({
@@ -38,6 +39,7 @@ export function CategoryCard({
   onSelect,
   selected = false,
   preview = false,
+  tutorialTarget,
 }: CategoryCardProps) {
   const locked = !isUnlocked && !preview && !onSelect;
   const showJoin = isUnlocked && !isMember && onJoin != null && !preview && !onSelect;
@@ -129,10 +131,13 @@ export function CategoryCard({
     .filter(Boolean)
     .join(' ');
   const style = { '--cat-color': category.color } as CSSProperties;
+  const tutorialAttr = tutorialTarget
+    ? { 'data-tutorial': tutorialTarget }
+    : undefined;
 
   if (preview) {
     return (
-      <div className="category-card" style={style}>
+      <div className="category-card" style={style} {...tutorialAttr}>
         {body}
       </div>
     );
@@ -146,6 +151,7 @@ export function CategoryCard({
         style={style}
         aria-pressed={selected}
         onClick={onSelect}
+        {...tutorialAttr}
       >
         {body}
       </button>
@@ -154,14 +160,19 @@ export function CategoryCard({
 
   if (locked) {
     return (
-      <div className={className} style={style}>
+      <div className={className} style={style} {...tutorialAttr}>
         {body}
       </div>
     );
   }
 
   return (
-    <Link to={`/category/${category.id}`} className={className} style={style}>
+    <Link
+      to={`/category/${category.id}`}
+      className={className}
+      style={style}
+      {...tutorialAttr}
+    >
       {body}
     </Link>
   );

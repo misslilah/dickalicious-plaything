@@ -9,9 +9,13 @@ type BadgeGridProps = {
   unlockedBadgeIds: string[];
   tasks?: Task[];
   categories?: Category[];
-  /** When true (admin on Rewards), badges can be drag-reordered. */
+  /** When true (admin catalog), badges can be drag-reordered. */
   sortable?: boolean;
   getSortableItemProps?: (id: string) => SortableItemProps;
+  /** Compact icon row for profile headers. */
+  compact?: boolean;
+  /** Hide locked badges (public profiles / header showcase). */
+  unlockedOnly?: boolean;
 };
 
 function badgeHoverText(
@@ -70,19 +74,30 @@ export function BadgeGrid({
   categories = [],
   sortable = false,
   getSortableItemProps,
+  compact = false,
+  unlockedOnly = false,
 }: BadgeGridProps) {
   if (badges.length === 0) {
     return <p className="muted">No badges in the catalog yet.</p>;
   }
 
-  const sorted = [...badges].sort(
-    (a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title),
-  );
-  const hasLocked = sorted.some((badge) => !unlockedBadgeIds.includes(badge.id));
+  const sorted = [...badges]
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title))
+    .filter((badge) => !unlockedOnly || unlockedBadgeIds.includes(badge.id));
+
+  if (sorted.length === 0) {
+    return <p className="muted">No badges yet.</p>;
+  }
+
+  const hasLocked =
+    !unlockedOnly && sorted.some((badge) => !unlockedBadgeIds.includes(badge.id));
 
   return (
     <>
-      <ul className="profile-badge-grid" aria-label="Badges">
+      <ul
+        className={`profile-badge-grid${compact ? ' profile-badge-grid--compact' : ''}`}
+        aria-label="Badges"
+      >
         {sorted.map((badge) => {
           const unlocked = unlockedBadgeIds.includes(badge.id);
           const showTitle = unlocked || !badge.isSecret;
@@ -143,7 +158,7 @@ export function BadgeGrid({
               ) : (
                 <LockedBadgeIconWrap hover={hover}>{icon}</LockedBadgeIconWrap>
               )}
-              {showTitle && (
+              {showTitle && !compact && (
                 <span className="profile-badge__title">{badge.title}</span>
               )}
             </li>

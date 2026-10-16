@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useBlocker } from 'react-router-dom';
 import { useOptionalAudioPlayer } from '../contexts/AudioPlayerProvider';
-import { useOptionalXpToast } from '../contexts/XpToastContext';
 import { useVideoPlaybackActive } from '../contexts/VideoPlaybackContext';
 import { useAppStore } from '../hooks/useAppStore';
 import { useVideoPlaybackUrl } from '../hooks/useVideoBlobUrl';
@@ -45,7 +44,6 @@ export function ForcedModeVideoPlayer({
 }: ForcedModeVideoPlayerProps) {
   const audio = useOptionalAudioPlayer();
   const { awardVideoCompletion, recordVideoPartialView } = useAppStore();
-  const xpToast = useOptionalXpToast();
   const { url, loading, error } = useVideoPlaybackUrl(video.storagePath);
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -256,12 +254,10 @@ export function ForcedModeVideoPlayer({
   }, []);
 
   const handleVideoEnded = useCallback(() => {
-    void awardVideoCompletion(video.id).then((xp) => {
-      if (xp > 0) xpToast?.showXpGain(xp);
-    });
+    void awardVideoCompletion(video.id);
     allowNavigationRef.current = true;
     endSession();
-  }, [awardVideoCompletion, video.id, xpToast, endSession]);
+  }, [awardVideoCompletion, video.id, endSession]);
 
   const handleVideoError = useCallback(() => {
     setPlayError('Video failed to load or play. Forced Mode ended.');

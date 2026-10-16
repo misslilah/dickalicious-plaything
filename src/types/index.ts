@@ -19,6 +19,22 @@ export type ContentTier = 'public' | 'sweetie' | 'princess' | 'slut';
 export type PatreonMemberTier = 'sweetie' | 'princess' | 'slut';
 export type PatreonStatus = 'active' | 'cancelled' | 'none';
 
+export type CharacterGender = 'female' | 'male';
+export type CharacterBodySize = 'small' | 'medium' | 'large';
+/** Body key used by clothing variant sprites (e.g. panty bulge, busted tops). */
+export type CharacterBodyVariant = `${CharacterGender}-${CharacterBodySize}`;
+export type ClothingSlot = 'top' | 'bottom' | 'underwear';
+
+/** Equipped shop items: slot → clothing id. Empty until the paid shop exists. */
+export type CharacterEquipped = Partial<Record<ClothingSlot, string>>;
+
+export interface CharacterAppearance {
+  gender: CharacterGender;
+  breastSize: CharacterBodySize | null;
+  penisSize: CharacterBodySize | null;
+  equipped: CharacterEquipped;
+}
+
 export interface User {
   id: string;
   username: string;
@@ -33,6 +49,14 @@ export interface Session {
   patreonTier: PatreonMemberTier | null;
   patreonStatus: PatreonStatus;
   patreonUserId: string | null;
+  characterGender: CharacterGender | null;
+  characterBreastSize: CharacterBodySize | null;
+  characterPenisSize: CharacterBodySize | null;
+  characterEquipped: CharacterEquipped;
+  avatarUrl: string | null;
+  bio: string;
+  bannerId: string;
+  ownedBannerIds: string[];
 }
 
 export type CategoryGroup =
@@ -76,7 +100,7 @@ export interface Task {
   /** Who this task is for; `any` = all users. */
   userStage?: TaskUserStage;
   xpReward: number;
-  /** Spendable points earned when the task is completed (Rewards shop). */
+  /** Spendable points earned when the task is completed (Shop). */
   pointsReward?: number;
   frequency: TaskFrequency;
   durationMinutes?: number;
@@ -448,7 +472,7 @@ export interface AppState {
   punishments: Punishment[];
   settings: AppSettings;
   unlockedRewardIds: string[];
-  /** Video IDs unlocked via the Rewards shop (individual purchase). */
+  /** Video IDs unlocked via the Shop (individual purchase). */
   purchasedVideoIds: string[];
   unlockedBadgeIds: string[];
   /** Category IDs the signed-in user has joined. */

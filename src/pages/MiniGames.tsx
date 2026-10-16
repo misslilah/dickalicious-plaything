@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { FlashWordGameModal } from '../components/FlashWordGameModal';
 import { FollowInstinctGameModal } from '../components/FollowInstinctGameModal';
@@ -34,11 +42,146 @@ type ActiveGame =
   | { type: 'puzzle' }
   | null;
 
-const GAME_TYPE_BY_ACTIVE: Record<NonNullable<ActiveGame>['type'], DailyGameType> = {
+type GameCardVariant = NonNullable<ActiveGame>['type'];
+
+type PlayZoom = {
+  artUrl: string | null;
+  fallback: string;
+  origin: { top: number; left: number; width: number; height: number };
+  tx: number;
+  ty: number;
+  scale: number;
+};
+
+const GAME_TYPE_BY_ACTIVE: Record<GameCardVariant, DailyGameType> = {
   flash: 'flash_cards',
   instinct: 'follow_instinct',
   puzzle: 'puzzle',
 };
+
+const GAME_ART_FALLBACK: Record<GameCardVariant, string> = {
+  flash:
+    'radial-gradient(circle at 50% 28%, rgba(255, 79, 191, 0.5), transparent 55%), linear-gradient(165deg, #4a0d3a, #120814)',
+  instinct:
+    'radial-gradient(circle at 50% 28%, rgba(232, 121, 249, 0.42), transparent 52%), linear-gradient(165deg, #2e1065, #0a0510)',
+  puzzle:
+    'radial-gradient(circle at 50% 28%, rgba(245, 200, 76, 0.46), transparent 55%), linear-gradient(165deg, #422006, #1c1028)',
+};
+
+const ZOOM_MS = 640;
+const ZOOM_OPEN_AT = 500;
+
+function prefersReducedMotion(): boolean {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function waitMs(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function compactAttemptLabel(status: DailyGameAttemptStatus | undefined, loading: boolean): string {
+  if (!status) return loading ? 'Loading…' : 'Daily plays';
+  if (status.unlimited) return 'Unlimited';
+  if (status.limit === 0) return 'Members only';
+  const left = Math.max(0, status.limit - status.used);
+  return `${left}/${status.limit} left`;
+}
+
+function MiniGamePlayCard({
+  variant,
+  badge,
+  title,
+  description,
+  artUrl,
+  icon,
+  flavor,
+  playBusy,
+  playDisabled,
+  attemptMeta,
+  compactLimit,
+  onPlay,
+}: {
+  variant: GameCardVariant;
+  badge: string;
+  title: string;
+  description?: string | null;
+  artUrl: string | null;
+  icon: string;
+  flavor: string;
+  playBusy: boolean;
+  playDisabled: boolean;
+  attemptMeta: ReactNode;
+  compactLimit: string;
+  onPlay: (card: HTMLElement | null, artUrl: string | null, fallback: string) => void;
+}) {
+  const cardRef = useRef<HTMLArticleElement>(null);
+  const fallback = GAME_ART_FALLBACK[variant];
+  const artStyle: CSSProperties = {
+    backgroundImage: artUrl ? `url(${artUrl})` : fallback,
+  };
+
+  return (
+    <article
+      ref={cardRef}
+      className={`mini-game-card mini-game-card--${variant}${
+        playDisabled ? ' mini-game-card--locked' : ''
+      }`}
+    >
+      <div className="mini-game-card__art" style={artStyle}>
+        <span className="mini-game-card__ribbon">{badge}</span>
+        <span className="mini-game-card__flavor">{flavor}</span>
+        {!artUrl ? (
+          <span className="mini-game-card__icon" aria-hidden>
+            {icon}
+          </span>
+        ) : null}
+      </div>
+      <div className="mini-game-card__body">
+        <h3 className="mini-game-card__title">{title}</h3>
+        {description ? <p className="muted mini-game-card__desc">{description}</p> : null}
+        {attemptMeta}
+      </div>
+      <div className="mini-game-card__bar">
+        <span className="mini-game-card__limit">{compactLimit}</span>
+        <button
+          type="button"
+          className="btn btn--primary btn--small mini-game-card__play"
+          disabled={playDisabled}
+          onClick={() => onPlay(cardRef.current, artUrl, fallback)}
+        >
+          {playBusy ? 'Starting…' : 'Play'}
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function MiniGamePlayZoom({ zoom }: { zoom: PlayZoom }) {
+  const artStyle: CSSProperties = {
+    backgroundImage: zoom.artUrl ? `url(${zoom.artUrl})` : zoom.fallback,
+  };
+  const cardStyle = {
+    top: zoom.origin.top,
+    left: zoom.origin.left,
+    width: zoom.origin.width,
+    height: zoom.origin.height,
+    '--zoom-tx': `${zoom.tx}px`,
+    '--zoom-ty': `${zoom.ty}px`,
+    '--zoom-scale': String(zoom.scale),
+  } as CSSProperties;
+
+  return createPortal(
+    <div className="mini-game-zoom" aria-hidden>
+      <div className="mini-game-zoom__veil" />
+      <div className="mini-game-zoom__card" style={cardStyle}>
+        <div className="mini-game-zoom__art" style={artStyle} />
+      </div>
+    </div>,
+    document.body,
+  );
+}
 
 export function MiniGames() {
   const { session, isEffectiveAdmin, adminUserPreview } = useAppStore();
@@ -54,6 +197,8 @@ export function MiniGames() {
   const [leaderboardRefresh, setLeaderboardRefresh] = useState(0);
   const [playBusy, setPlayBusy] = useState<DailyGameType | null>(null);
   const [playError, setPlayError] = useState('');
+  const [playZoom, setPlayZoom] = useState<PlayZoom | null>(null);
+  const aliveRef = useRef(true);
 
   const closeActiveGame = () => {
     setActiveGame(null);
@@ -78,7 +223,9 @@ export function MiniGames() {
   );
 
   useEffect(() => {
+    aliveRef.current = true;
     return () => {
+      aliveRef.current = false;
       try {
         sessionStorage.removeItem(PUZZLE_SESSION_STREAK_KEY);
       } catch {
@@ -118,11 +265,18 @@ export function MiniGames() {
     };
   }, [session?.userId]);
 
-  const handlePlay = async (game: NonNullable<ActiveGame>) => {
+  const handlePlay = async (
+    game: NonNullable<ActiveGame>,
+    cardEl: HTMLElement | null,
+    artUrl: string | null,
+    fallback: string,
+  ) => {
     const gameType = GAME_TYPE_BY_ACTIVE[game.type];
+    if (playBusy || playZoom) return;
     setPlayError('');
     setPlayBusy(gameType);
     const result = await startMiniGameAttempt(gameType);
+    if (!aliveRef.current) return;
     setPlayBusy(null);
     if (!result.ok) {
       setPlayError(result.error);
@@ -136,6 +290,39 @@ export function MiniGames() {
     setAttemptStatuses((prev) =>
       prev ? { ...prev, [gameType]: result.status } : prev,
     );
+
+    const skipZoom = prefersReducedMotion() || !cardEl;
+    if (!skipZoom && cardEl) {
+      const originEl =
+        cardEl.querySelector<HTMLElement>('.mini-game-card__art') ?? cardEl;
+      const rect = originEl.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const scale = Math.max(vw / Math.max(rect.width, 1), vh / Math.max(rect.height, 1)) * 1.12;
+      setPlayZoom({
+        artUrl,
+        fallback,
+        origin: {
+          top: rect.top,
+          left: rect.left,
+          width: rect.width,
+          height: rect.height,
+        },
+        tx: vw / 2 - cx,
+        ty: vh / 2 - cy,
+        scale,
+      });
+      await waitMs(ZOOM_OPEN_AT);
+      if (!aliveRef.current) return;
+      setActiveGame(game);
+      await waitMs(ZOOM_MS - ZOOM_OPEN_AT);
+      if (!aliveRef.current) return;
+      setPlayZoom(null);
+      return;
+    }
+
     setActiveGame(game);
   };
 
@@ -209,19 +396,23 @@ export function MiniGames() {
   };
 
   const isPlayDisabled = (gameType: DailyGameType) => {
-    if (playBusy === gameType) return true;
+    if (playBusy === gameType || playZoom) return true;
     const status = attemptStatuses?.[gameType];
     return status != null && !status.canPlay;
   };
 
   const hasGames =
     flashGames.length > 0 || instinctGames.length > 0 || puzzleGames.length > 0;
+  const puzzleCover = puzzleGames[0]?.imageUrl ?? null;
 
   return (
-    <div className="page">
-      <header className="page-header">
-        <h2>Mini Games</h2>
-        <p className="muted">Quick challenges to sharpen focus and recall.</p>
+    <div className={`page mini-games${playZoom ? ' mini-games--zooming' : ''}`}>
+      <header className="mini-games__header">
+        <p className="mini-games__kicker">Arcade</p>
+        <h2 className="mini-games__title">Games</h2>
+        <p className="muted mini-games__tagline">
+          Quick challenges to sharpen focus and recall.
+        </p>
       </header>
 
       {loading && <p className="muted">Loading games…</p>}
@@ -247,63 +438,63 @@ export function MiniGames() {
       {!loading && hasGames && (
         <div className="mini-games-grid">
           {flashGames.map((game) => (
-            <article key={`flash-${game.id}`} className="mini-game-card">
-              <div className="mini-game-card__body">
-                <span className="mini-game-card__badge">Focus Training</span>
-                <h3 className="mini-game-card__title">Focus Training</h3>
-                {game.description && (
-                  <p className="muted mini-game-card__desc">{game.description}</p>
-                )}
-                {renderAttemptMeta('flash_cards')}
-                <button
-                  type="button"
-                  className="btn btn--primary btn--block mini-game-card__play"
-                  disabled={isPlayDisabled('flash_cards')}
-                  onClick={() => void handlePlay({ type: 'flash', id: game.id })}
-                >
-                  {playBusy === 'flash_cards' ? 'Starting…' : 'Play'}
-                </button>
-              </div>
-            </article>
+            <MiniGamePlayCard
+              key={`flash-${game.id}`}
+              variant="flash"
+              badge="Focus"
+              title="Focus Training"
+              description={game.description}
+              artUrl={game.imageUrl}
+              icon="⚡"
+              flavor={`${game.cardCount} ${game.cardCount === 1 ? 'card' : 'cards'}`}
+              playBusy={playBusy === 'flash_cards'}
+              playDisabled={isPlayDisabled('flash_cards')}
+              attemptMeta={renderAttemptMeta('flash_cards')}
+              compactLimit={compactAttemptLabel(attemptStatuses?.flash_cards, loading)}
+              onPlay={(card, artUrl, fallback) =>
+                void handlePlay({ type: 'flash', id: game.id }, card, artUrl, fallback)
+              }
+            />
           ))}
 
           {instinctGames.map((game) => (
-            <article key={`instinct-${game.id}`} className="mini-game-card">
-              <div className="mini-game-card__body">
-                <span className="mini-game-card__badge">Camera</span>
-                <h3 className="mini-game-card__title">Follow your instinct</h3>
-                {game.description && (
-                  <p className="muted mini-game-card__desc">{game.description}</p>
-                )}
-                {renderAttemptMeta('follow_instinct')}
-                <button
-                  type="button"
-                  className="btn btn--primary btn--block mini-game-card__play"
-                  disabled={isPlayDisabled('follow_instinct')}
-                  onClick={() => void handlePlay({ type: 'instinct', id: game.id })}
-                >
-                  {playBusy === 'follow_instinct' ? 'Starting…' : 'Play'}
-                </button>
-              </div>
-            </article>
+            <MiniGamePlayCard
+              key={`instinct-${game.id}`}
+              variant="instinct"
+              badge="Camera"
+              title="Follow your instinct"
+              description={game.description}
+              artUrl={game.previewImageUrl}
+              icon="📷"
+              flavor={`${game.roundCount} ${game.roundCount === 1 ? 'round' : 'rounds'}`}
+              playBusy={playBusy === 'follow_instinct'}
+              playDisabled={isPlayDisabled('follow_instinct')}
+              attemptMeta={renderAttemptMeta('follow_instinct')}
+              compactLimit={compactAttemptLabel(attemptStatuses?.follow_instinct, loading)}
+              onPlay={(card, artUrl, fallback) =>
+                void handlePlay({ type: 'instinct', id: game.id }, card, artUrl, fallback)
+              }
+            />
           ))}
 
           {puzzleGames.length > 0 && (
-            <article className="mini-game-card">
-              <div className="mini-game-card__body">
-                <span className="mini-game-card__badge">Puzzle</span>
-                <h3 className="mini-game-card__title">Puzzle</h3>
-                {renderAttemptMeta('puzzle')}
-                <button
-                  type="button"
-                  className="btn btn--primary btn--block mini-game-card__play"
-                  disabled={isPlayDisabled('puzzle')}
-                  onClick={() => void handlePlay({ type: 'puzzle' })}
-                >
-                  {playBusy === 'puzzle' ? 'Starting…' : 'Play'}
-                </button>
-              </div>
-            </article>
+            <MiniGamePlayCard
+              key="puzzle"
+              variant="puzzle"
+              badge="Puzzle"
+              title="Puzzle"
+              description="Piece it together. Keep the session streak going."
+              artUrl={puzzleCover}
+              icon="🧩"
+              flavor={`${puzzleGames.length} ${puzzleGames.length === 1 ? 'puzzle' : 'puzzles'}`}
+              playBusy={playBusy === 'puzzle'}
+              playDisabled={isPlayDisabled('puzzle')}
+              attemptMeta={renderAttemptMeta('puzzle')}
+              compactLimit={compactAttemptLabel(attemptStatuses?.puzzle, loading)}
+              onPlay={(card, artUrl, fallback) =>
+                void handlePlay({ type: 'puzzle' }, card, artUrl, fallback)
+              }
+            />
           )}
         </div>
       )}
@@ -317,7 +508,10 @@ export function MiniGames() {
 
       {!loading && hasGames && (
         <section className="mini-games-leaderboards">
-          <h3 className="mini-games-leaderboards__heading">Leaderboards</h3>
+          <header className="mini-games-leaderboards__header">
+            <p className="mini-games-leaderboards__kicker">Monthly</p>
+            <h3 className="mini-games-leaderboards__heading">Leaderboards</h3>
+          </header>
           <p className="muted mini-games-leaderboards__intro">
             Top players by best streak in a single session.
           </p>
@@ -347,6 +541,8 @@ export function MiniGames() {
           </div>
         </section>
       )}
+
+      {playZoom && <MiniGamePlayZoom zoom={playZoom} />}
 
       {activeGame?.type === 'flash' && (
         <FlashWordGameModal

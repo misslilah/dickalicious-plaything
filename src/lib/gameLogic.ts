@@ -394,6 +394,18 @@ export function addVideoXp(state: AppState, amount: number): AppState {
   return next;
 }
 
+/** Add points to the current balance (shop currency). */
+export function addBonusPoints(state: AppState, amount: number): AppState {
+  if (amount <= 0) return state;
+  return {
+    ...state,
+    progress: {
+      ...state.progress,
+      points: state.progress.points + amount,
+    },
+  };
+}
+
 export function uncompleteTask(state: AppState, taskId: string): AppState {
   const date = todayKey(getResetHour(state));
   const plan = state.dailyPlans[date];

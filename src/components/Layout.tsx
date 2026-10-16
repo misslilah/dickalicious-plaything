@@ -5,16 +5,18 @@ import { ThroneGiftToast } from './ThroneGiftToast';
 import { useAudioPlayer } from '../contexts/AudioPlayerProvider';
 import { useAppStore } from '../hooks/useAppStore';
 import { USER_PREVIEW_SANDBOX_BANNER } from '../lib/adminUserMode';
+import { SITE_TUTORIAL_NAV_TARGETS } from '../lib/siteTutorial';
 import { useThroneGiftRealtime } from '../hooks/useThroneGiftRealtime';
 
 const baseNavItems = [
   { to: '/videos', label: 'Videos', icon: '🎬' },
   { to: '/training', label: 'Training', icon: '📚' },
   { to: '/', label: 'Home', icon: '🏠' },
-  { to: '/rewards', label: 'Rewards', icon: '🏆' },
+  { to: '/shop', label: 'Shop', icon: '🛍️' },
   { to: '/punishments', label: 'Punishments', icon: '⚡' },
   { to: '/profile', label: 'Profile', icon: '👤' },
   { to: '/mini-games', label: 'Games', icon: '🎮' },
+  { to: '/community', label: 'Community', icon: '💬' },
   { to: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 
@@ -26,6 +28,7 @@ export function Layout() {
   const { currentTrack } = useAudioPlayer();
   const { pathname } = useLocation();
   const isAdminRoute = pathname.startsWith('/admin');
+  const isCommunityRoute = pathname === '/community';
   const navItems =
     isEffectiveAdmin
       ? [...baseNavItems, adminNavItem]
@@ -46,11 +49,11 @@ export function Layout() {
         <p className="app-tagline">
           {session
             ? `Welcome, ${session.username}`
-            : 'Discipline & progress'}
+            : 'Obey · Train · Glow'}
         </p>
       </header>
-      <main className="app-main">
-        <div className="app-content">
+      <main className={`app-main${isCommunityRoute ? ' app-main--community' : ''}`}>
+        <div className={`app-content${isCommunityRoute ? ' app-content--community' : ''}`}>
           {adminUserPreview && (
             <p className="notice user-preview-banner" role="status">
               {USER_PREVIEW_SANDBOX_BANNER}{' '}
@@ -69,6 +72,7 @@ export function Layout() {
             key={item.to}
             to={item.to}
             end={item.to === '/'}
+            data-tutorial={SITE_TUTORIAL_NAV_TARGETS[item.to]}
             className={({ isActive }) =>
               `nav-link${isActive ? ' nav-link--active' : ''}`
             }

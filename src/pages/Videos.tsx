@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  isMediaPageTab,
   loadMediaPageTab,
   saveMediaPageTab,
   type MediaPageTab,
@@ -9,6 +10,10 @@ import { AudioPlaylistSection } from '../components/AudioPlaylistSection';
 import { VideoCategoryCard } from '../components/VideoCategoryCard';
 import { VideoWatchLogSection } from '../components/VideoWatchLogSection';
 import { useAppStore } from '../hooks/useAppStore';
+import {
+  VIDEOS_TUTORIAL_TAB_EVENT,
+  consumePendingVideosMediaTab,
+} from '../lib/videosTutorial';
 import { getVideoCategoryLockMessage, requiresTierMessage } from '../lib/tiers';
 import {
   canAccessVideoCategory,
@@ -35,6 +40,22 @@ export function Videos() {
       setMediaTab('videos');
     }
   }, [tab, isAdmin]);
+
+  useEffect(() => {
+    const applyTab = (next: string | null) => {
+      if (next !== 'videos' && next !== 'interactive') return;
+      setMediaTab(next);
+    };
+    applyTab(consumePendingVideosMediaTab());
+    const onTab = (event: Event) => {
+      const detail = (event as CustomEvent<string>).detail;
+      applyTab(isMediaPageTab(detail) ? detail : null);
+    };
+    window.addEventListener(VIDEOS_TUTORIAL_TAB_EVENT, onTab);
+    return () => {
+      window.removeEventListener(VIDEOS_TUTORIAL_TAB_EVENT, onTab);
+    };
+  }, []);
 
   const videoAccessCtx: VideoAccessContext = useMemo(
     () => ({
@@ -112,6 +133,7 @@ export function Videos() {
           role="tab"
           aria-selected={tab === 'videos'}
           className={tab === 'videos' ? 'media-tab media-tab--active' : 'media-tab'}
+          data-tutorial="videos-tab"
           onClick={() => setMediaTab('videos')}
         >
           Videos
@@ -121,6 +143,7 @@ export function Videos() {
           role="tab"
           aria-selected={tab === 'interactive'}
           className={tab === 'interactive' ? 'media-tab media-tab--active' : 'media-tab'}
+          data-tutorial="videos-interactive-tab"
           onClick={() => setMediaTab('interactive')}
         >
           Interactive
@@ -169,8 +192,19 @@ export function Videos() {
 
           <VideoPlaylistSection type="normal" />
 
+          <section className="card videos-shop-teaser" data-tutorial="videos-shop">
+            <h3 className="section-title">Buy with points</h3>
+            <p className="muted">
+              Unlock Sweetie, Princess, or Slut videos with task points in the
+              Shop. Some videos also have their own price.
+            </p>
+            <Link to="/shop?tab=videos" className="btn btn--ghost btn--small">
+              Open video shop
+            </Link>
+          </section>
+
           {state.videoCategories.length === 0 ? (
-            <section className="card">
+            <section className="card" data-tutorial="videos-tiers">
               <p className="muted">
                 No video categories yet.
                 {isAdmin ? (
@@ -184,11 +218,11 @@ export function Videos() {
               </p>
             </section>
           ) : filtered.length === 0 ? (
-            <section className="card">
+            <section className="card" data-tutorial="videos-tiers">
               <p className="muted">No categories match your search.</p>
             </section>
           ) : (
-            <section>
+            <section data-tutorial="videos-tiers">
               <h2 className="section-title">Categories</h2>
               <p className="muted video-categories__intro">
                 All categories are listed here. Some require a Patreon tier to open.

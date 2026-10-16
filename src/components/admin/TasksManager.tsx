@@ -859,7 +859,7 @@ export function TasksManager() {
                 <Field
                   label="Points reward"
                   htmlFor="task-points-reward"
-                  hint="Earned when task is completed; spend in Rewards shop"
+                  hint="Earned when task is completed; spend in the Shop"
                 >
                   <input
                     id="task-points-reward"

@@ -1,7 +1,35 @@
+import type { CharacterAppearance } from '../types';
 import { isCommunityAdmin } from './adminDirectMessages';
 import { getCurrentSession, usernameToEmail } from './auth';
+import {
+  CHARACTER_MIGRATION_HINT,
+  emptyEquipped,
+  isCharacterComplete,
+  parseEquipped,
+  parseCharacterBodySize,
+  parseCharacterGender,
+} from './characterSprite';
+import {
+  DEFAULT_BANNER_ID,
+  PROFILE_BANNERS,
+  ownsBanner,
+  parseOwnedBannerIds,
+} from './profileBanners';
 import { tierRank, type PatreonMemberTier, type PatreonStatus } from './tiers';
 import { getSupabase, isSupabaseColumnMissingError } from './supabase';
+
+export const PROFILE_SOCIAL_MIGRATION_HINT =
+  'Profile social fields require supabase/migrations/097_profile_social.sql. Run it in the Supabase SQL Editor, then retry.';
+
+export const BIO_MAX_LENGTH = 280;
+export const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
+export const AVATAR_BUCKET = 'avatars';
+const AVATAR_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+]);
 
 export const ADMIN_LIST_USERS_MIGRATION_HINT =
   'User emails require supabase/migrations/059_admin_list_users.sql. Run it in the Supabase SQL Editor, then refresh this page.';
@@ -363,4 +391,327 @@ export async function updateProfileUsername(
   }
 
   return { ok: true, username: trimmed };
+}
+
+export async function updateProfileCharacter(
+  userId: string,
+  appearance: CharacterAppearance,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!isCharacterComplete(appearance)) {
+    return { ok: false, error: 'Pick a gender and a size to confirm.' };
+  }
+
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({
+      character_gender: appearance.gender,
+      character_breast_size:
+        appearance.gender === 'female' ? appearance.breastSize : null,
+      character_penis_size:
+        appearance.gender === 'male' ? appearance.penisSize : null,
+      character_equipped: appearance.equipped ?? emptyEquipped(),
+    })
+    .eq('id', userId);
+
+  if (error) {
+    if (isSupabaseColumnMissingError(error)) {
+      return { ok: false, error: CHARACTER_MIGRATION_HINT };
+    }
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
+}
+
+export type PublicProfile = {
+  id: string;
+  username: string;
+  avatarUrl: string | null;
+  bio: string;
+  bannerId: string;
+  characterGender: CharacterAppearance['gender'] | null;
+  characterBreastSize: CharacterAppearance['breastSize'];
+  characterPenisSize: CharacterAppearance['penisSize'];
+  characterEquipped: CharacterAppearance['equipped'];
+  lastSeenAt: string | null;
+  currentLevel: number | null;
+  totalXp: number | null;
+  streak: number | null;
+  badgeIds: string[];
+};
+
+type PublicProfileRpcRow = {
+  id: string;
+  username: string;
+  avatar_url: string | null;
+  bio: string | null;
+  banner_id: string | null;
+  character_gender: string | null;
+  character_breast_size: string | null;
+  character_penis_size: string | null;
+  character_equipped: unknown;
+  last_seen_at: string | null;
+  current_level: number | null;
+  total_xp: number | null;
+  streak: number | null;
+  badge_ids: string[] | null;
+};
+
+function mapPublicProfile(row: PublicProfileRpcRow): PublicProfile {
+  return {
+    id: row.id,
+    username: row.username,
+    avatarUrl: row.avatar_url?.trim() || null,
+    bio: row.bio ?? '',
+    bannerId: row.banner_id?.trim() || DEFAULT_BANNER_ID,
+    characterGender: parseCharacterGender(row.character_gender),
+    characterBreastSize: parseCharacterBodySize(row.character_breast_size),
+    characterPenisSize: parseCharacterBodySize(row.character_penis_size),
+    characterEquipped: parseEquipped(row.character_equipped),
+    lastSeenAt: row.last_seen_at,
+    currentLevel: row.current_level,
+    totalXp: row.total_xp,
+    streak: row.streak,
+    badgeIds: (row.badge_ids ?? []).filter(Boolean),
+  };
+}
+
+export async function fetchPublicProfile(
+  lookup: string,
+): Promise<{ ok: true; profile: PublicProfile } | { ok: false; error: string }> {
+  const trimmed = lookup.trim();
+  if (!trimmed) return { ok: false, error: 'Profile not found.' };
+
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const rpc = await supabase.rpc('get_public_profile', { p_lookup: trimmed });
+  if (!rpc.error) {
+    const rows = (rpc.data ?? []) as PublicProfileRpcRow[];
+    if (rows.length === 0) return { ok: false, error: 'Profile not found.' };
+    return { ok: true, profile: mapPublicProfile(rows[0]) };
+  }
+
+  const missingRpc =
+    rpc.error.code === 'PGRST202' ||
+    rpc.error.code === '42883' ||
+    /get_public_profile/i.test(rpc.error.message ?? '') ||
+    /function.*does not exist/i.test(rpc.error.message ?? '');
+
+  if (!missingRpc) {
+    if (isSupabaseColumnMissingError(rpc.error)) {
+      return { ok: false, error: PROFILE_SOCIAL_MIGRATION_HINT };
+    }
+    return { ok: false, error: rpc.error.message };
+  }
+
+  const isUuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      trimmed,
+    );
+  const query = supabase
+    .from('profiles')
+    .select(
+      'id, username, avatar_url, bio, banner_id, character_gender, character_breast_size, character_penis_size, character_equipped, last_seen_at',
+    );
+  const fallback = isUuid
+    ? await query.eq('id', trimmed).maybeSingle()
+    : await query.ilike('username', trimmed).maybeSingle();
+
+  if (fallback.error) {
+    if (isSupabaseColumnMissingError(fallback.error)) {
+      return { ok: false, error: PROFILE_SOCIAL_MIGRATION_HINT };
+    }
+    return { ok: false, error: fallback.error.message };
+  }
+  if (!fallback.data) return { ok: false, error: 'Profile not found.' };
+
+  const row = fallback.data as PublicProfileRpcRow;
+  const badges = await supabase
+    .from('user_badges')
+    .select('badge_id')
+    .eq('user_id', row.id);
+
+  return {
+    ok: true,
+    profile: mapPublicProfile({
+      ...row,
+      current_level: null,
+      total_xp: null,
+      streak: null,
+      badge_ids: ((badges.data ?? []) as { badge_id: string }[]).map(
+        (b) => b.badge_id,
+      ),
+    }),
+  };
+}
+
+export async function updateProfileBio(
+  userId: string,
+  bio: string,
+): Promise<{ ok: true; bio: string } | { ok: false; error: string }> {
+  const next = bio.trim();
+  if (next.length > BIO_MAX_LENGTH) {
+    return { ok: false, error: `Bio must be ${BIO_MAX_LENGTH} characters or fewer.` };
+  }
+
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ bio: next })
+    .eq('id', userId);
+
+  if (error) {
+    if (isSupabaseColumnMissingError(error)) {
+      return { ok: false, error: PROFILE_SOCIAL_MIGRATION_HINT };
+    }
+    return { ok: false, error: error.message };
+  }
+  return { ok: true, bio: next };
+}
+
+export async function updateProfileBanner(
+  userId: string,
+  bannerId: string,
+  ownedBannerIds: string[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!ownsBanner(ownedBannerIds, bannerId)) {
+    return { ok: false, error: 'You do not own this banner yet.' };
+  }
+
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ banner_id: bannerId })
+    .eq('id', userId);
+
+  if (error) {
+    if (isSupabaseColumnMissingError(error)) {
+      return { ok: false, error: PROFILE_SOCIAL_MIGRATION_HINT };
+    }
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
+}
+
+export async function purchaseProfileBanner(
+  userId: string,
+  bannerId: string,
+  ownedBannerIds: string[],
+  currentPoints: number,
+): Promise<
+  | { ok: true; ownedBannerIds: string[]; pointsRemaining: number }
+  | { ok: false; error: string }
+> {
+  const banner = PROFILE_BANNERS.find((item) => item.id === bannerId);
+  if (!banner) return { ok: false, error: 'Banner not found.' };
+  if (ownsBanner(ownedBannerIds, bannerId)) {
+    return { ok: true, ownedBannerIds, pointsRemaining: currentPoints };
+  }
+  if (banner.pricePoints <= 0) {
+    return { ok: true, ownedBannerIds, pointsRemaining: currentPoints };
+  }
+  if (currentPoints < banner.pricePoints) {
+    return { ok: false, error: 'Not enough points.' };
+  }
+
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const nextPoints = currentPoints - banner.pricePoints;
+  const { data, error: pointsError } = await supabase
+    .from('user_progress')
+    .update({ points: nextPoints })
+    .eq('user_id', userId)
+    .gte('points', banner.pricePoints)
+    .select('points')
+    .maybeSingle();
+
+  if (pointsError) return { ok: false, error: pointsError.message };
+  if (!data) return { ok: false, error: 'Not enough points.' };
+
+  const nextOwned = parseOwnedBannerIds([...ownedBannerIds, bannerId]);
+  const { error } = await supabase
+    .from('profiles')
+    .update({
+      owned_banner_ids: nextOwned,
+      banner_id: bannerId,
+    })
+    .eq('id', userId);
+
+  if (error) {
+    if (isSupabaseColumnMissingError(error)) {
+      return { ok: false, error: PROFILE_SOCIAL_MIGRATION_HINT };
+    }
+    return { ok: false, error: error.message };
+  }
+
+  return {
+    ok: true,
+    ownedBannerIds: nextOwned,
+    pointsRemaining: (data as { points: number }).points,
+  };
+}
+
+function avatarExtension(file: File): string {
+  if (file.type === 'image/png') return 'png';
+  if (file.type === 'image/webp') return 'webp';
+  if (file.type === 'image/gif') return 'gif';
+  return 'jpg';
+}
+
+export async function uploadProfileAvatar(
+  userId: string,
+  file: File,
+): Promise<{ ok: true; avatarUrl: string } | { ok: false; error: string }> {
+  if (!AVATAR_MIME_TYPES.has(file.type)) {
+    return { ok: false, error: 'Use a JPEG, PNG, WebP, or GIF image.' };
+  }
+  if (file.size > AVATAR_MAX_BYTES) {
+    return {
+      ok: false,
+      error: 'Keep the photo under 2 MB.',
+    };
+  }
+
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const path = `${userId}/avatar.${avatarExtension(file)}`;
+  const { error: uploadError } = await supabase.storage
+    .from(AVATAR_BUCKET)
+    .upload(path, file, {
+      contentType: file.type,
+      upsert: true,
+    });
+
+  if (uploadError) {
+    if (/bucket|not found|avatars/i.test(uploadError.message)) {
+      return { ok: false, error: PROFILE_SOCIAL_MIGRATION_HINT };
+    }
+    return { ok: false, error: uploadError.message };
+  }
+
+  const { data } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path);
+  const avatarUrl = `${data.publicUrl}?t=${Date.now()}`;
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ avatar_url: avatarUrl })
+    .eq('id', userId);
+
+  if (error) {
+    if (isSupabaseColumnMissingError(error)) {
+      return { ok: false, error: PROFILE_SOCIAL_MIGRATION_HINT };
+    }
+    return { ok: false, error: error.message };
+  }
+
+  return { ok: true, avatarUrl };
 }
