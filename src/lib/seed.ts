@@ -57,6 +57,8 @@ export const DEFAULT_PUNISHMENT_TEMPLATES: PunishmentTemplate[] = [
 
 export function createInitialState(): AppState {
   return {
+    universityClasses: [],
+    universityFamilies: [],
     categories: [],
     tasks: [],
     videoCategories: [],

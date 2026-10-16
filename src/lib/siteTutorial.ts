@@ -9,14 +9,16 @@ export type SiteTutorialStep = {
   title: string;
   body: string;
   route: string;
-  target: string;
+  targets: string[];
   placement: SiteTutorialPlacement;
+  preview?: 'announcements';
 };
 
 export const SITE_TUTORIAL_NAV_TARGETS: Record<string, string> = {
   '/videos': 'nav-videos',
   '/mini-games': 'nav-games',
-  '/punishments': 'nav-punishments',
+  '/university': 'nav-university',
+  '/punishments': 'nav-university',
   '/rewards': 'nav-shop',
   '/shop': 'nav-shop',
   '/community': 'nav-community',
@@ -25,56 +27,81 @@ export const SITE_TUTORIAL_NAV_TARGETS: Record<string, string> = {
 export const SITE_TUTORIAL_STEPS: SiteTutorialStep[] = [
   {
     id: 'home',
-    title: 'Home & your level',
-    body: 'This is Home. Your title, level, and XP sit here at the top — complete tasks to climb. Skip anytime; replay later from Settings.',
+    title: 'This is Home',
+    body: 'Your title, level, and XP live here. Complete tasks to climb. Tap the highlighted area to keep going.',
     route: '/',
-    target: 'home-xp',
+    targets: ['home-xp'],
     placement: 'bottom',
   },
   {
-    id: 'categories',
-    title: 'Join a category',
-    body: 'Tap a category card to join. You can follow up to three at a time, and each one has its own tasks.',
+    id: 'explore',
+    title: 'Explore',
+    body: 'These four tiles are the campus: Videos, Shop, University, and Games. Tap one later to jump in.',
     route: '/',
-    target: 'category-card',
+    targets: ['home-hub'],
     placement: 'bottom',
   },
   {
-    id: 'tasks',
-    title: 'Daily vs category tasks',
-    body: 'Daily tasks live here on Home and refresh on a schedule. Category tasks live inside a category you joined. Both earn XP.',
-    route: '/',
-    target: 'daily-tasks',
+    id: 'videos',
+    title: 'Videos',
+    body: 'Media lives here — catalog, playlists, interactive videos, and audio.',
+    route: '/videos',
+    targets: ['home-videos', 'videos-tab'],
+    placement: 'bottom',
+  },
+  {
+    id: 'shop',
+    title: 'Shop',
+    body: 'Spend task points on banners, videos, and cosmetics. Your balance sits at the top.',
+    route: '/shop',
+    targets: ['home-shop'],
+    placement: 'bottom',
+  },
+  {
+    id: 'university',
+    title: 'University',
+    body: 'Campus. Themes are paths; inside a theme, modules hold your tasks. Punishments sit in the other tab.',
+    route: '/university',
+    targets: ['university-themes', 'university-campus', 'home-hub-university'],
     placement: 'bottom',
   },
   {
     id: 'games',
     title: 'Games',
-    body: 'Games is in the bottom nav. Open it for mini-games when you want a round — some are gated by Patreon tier.',
+    body: 'Mini-games live here when you want a round. Some are gated by Patreon tier.',
     route: '/mini-games',
-    target: 'nav-games',
+    targets: ['home-games'],
+    placement: 'bottom',
+  },
+  {
+    id: 'chat',
+    title: 'Chat',
+    body: 'The bubble is always there. Open it for rooms, DMs, and Announcements from Dickalicious.',
+    route: '/',
+    targets: ['home-chat'],
     placement: 'top',
   },
   {
-    id: 'punishments',
-    title: 'Punishments',
-    body: 'Punishments is in the nav. This is where you take your lumps when you fall behind.',
-    route: '/punishments',
-    target: 'nav-punishments',
-    placement: 'top',
-  },
-  {
-    id: 'shop',
-    title: 'Shop',
-    body: 'Shop is next to it. Spend task points in the Item Shop — featured banners, videos, and cosmetics.',
-    route: '/shop',
-    target: 'nav-shop',
-    placement: 'top',
+    id: 'announcements',
+    title: 'Announcements',
+    body: 'Once a session, or when the day changes, this popup catches you up. Close it with Got it.',
+    route: '/',
+    targets: ['home-announcements'],
+    placement: 'bottom',
+    preview: 'announcements',
   },
 ];
 
 export function queryTutorialTarget(target: string): HTMLElement | null {
   return document.querySelector(`[data-tutorial="${CSS.escape(target)}"]`);
+}
+
+export function queryTutorialTargets(targets: string[]): HTMLElement | null {
+  for (const target of targets) {
+    const el = queryTutorialTarget(target);
+    if (el) return el;
+  }
+  return null;
 }
 
 export function isSiteTutorialDone(): boolean {

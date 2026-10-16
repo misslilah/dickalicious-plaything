@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
+import { categoryDisplayIcon } from '../lib/categoryIcon';
 import type { Category } from '../types';
 
 interface CategoryCardProps {
@@ -21,6 +22,15 @@ interface CategoryCardProps {
   /** Static preview (no link / no button). */
   preview?: boolean;
   tutorialTarget?: string;
+  /** Replaces the default "task" / "tasks" noun. */
+  countNoun?: string;
+  memberYes?: string;
+  memberNo?: string;
+  hideProgress?: boolean;
+  /** Admin/punishment picker chrome (thicker border). */
+  picker?: boolean;
+  /** Override the default /category/:id destination. */
+  to?: string;
 }
 
 export function CategoryCard({
@@ -40,6 +50,12 @@ export function CategoryCard({
   selected = false,
   preview = false,
   tutorialTarget,
+  countNoun,
+  memberYes = 'Joined',
+  memberNo = 'Not joined',
+  hideProgress = false,
+  picker = false,
+  to,
 }: CategoryCardProps) {
   const locked = !isUnlocked && !preview && !onSelect;
   const showJoin = isUnlocked && !isMember && onJoin != null && !preview && !onSelect;
@@ -55,7 +71,9 @@ export function CategoryCard({
           />
         ) : (
           <div className="category-card__placeholder" aria-hidden>
-            <span className="category-card__icon">{category.icon}</span>
+            <span className="category-card__icon">
+              {categoryDisplayIcon(category.name, category.icon)}
+            </span>
           </div>
         )}
         {locked && (
@@ -78,12 +96,12 @@ export function CategoryCard({
           )}
         </div>
         <p className="category-card__meta muted">
-          {taskCount} {taskCount === 1 ? 'task' : 'tasks'}
+          {taskCount} {countNoun ?? (taskCount === 1 ? 'task' : 'tasks')}
           {isMember != null && (
-            <> · {isMember ? 'Joined' : 'Not joined'}</>
+            <> · {isMember ? memberYes : memberNo}</>
           )}
         </p>
-        {(isMember || completionPercent > 0) && taskCount > 0 && (
+        {!hideProgress && (isMember || completionPercent > 0) && taskCount > 0 && (
           <div className="category-card__progress">
             <div
               className="category-card__progress-bar"
@@ -125,7 +143,7 @@ export function CategoryCard({
   const className = [
     'category-card',
     locked ? 'category-card--locked' : '',
-    onSelect ? 'punishment-category-card' : '',
+    picker ? 'punishment-category-card' : '',
     selected ? 'punishment-category-card--selected' : '',
   ]
     .filter(Boolean)
@@ -168,7 +186,7 @@ export function CategoryCard({
 
   return (
     <Link
-      to={`/category/${category.id}`}
+      to={to ?? `/category/${category.id}`}
       className={className}
       style={style}
       {...tutorialAttr}

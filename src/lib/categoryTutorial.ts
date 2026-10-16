@@ -1,4 +1,5 @@
 import { isSiteTutorialDone, isSiteTutorialOpen, queryTutorialTarget } from './siteTutorial';
+import { isUniversityTutorialOpen } from './universityTutorial';
 
 export const CATEGORY_TUTORIAL_STORAGE_KEY = 'category-tutorial-done';
 export const CATEGORY_TUTORIAL_REQUEST_EVENT = 'category-tutorial-request';
@@ -130,7 +131,11 @@ export function categoryTutorialHasPendingContent(): boolean {
 }
 
 export function isCategoryTutorialBlockedBySite(): boolean {
-  return !isSiteTutorialDone() || isSiteTutorialOpen();
+  return (
+    !isSiteTutorialDone() ||
+    isSiteTutorialOpen() ||
+    isUniversityTutorialOpen()
+  );
 }
 
 export function canAutoStartCategoryTutorial(): boolean {

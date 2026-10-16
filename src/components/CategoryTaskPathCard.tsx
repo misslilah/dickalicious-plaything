@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { categoryDisplayIcon } from '../lib/categoryIcon';
 import type { CategoryTaskStatus } from '../lib/gameLogic';
 import { getStageLabel } from '../lib/levels';
 import { TASK_RECURRENCE_LABELS } from '../lib/recurringCategoryTasks';
@@ -121,7 +122,7 @@ export function CategoryTaskPathCard({
               className="category-path-card__thumb-placeholder"
               style={{ background: `${category.color}22` }}
             >
-              <span>{category.icon}</span>
+              <span>{categoryDisplayIcon(category.name, category.icon)}</span>
             </div>
           )}
           {kind !== 'none' && (

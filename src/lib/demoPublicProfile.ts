@@ -34,6 +34,7 @@ export function getDemoPublicProfile(badgeIds: string[] = []): PublicProfile {
     avatarUrl: null,
     bio: "Hi, I'm SweetieDemo — a sample public profile. This description is what visitors see on a member page. Use Send message to try the private-message button.",
     bannerId: 'neon',
+    avatarFrameId: 'crown',
     characterGender: 'female',
     characterBreastSize: 'medium',
     characterPenisSize: null,

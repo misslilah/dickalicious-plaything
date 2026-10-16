@@ -10,6 +10,7 @@ import {
 import { areBubblesEnabled } from '../lib/appSettings';
 import { requestCategoryTutorial } from '../lib/categoryTutorial';
 import { requestSiteTutorial } from '../lib/siteTutorial';
+import { requestUniversityTutorial } from '../lib/universityTutorial';
 import { requestVideosTutorial } from '../lib/videosTutorial';
 import { tierLabel } from '../lib/tiers';
 
@@ -235,16 +236,23 @@ export function Settings() {
       <section className="card">
         <h3 className="section-title">Site guide</h3>
         <p className="muted">
-          Replay the clickable walkthrough of Home, categories, tasks, games,
-          punishments, and rewards — the category path guide, or the Videos
-          guide.
+          Replay the Home explore walkthrough, the University guide, the
+          category path guide, or the Videos guide.
         </p>
         <button
           type="button"
           className="btn btn--primary btn--block"
           onClick={() => requestSiteTutorial()}
         >
-          Replay tutorial
+          Replay Home guide
+        </button>
+        <button
+          type="button"
+          className="btn btn--ghost btn--block"
+          style={{ marginTop: '0.55rem' }}
+          onClick={() => requestUniversityTutorial()}
+        >
+          Replay University guide
         </button>
         <button
           type="button"

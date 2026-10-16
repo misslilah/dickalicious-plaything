@@ -25,6 +25,9 @@ import { Training } from './pages/Training';
 import { VideoCategoryDetail } from './pages/VideoCategoryDetail';
 import { Login } from './pages/Login';
 import { Punishments } from './pages/Punishments';
+import { UniversityClasses, UniversityLayout } from './pages/University';
+import { UniversityClassDetail } from './pages/UniversityClassDetail';
+import { UniversityThemeDetail } from './pages/UniversityThemeDetail';
 import { Shop } from './pages/Shop';
 import { Profile } from './pages/Profile';
 import { Settings } from './pages/Settings';
@@ -93,7 +96,17 @@ const router = createBrowserRouter([
               { path: 'community', element: <Community /> },
               { path: 'shop', element: <Shop /> },
               { path: 'rewards', element: <Navigate to="/shop" replace /> },
-              { path: 'punishments', element: <Punishments /> },
+              {
+                path: 'university',
+                element: <UniversityLayout />,
+                children: [
+                  { index: true, element: <UniversityClasses /> },
+                  { path: 'class/:classId', element: <UniversityClassDetail /> },
+                  { path: 'theme/:familyId', element: <UniversityThemeDetail /> },
+                  { path: 'punishments', element: <Punishments /> },
+                ],
+              },
+              { path: 'punishments', element: <Navigate to="/university/punishments" replace /> },
               { path: 'profile', element: <Profile /> },
               { path: 'profile/:userId', element: <Profile /> },
               { path: 'u/:username', element: <Profile /> },

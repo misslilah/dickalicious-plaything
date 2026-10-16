@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAppStore } from '../hooks/useAppStore';
+import { categoryDisplayIcon } from '../lib/categoryIcon';
 import { useOptionalVideoPlayer } from '../contexts/VideoPlayerProvider';
 import { getPatreonPageUrl } from '../lib/patreon';
 import { TierBadge } from '../components/TierBadge';
@@ -266,7 +267,7 @@ export function VideoCategoryDetail() {
           <Link to="/videos">← Videos</Link>
         </p>
         <h2>
-          {category.icon ?? '🎬'} {category.name}
+          {categoryDisplayIcon(category.name, category.icon, '🎬')} {category.name}
         </h2>
         {category.description && (
           <p className="muted">{category.description}</p>

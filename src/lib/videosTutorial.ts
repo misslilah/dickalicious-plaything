@@ -6,6 +6,7 @@ import {
   isSiteTutorialOpen,
   queryTutorialTarget,
 } from './siteTutorial';
+import { isUniversityTutorialOpen } from './universityTutorial';
 import {
   canAccessVideoCategory,
   type VideoAccessContext,
@@ -149,7 +150,8 @@ export function isVideosTutorialBlocked(): boolean {
   return (
     !isSiteTutorialDone() ||
     isSiteTutorialOpen() ||
-    isCategoryTutorialOpen()
+    isCategoryTutorialOpen() ||
+    isUniversityTutorialOpen()
   );
 }
 

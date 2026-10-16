@@ -57,6 +57,8 @@ export interface Session {
   bio: string;
   bannerId: string;
   ownedBannerIds: string[];
+  avatarFrameId: string;
+  ownedAvatarFrameIds: string[];
 }
 
 export type CategoryGroup =
@@ -65,6 +67,29 @@ export type CategoryGroup =
   | 'intermediate'
   | 'trained'
   | 'mindless';
+
+/** University class: groups themes (and leftover unlinked categories). */
+export interface UniversityClass {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  sortOrder: number;
+}
+
+/**
+ * Grande catégorie: links the same subject across Beginner / Intermediate /
+ * Trained / Mindless. A category belongs to at most one theme.
+ */
+export interface UniversityFamily {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  sortOrder: number;
+}
 
 export interface Category {
   id: string;
@@ -80,6 +105,10 @@ export interface Category {
   categoryGroup?: CategoryGroup;
   /** Unlock only after this category is 100% complete. */
   unlockAfterCategoryId?: string | null;
+  /** University class this category belongs to; null = unclassified. At most one class. */
+  classId?: string | null;
+  /** Theme (grande catégorie) linking this category to its other levels. */
+  familyId?: string | null;
 }
 
 export interface CategoryMemberProgress {
@@ -457,6 +486,8 @@ export interface Video {
 }
 
 export interface AppState {
+  universityClasses: UniversityClass[];
+  universityFamilies: UniversityFamily[];
   categories: Category[];
   tasks: Task[];
   videoCategories: VideoCategory[];

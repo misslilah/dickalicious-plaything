@@ -5,6 +5,7 @@ import { TaskMediaPlayer } from './TaskMediaPlayer';
 import { useAppStore } from '../hooks/useAppStore';
 import { useTaskCompletion } from '../hooks/useTaskCompletion';
 import { isCategoryImagePreview } from '../lib/categoryImage';
+import { categoryDisplayIcon } from '../lib/categoryIcon';
 import {
   getCategoryTaskBlockReason,
   isCategoryTaskAvailable,
@@ -208,7 +209,7 @@ export function CategoryTaskDetailModal({
         <header className="category-task-modal__header">
           <div className="category-task-modal__heading">
             <p className="muted category-task-modal__category">
-              {category.icon} {category.name}
+              {categoryDisplayIcon(category.name, category.icon)} {category.name}
             </p>
             <h2 id="category-task-modal-title">{task.title}</h2>
             {task.isExamTask && (
@@ -276,7 +277,9 @@ export function CategoryTaskDetailModal({
                       className="category-task-modal__placeholder"
                       style={{ background: `${category.color}22` }}
                     >
-                      <span className="category-task-modal__icon">{category.icon}</span>
+                      <span className="category-task-modal__icon">
+                        {categoryDisplayIcon(category.name, category.icon)}
+                      </span>
                     </div>
                   )}
                 </div>

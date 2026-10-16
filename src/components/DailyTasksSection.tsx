@@ -120,7 +120,7 @@ export function DailyTasksSection() {
         <p className="notice">
           {stats.percent === 100
             ? 'Well done! All tasks completed for today.'
-            : 'Day closed — incomplete tasks may have added malus. Check Punishments.'}
+            : 'Day closed — incomplete tasks may have added malus. Check University → Punishments.'}
         </p>
       )}
     </section>

@@ -5,6 +5,8 @@ import { AudioPlaylistBubble } from './AudioPlaylistBubble';
 import { CommunityChatBubble } from './CommunityChatBubble';
 import { CategoryTutorial } from './CategoryTutorial';
 import { SiteTutorial } from './SiteTutorial';
+import { AnnouncementsPopup } from './AnnouncementsPopup';
+import { UniversityTutorial } from './UniversityTutorial';
 import { VideosTutorial } from './VideosTutorial';
 import { PatreonBubble } from './PatreonBubble';
 import { ThroneBubble } from './ThroneBubble';
@@ -79,6 +81,8 @@ export function ProtectedRoute() {
       <SiteTutorial />
       <CategoryTutorial />
       <VideosTutorial />
+      <UniversityTutorial />
+      <AnnouncementsPopup />
       <ThroneBubble />
       <PatreonBubble />
       <Outlet />

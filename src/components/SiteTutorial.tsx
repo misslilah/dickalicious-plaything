@@ -7,14 +7,17 @@ import {
   type CSSProperties,
 } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useCommunityChatSession } from '../contexts/CommunityChatProvider';
+import { useAppStore } from '../hooks/useAppStore';
 import {
   SITE_TUTORIAL_REQUEST_EVENT,
   SITE_TUTORIAL_STEPS,
   isSiteTutorialDone,
   markSiteTutorialDone,
-  queryTutorialTarget,
+  queryTutorialTargets,
   setSiteTutorialOpen,
   type SiteTutorialPlacement,
+  type SiteTutorialStep,
 } from '../lib/siteTutorial';
 
 type AnchorRect = {
@@ -25,7 +28,7 @@ type AnchorRect = {
 };
 
 const HIGHLIGHT_PAD = 8;
-const NAV_HIGHLIGHT_PAD = 5;
+const ROUND_HIGHLIGHT_PAD = 6;
 const HOTSPOT_SIZE = 28;
 const MISSING_GRACE_MS = 900;
 
@@ -37,8 +40,8 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function readAnchorRect(target: string): AnchorRect | null {
-  const el = queryTutorialTarget(target);
+function readAnchorRect(targets: string[]): AnchorRect | null {
+  const el = queryTutorialTargets(targets);
   if (!el) return null;
   const rect = el.getBoundingClientRect();
   if (rect.width < 2 && rect.height < 2) return null;
@@ -68,9 +71,41 @@ function pickPlacement(
   return preferred;
 }
 
+function isRoundTarget(step: SiteTutorialStep): boolean {
+  return step.targets.includes('home-chat');
+}
+
+function AnnouncementsPreview() {
+  return (
+    <aside
+      className="announcements-popup__panel site-tutorial__announce"
+      data-tutorial="home-announcements"
+      aria-hidden="true"
+    >
+      <p className="announcements-popup__kicker">From Dickalicious</p>
+      <h2 className="section-title">Announcements</h2>
+      <ul className="announcements-popup__list">
+        <li className="announcements-popup__item">
+          <p className="announcements-popup__meta muted">Today</p>
+          <p className="announcements-popup__body">
+            A short note when something new drops. You’ll see this once a
+            session, or when the calendar day changes.
+          </p>
+        </li>
+      </ul>
+      <div className="announcements-popup__actions">
+        <span className="btn btn--primary">Got it</span>
+        <span className="btn btn--ghost">Open Community</span>
+      </div>
+    </aside>
+  );
+}
+
 export function SiteTutorial() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const { isEffectiveAdmin } = useAppStore();
+  const { setWidgetOpen } = useCommunityChatSession();
   const [open, setOpen] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [rect, setRect] = useState<AnchorRect | null>(null);
@@ -132,12 +167,12 @@ export function SiteTutorial() {
       return;
     }
     setSiteTutorialOpen(true);
+    setWidgetOpen(false);
     document.body.classList.add('site-tutorial-active');
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        closeTutorial();
-      }
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      if (isEffectiveAdmin) closeTutorial();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => {
@@ -145,7 +180,7 @@ export function SiteTutorial() {
       document.body.classList.remove('site-tutorial-active');
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, [open, isAdminRoute, closeTutorial]);
+  }, [open, isAdminRoute, closeTutorial, isEffectiveAdmin, setWidgetOpen]);
 
   useLayoutEffect(() => {
     if (!open || isAdminRoute) {
@@ -169,7 +204,7 @@ export function SiteTutorial() {
 
     const update = () => {
       if (cancelled) return;
-      const next = readAnchorRect(step.target);
+      const next = readAnchorRect(step.targets);
       if (!next) return;
       setRect(next);
       setMissingTarget(false);
@@ -192,13 +227,13 @@ export function SiteTutorial() {
 
     const tryFind = () => {
       if (cancelled || found) return;
-      const el = queryTutorialTarget(step.target);
+      const el = queryTutorialTargets(step.targets);
       if (!el) return;
       found = true;
       window.clearInterval(intervalId);
       window.clearTimeout(missTimer);
       el.scrollIntoView({
-        block: step.target.startsWith('nav-') ? 'nearest' : 'center',
+        block: 'center',
         inline: 'nearest',
         behavior: prefersReducedMotion() ? 'auto' : 'smooth',
       });
@@ -233,6 +268,9 @@ export function SiteTutorial() {
   const isLast = stepIndex >= SITE_TUTORIAL_STEPS.length - 1;
   const stepLabel = `Step ${stepIndex + 1} of ${SITE_TUTORIAL_STEPS.length}`;
   const showFallback = missingTarget && !rect;
+  const round = isRoundTarget(step);
+  const onRoute = pathname === step.route;
+  const showPreview = onRoute && step.preview === 'announcements';
 
   const handleNext = () => {
     if (isLast) {
@@ -244,7 +282,7 @@ export function SiteTutorial() {
     setStepIndex((current) => current + 1);
   };
 
-  const pad = step.target.startsWith('nav-') ? NAV_HIGHLIGHT_PAD : HIGHLIGHT_PAD;
+  const pad = round ? ROUND_HIGHLIGHT_PAD : HIGHLIGHT_PAD;
   const highlight = rect
     ? {
         top: Math.max(0, rect.top - pad),
@@ -254,14 +292,10 @@ export function SiteTutorial() {
       }
     : null;
 
-  const hotspotX = rect
-    ? rect.left + rect.width / 2
-    : window.innerWidth / 2;
-  const hotspotY = rect
-    ? rect.top + rect.height / 2
-    : window.innerHeight * 0.42;
+  const hotspotX = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
+  const hotspotY = rect ? rect.top + rect.height / 2 : window.innerHeight * 0.42;
 
-  const placement = rect ? pickPlacement(rect, step.placement) : 'bottom';
+  const placement = rect ? pickPlacement(rect, step.placement) : step.placement;
   const tooltipWidth = Math.min(20 * 16, window.innerWidth - 24);
   const tooltipLeft = clamp(
     hotspotX - tooltipWidth / 2,
@@ -269,9 +303,7 @@ export function SiteTutorial() {
     window.innerWidth - tooltipWidth - 12,
   );
   const tooltipTop =
-    placement === 'bottom'
-      ? hotspotY + HOTSPOT_SIZE / 2 + 14
-      : undefined;
+    placement === 'bottom' ? hotspotY + HOTSPOT_SIZE / 2 + 14 : undefined;
   const tooltipBottom =
     placement === 'top'
       ? window.innerHeight - (hotspotY - HOTSPOT_SIZE / 2 - 14)
@@ -287,24 +319,29 @@ export function SiteTutorial() {
       aria-describedby="site-tutorial-body"
     >
       <div className="site-tutorial__scrim" aria-hidden="true" />
-      {highlight && (
-        <div
-          className="site-tutorial__highlight"
-          style={{
-            top: highlight.top,
-            left: highlight.left,
-            width: highlight.width,
-            height: highlight.height,
-          }}
+      {showPreview ? <AnnouncementsPreview /> : null}
+      {highlight ? (
+        <button
+          type="button"
+          className={
+            round
+              ? 'site-tutorial__highlight site-tutorial__highlight--hit site-tutorial__highlight--round'
+              : 'site-tutorial__highlight site-tutorial__highlight--hit'
+          }
+          style={highlight}
+          aria-label={isLast ? 'Finish tutorial' : 'Continue'}
+          onClick={handleNext}
         />
-      )}
-      <button
-        type="button"
-        className="site-tutorial__skip"
-        onClick={() => closeTutorial()}
-      >
-        Skip
-      </button>
+      ) : null}
+      {isEffectiveAdmin ? (
+        <button
+          type="button"
+          className="site-tutorial__skip"
+          onClick={() => closeTutorial()}
+        >
+          Skip
+        </button>
+      ) : null}
       <button
         ref={hotspotRef}
         type="button"
@@ -337,7 +374,9 @@ export function SiteTutorial() {
           {step.body}
         </p>
         <p className="site-tutorial__hint muted">
-          {isLast ? 'Tap the circle to finish.' : 'Tap the circle to continue.'}
+          {isLast
+            ? 'Tap the circle — or the highlighted area — to finish.'
+            : 'Tap the circle — or the highlighted area — to continue.'}
         </p>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { PunishmentCategoryCard } from '../components/PunishmentCategoryCard';
 import { PunishmentCompletionModal } from '../components/PunishmentCompletionModal';
 import { PunishmentListRow } from '../components/PunishmentListRow';
@@ -52,6 +52,8 @@ function parseDifficulty(raw: string | null): PunishmentDifficulty | null {
 }
 
 export function Punishments() {
+  const { pathname } = useLocation();
+  const embedded = pathname.startsWith('/university');
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedCategoryId = searchParams.get('category');
   const {
@@ -290,30 +292,32 @@ export function Punishments() {
   };
 
   return (
-    <div className="page page--punishments">
-      <header className="page-header punishments-hero">
+    <div className={embedded ? 'university-punishments' : 'page page--punishments'}>
+      <header className={embedded ? 'university-punishments__head' : 'page-header punishments-hero'}>
         <div className="punishments-hero__copy">
-          <p className="punishments-hero__kicker">Pay the debt</p>
-          <h2>Punishments</h2>
+          {embedded ? null : <p className="punishments-hero__kicker">Pay the debt</p>}
+          <h2>{embedded ? 'Punishments' : 'Punishments'}</h2>
           <p className="muted">
             Incomplete tasks add malus at day end. Pick a difficulty, choose a
             category, then accept a punishment to unlock your tasks again.
           </p>
         </div>
         <div className="punishments-hero__aside">
-          <div
-            className={`punishments-malus-pill${
-              malus > 0 ? ' punishments-malus-pill--hot' : ' punishments-malus-pill--clear'
-            }`}
-          >
-            <span className="punishments-malus-pill__gem" aria-hidden>
-              {malus > 0 ? '⚡' : '✓'}
-            </span>
-            <div>
-              <strong className="punishments-malus-pill__value">{malus}</strong>
-              <span className="punishments-malus-pill__label">malus</span>
+          {embedded ? null : (
+            <div
+              className={`punishments-malus-pill${
+                malus > 0 ? ' punishments-malus-pill--hot' : ' punishments-malus-pill--clear'
+              }`}
+            >
+              <span className="punishments-malus-pill__gem" aria-hidden>
+                {malus > 0 ? '⚡' : '✓'}
+              </span>
+              <div>
+                <strong className="punishments-malus-pill__value">{malus}</strong>
+                <span className="punishments-malus-pill__label">malus</span>
+              </div>
             </div>
-          </div>
+          )}
           {isAdmin && (
             <Link to="/admin?section=punishments" className="btn btn--ghost btn--small">
               Manage in Admin

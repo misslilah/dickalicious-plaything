@@ -140,7 +140,11 @@ export function CommunityChatBubble() {
           setWidgetOpen(true);
         }}
       />
-      <div ref={widgetRef} className={shellClassName}>
+      <div
+        ref={widgetRef}
+        className={shellClassName}
+        data-tutorial="home-chat"
+      >
         {panelMounted ? (
           <CommunityChatPanel
             variant="widget"
@@ -152,6 +156,7 @@ export function CommunityChatBubble() {
           <button
             type="button"
             className="community-chat-widget__launcher"
+            data-tutorial="home-chat"
             onClick={() => setWidgetOpen(true)}
             aria-controls="community-chat-widget-panel"
             aria-haspopup="dialog"

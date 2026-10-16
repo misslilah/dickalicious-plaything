@@ -2,29 +2,15 @@ import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AdminBroadcastComposeModal } from '../components/AdminBroadcastComposeModal';
 import { AdminLockCardComposeModal } from '../components/AdminLockCardComposeModal';
-import { CategoryCard } from '../components/CategoryCard';
 import { DailyTasksSection } from '../components/DailyTasksSection';
+import { HomeHubMenu } from '../components/HomeHubMenu';
+import { UserAvatar } from '../components/UserAvatar';
 import { XpBar } from '../components/XpBar';
 import { useAppStore } from '../hooks/useAppStore';
 import { useSendAdminBroadcast } from '../hooks/useAdminBroadcast';
 import { useAdminLockCards } from '../hooks/useLockCard';
 import { useOnlinePresence } from '../hooks/useOnlinePresence';
-import {
-  canJoinCategory,
-  CATEGORY_GROUP_LABELS,
-  CATEGORY_GROUP_ORDER,
-  getCategoryCompletionStats,
-  getCategoryGroup,
-  getCategoryUnlockBlockReason,
-  getPreviousTierGroup,
-  getTierGroupStats,
-  getTierUnlockProgressLabel,
-  isCategoryFullyComplete,
-  isCategoryUnlocked,
-  isTierGroupUnlocked,
-  MAX_ACTIVE_CATEGORY_JOINS,
-  TIER_UNLOCK_PERCENT,
-} from '../lib/categoryProgression';
+import { MAX_ACTIVE_CATEGORY_JOINS } from '../lib/categoryProgression';
 import { formatLevelDisplay } from '../lib/levels';
 import { clearLockCard, createLockCard } from '../lib/lockCardDb';
 import { getTodayPlan, homePlanCompletionStats } from '../lib/gameLogic';
@@ -36,7 +22,7 @@ type ComposeTarget =
 type LockTarget = { userId: string; username: string };
 
 export function Dashboard() {
-  const { state, session, joinCategory, isEffectiveAdmin } = useAppStore();
+  const { state, session, isEffectiveAdmin } = useAppStore();
   const isAdmin = isEffectiveAdmin;
   const sendAdminBroadcast = useSendAdminBroadcast(
     session?.userId,
@@ -58,30 +44,10 @@ export function Dashboard() {
     error: lockCardsError,
     refresh: refreshLockCards,
   } = useAdminLockCards(isAdmin);
-  const [joiningId, setJoiningId] = useState<string | null>(null);
-  const [joinError, setJoinError] = useState('');
   const { progress } = state;
   const plan = getTodayPlan(state);
   const stats = homePlanCompletionStats(state, plan, session?.userId ?? null);
   const malus = state.progress.malusPoints;
-  const tutorialCategoryId =
-    CATEGORY_GROUP_ORDER.map((group) =>
-      state.categories.find((cat) => getCategoryGroup(cat) === group),
-    ).find((cat) => cat != null)?.id ?? null;
-
-  const taskCountByCategory = (categoryId: string) =>
-    state.tasks.filter(
-      (t) => (t.taskScope ?? 'category') === 'category' && t.categoryId === categoryId,
-    ).length;
-
-  const handleJoin = async (categoryId: string) => {
-    setJoinError('');
-    setJoiningId(categoryId);
-    const result = await joinCategory(categoryId);
-    setJoiningId(null);
-    if (!result.ok) setJoinError(result.error);
-  };
-
   const usernameForUserId = useCallback(
     (userId: string) =>
       onlineUsers.find((user) => user.id === userId)?.username ??
@@ -128,13 +94,29 @@ export function Dashboard() {
   return (
     <div className="page page--home">
       <section className="home-stats card card--hero">
-        <div data-tutorial="home-xp">
-          <p className="home-hero__kicker">Train. Obey. Level up.</p>
-          <XpBar
-            totalXp={progress.totalXp}
-            currentLevel={progress.currentLevel}
-            levelName={formatLevelDisplay(progress.currentLevel)}
-          />
+        <div className="home-hero__top">
+          {session ? (
+            <Link
+              to="/profile"
+              className="home-hero__avatar"
+              aria-label="Your profile"
+            >
+              <UserAvatar
+                url={session.avatarUrl}
+                name={session.username}
+                frameId={session.avatarFrameId}
+                size="md"
+              />
+            </Link>
+          ) : null}
+          <div data-tutorial="home-xp">
+            <p className="home-hero__kicker">Train. Obey. Level up.</p>
+            <XpBar
+              totalXp={progress.totalXp}
+              currentLevel={progress.currentLevel}
+              levelName={formatLevelDisplay(progress.currentLevel)}
+            />
+          </div>
         </div>
         <div className="home-stats__row">
           <span className="home-stats__chip home-stats__chip--streak">
@@ -154,12 +136,14 @@ export function Dashboard() {
         </div>
       </section>
 
+      <HomeHubMenu />
+
       {malus > 0 && (
         <section className="card card--warn">
           <p>
             You have <strong>{malus}</strong> active malus point{malus === 1 ? '' : 's'}.
             Tasks are blocked until you clear your malus.{' '}
-            <Link to="/punishments">Complete a punishment</Link> to reduce your balance.
+            <Link to="/university/punishments">Complete a punishment</Link> to reduce your balance.
           </p>
         </section>
       )}
@@ -344,96 +328,6 @@ export function Dashboard() {
       />
 
       <DailyTasksSection />
-
-      {joinError && (
-        <p className="login-error" role="alert">
-          {joinError}
-        </p>
-      )}
-
-      {state.categories.length === 0 ? (
-        <section className="card" data-tutorial="category-card">
-          <h2 className="section-title">Categories</h2>
-          <p className="muted">
-            No categories yet. An admin can create categories from the admin panel.
-          </p>
-        </section>
-      ) : (
-        CATEGORY_GROUP_ORDER.map((group) => {
-          const cats = state.categories.filter(
-            (cat) => getCategoryGroup(cat) === group,
-          );
-          if (cats.length === 0) return null;
-
-          const tierLocked =
-            group !== 'all' && !isTierGroupUnlocked(state, group);
-          const prevGroup = getPreviousTierGroup(group);
-
-          return (
-            <section
-              key={group}
-              className={
-                tierLocked
-                  ? 'card category-tier category-tier--locked'
-                  : 'card category-tier'
-              }
-            >
-              <h2 className="section-title">{CATEGORY_GROUP_LABELS[group]}</h2>
-              {tierLocked && prevGroup && (
-                <p className="muted category-tier__hint">
-                  Complete at least {TIER_UNLOCK_PERCENT}% of{' '}
-                  {CATEGORY_GROUP_LABELS[prevGroup]} categories to unlock this tier.
-                  {' '}
-                  {getTierUnlockProgressLabel(state, group)}
-                </p>
-              )}
-              {!tierLocked && group !== 'all' && group !== 'beginner' && prevGroup && (
-                <p className="muted category-tier__hint">
-                  {getTierUnlockProgressLabel(state, group) ??
-                    `${getTierGroupStats(state, prevGroup).percent}% of ${CATEGORY_GROUP_LABELS[prevGroup]} categories completed.`}
-                </p>
-              )}
-              <div className="category-grid">
-                {cats.map((cat) => {
-                  const isMember = state.joinedCategoryIds.includes(cat.id);
-                  const unlocked = isCategoryUnlocked(state, cat);
-                  const lockReason = getCategoryUnlockBlockReason(state, cat);
-                  const completion = getCategoryCompletionStats(state, cat.id);
-                  const joinGate = canJoinCategory(
-                    state,
-                    cat,
-                    state.progress.currentLevel,
-                  );
-                  const isCompleted = isCategoryFullyComplete(state, cat.id);
-
-                  return (
-                    <CategoryCard
-                      key={cat.id}
-                      category={cat}
-                      taskCount={taskCountByCategory(cat.id)}
-                      completionPercent={completion.percent}
-                      completedCount={completion.completed}
-                      isMember={isMember}
-                      isCompleted={isCompleted}
-                      isUnlocked={unlocked}
-                      lockReason={lockReason}
-                      canJoin={joinGate.ok}
-                      joinDisabledReason={joinGate.ok ? null : joinGate.reason}
-                      onJoin={
-                        isAdmin ? undefined : () => void handleJoin(cat.id)
-                      }
-                      joining={joiningId === cat.id}
-                      tutorialTarget={
-                        cat.id === tutorialCategoryId ? 'category-card' : undefined
-                      }
-                    />
-                  );
-                })}
-              </div>
-            </section>
-          );
-        })
-      )}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { AudioPlayerBar } from './AudioPlayerBar';
 import { AudioPlaylistPreviewModal } from './AudioPlaylistPreviewModal';
 import { ThroneGiftToast } from './ThroneGiftToast';
+import { UserAvatar } from './UserAvatar';
 import { useAudioPlayer } from '../contexts/AudioPlayerProvider';
 import { useAppStore } from '../hooks/useAppStore';
 import { USER_PREVIEW_SANDBOX_BANNER } from '../lib/adminUserMode';
@@ -13,7 +14,7 @@ const baseNavItems = [
   { to: '/training', label: 'Training', icon: '📚' },
   { to: '/', label: 'Home', icon: '🏠' },
   { to: '/shop', label: 'Shop', icon: '🛍️' },
-  { to: '/punishments', label: 'Punishments', icon: '⚡' },
+  { to: '/university', label: 'University', icon: '🎓' },
   { to: '/profile', label: 'Profile', icon: '👤' },
   { to: '/mini-games', label: 'Games', icon: '🎮' },
   { to: '/community', label: 'Community', icon: '💬' },
@@ -45,12 +46,28 @@ export function Layout() {
       }
     >
       <header className="app-header">
-        <h1 className="app-title">Dickalicious Plaything</h1>
-        <p className="app-tagline">
-          {session
-            ? `Welcome, ${session.username}`
-            : 'Obey · Train · Glow'}
-        </p>
+        <div className="app-header__copy">
+          <h1 className="app-title">Dickalicious Plaything</h1>
+          <p className="app-tagline">
+            {session
+              ? `Welcome, ${session.username}`
+              : 'Obey · Train · Glow'}
+          </p>
+        </div>
+        {session && !isAdminRoute ? (
+          <Link
+            to="/profile"
+            className="app-header__avatar"
+            aria-label="Your profile"
+          >
+            <UserAvatar
+              url={session.avatarUrl}
+              name={session.username}
+              frameId={session.avatarFrameId}
+              size="sm"
+            />
+          </Link>
+        ) : null}
       </header>
       <main className={`app-main${isCommunityRoute ? ' app-main--community' : ''}`}>
         <div className={`app-content${isCommunityRoute ? ' app-content--community' : ''}`}>

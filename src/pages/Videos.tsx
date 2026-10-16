@@ -122,7 +122,7 @@ export function Videos() {
 
   return (
     <div className="page">
-      <header className="page-header">
+      <header className="page-header" data-tutorial="home-videos">
         <h2>Media</h2>
         <p className="muted">Videos, playlists, and sequential audio</p>
       </header>

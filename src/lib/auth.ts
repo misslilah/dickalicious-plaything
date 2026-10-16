@@ -11,6 +11,11 @@ import {
   parseCharacterGender,
   parseEquipped,
 } from './characterSprite';
+import {
+  DEFAULT_AVATAR_FRAME_ID,
+  parseAvatarFrameId,
+  parseOwnedAvatarFrameIds,
+} from './avatarFrames';
 import { DEFAULT_BANNER_ID, parseOwnedBannerIds } from './profileBanners';
 import {
   EMAIL_NOT_CONFIRMED_MESSAGE,
@@ -38,8 +43,12 @@ export interface AuthSession {
   bio: string;
   bannerId: string;
   ownedBannerIds: string[];
+  avatarFrameId: string;
+  ownedAvatarFrameIds: string[];
 }
 
+const PROFILE_SELECT_FRAMES =
+  'username, role, patreon_tier, patreon_status, patreon_user_id, character_gender, character_breast_size, character_penis_size, character_equipped, avatar_url, bio, banner_id, owned_banner_ids, avatar_frame_id, owned_avatar_frame_ids';
 const PROFILE_SELECT_SOCIAL =
   'username, role, patreon_tier, patreon_status, patreon_user_id, character_gender, character_breast_size, character_penis_size, character_equipped, avatar_url, bio, banner_id, owned_banner_ids';
 const PROFILE_SELECT_WITH_CHARACTER =
@@ -64,6 +73,8 @@ type ProfileRow = {
   bio?: string | null;
   banner_id?: string | null;
   owned_banner_ids?: unknown;
+  avatar_frame_id?: string | null;
+  owned_avatar_frame_ids?: unknown;
 };
 
 /** Map username to internal email for legacy-style usernames. */
@@ -137,6 +148,8 @@ function profileRowToSession(
     bio: row.bio ?? '',
     bannerId: row.banner_id?.trim() || DEFAULT_BANNER_ID,
     ownedBannerIds: parseOwnedBannerIds(row.owned_banner_ids),
+    avatarFrameId: parseAvatarFrameId(row.avatar_frame_id),
+    ownedAvatarFrameIds: parseOwnedAvatarFrameIds(row.owned_avatar_frame_ids),
   };
 }
 
@@ -147,6 +160,7 @@ async function fetchProfileRow(
   if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
 
   const selects = [
+    PROFILE_SELECT_FRAMES,
     PROFILE_SELECT_SOCIAL,
     PROFILE_SELECT_WITH_CHARACTER,
     PROFILE_SELECT_WITH_PATREON,
@@ -207,6 +221,9 @@ export function sessionToApp(session: AuthSession): AppSession {
     bio: session.bio ?? '',
     bannerId: session.bannerId || DEFAULT_BANNER_ID,
     ownedBannerIds: session.ownedBannerIds ?? parseOwnedBannerIds(null),
+    avatarFrameId: session.avatarFrameId || DEFAULT_AVATAR_FRAME_ID,
+    ownedAvatarFrameIds:
+      session.ownedAvatarFrameIds ?? parseOwnedAvatarFrameIds(null),
   };
 }
 

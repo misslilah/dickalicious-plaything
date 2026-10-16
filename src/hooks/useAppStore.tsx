@@ -17,6 +17,8 @@ import type {
   Reward,
   Session,
   Task,
+  UniversityClass,
+  UniversityFamily,
   UserRole,
   Video,
   VideoCategory,
@@ -43,9 +45,16 @@ import {
   deleteVideoDb,
   fetchSharedCatalog,
   insertVideoRow,
+  setUniversityClassCategories,
+  upsertUniversityClass,
+  deleteUniversityClassDb,
+  upsertUniversityFamily,
+  deleteUniversityFamilyDb,
+  setUniversityFamilyCategories,
   updateVideoRow,
   updateVideoDuration,
   type SharedCatalog,
+  isUuid,
   upsertCategory,
   upsertPunishmentCategory,
   upsertPunishmentTemplate,
@@ -242,6 +251,20 @@ interface AppStoreValue {
   updateCategory: (category: Category) => Promise<MutateResult>;
   addCategory: (category: Category) => Promise<MutateResult>;
   deleteCategory: (id: string) => Promise<MutateResult>;
+  addUniversityClass: (item: UniversityClass) => Promise<MutateResult>;
+  updateUniversityClass: (item: UniversityClass) => Promise<MutateResult>;
+  deleteUniversityClass: (id: string) => Promise<MutateResult>;
+  assignCategoriesToClass: (
+    classId: string,
+    categoryIds: string[],
+  ) => Promise<MutateResult>;
+  addUniversityFamily: (item: UniversityFamily) => Promise<MutateResult>;
+  updateUniversityFamily: (item: UniversityFamily) => Promise<MutateResult>;
+  deleteUniversityFamily: (id: string) => Promise<MutateResult>;
+  assignCategoriesToFamily: (
+    familyId: string,
+    categoryIds: string[],
+  ) => Promise<MutateResult>;
   updateTask: (task: Task) => Promise<MutateResult>;
   addTask: (task: Task) => Promise<MutateResult>;
   deleteTask: (id: string) => Promise<MutateResult>;
@@ -280,6 +303,8 @@ const AppStoreContext = createContext<AppStoreValue | null>(null);
 function mergeCatalogIntoState(base: AppState, catalog: SharedCatalog): AppState {
   return {
     ...base,
+    universityClasses: catalog.universityClasses ?? [],
+    universityFamilies: catalog.universityFamilies ?? [],
     categories: catalog.categories,
     tasks: catalog.tasks,
     rewards: catalog.rewards,
@@ -1207,7 +1232,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
           ...s,
           categories: [...s.categories, result.category],
         }));
-        return { ok: true };
+        return { ok: true, id: result.category.id };
       },
       deleteCategory: async (id) => {
         const denied = requireAdmin();
@@ -1218,6 +1243,126 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
           ...s,
           categories: s.categories.filter((c) => c.id !== id),
           tasks: s.tasks.filter((t) => t.categoryId !== id),
+        }));
+        return { ok: true };
+      },
+      addUniversityClass: async (item) => {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const result = await upsertUniversityClass(item, 'insert');
+        if (!result.ok) return result;
+        setState((s) => ({
+          ...s,
+          universityClasses: [...s.universityClasses, result.item].sort(
+            (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
+          ),
+        }));
+        return { ok: true, id: result.item.id };
+      },
+      updateUniversityClass: async (item) => {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const result = await upsertUniversityClass(item, 'update');
+        if (!result.ok) return result;
+        setState((s) => ({
+          ...s,
+          universityClasses: s.universityClasses
+            .map((entry) => (entry.id === result.item.id ? result.item : entry))
+            .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
+        }));
+        return { ok: true };
+      },
+      deleteUniversityClass: async (id) => {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const result = await deleteUniversityClassDb(id);
+        if (!result.ok) return result;
+        setState((s) => ({
+          ...s,
+          universityClasses: s.universityClasses.filter((entry) => entry.id !== id),
+          categories: s.categories.map((category) =>
+            category.classId === id ? { ...category, classId: null } : category,
+          ),
+        }));
+        return { ok: true };
+      },
+      assignCategoriesToClass: async (classId, categoryIds) => {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const result = await setUniversityClassCategories(classId, categoryIds);
+        if (!result.ok) return result;
+        const selected = new Set(categoryIds);
+        setState((s) => ({
+          ...s,
+          categories: s.categories.map((category) => {
+            if (selected.has(category.id)) {
+              return { ...category, classId };
+            }
+            if (category.classId === classId) {
+              return { ...category, classId: null };
+            }
+            return category;
+          }),
+        }));
+        return { ok: true };
+      },
+      addUniversityFamily: async (item) => {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const result = await upsertUniversityFamily(item, 'insert');
+        if (!result.ok) return result;
+        setState((s) => ({
+          ...s,
+          universityFamilies: [...s.universityFamilies, result.item].sort(
+            (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
+          ),
+        }));
+        return { ok: true, id: result.item.id };
+      },
+      updateUniversityFamily: async (item) => {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const result = await upsertUniversityFamily(item, 'update');
+        if (!result.ok) return result;
+        setState((s) => ({
+          ...s,
+          universityFamilies: s.universityFamilies
+            .map((entry) => (entry.id === result.item.id ? result.item : entry))
+            .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
+        }));
+        return { ok: true };
+      },
+      deleteUniversityFamily: async (id) => {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const result = await deleteUniversityFamilyDb(id);
+        if (!result.ok) return result;
+        setState((s) => ({
+          ...s,
+          universityFamilies: s.universityFamilies.filter((entry) => entry.id !== id),
+          categories: s.categories.map((category) =>
+            category.familyId === id ? { ...category, familyId: null } : category,
+          ),
+        }));
+        return { ok: true };
+      },
+      assignCategoriesToFamily: async (familyId, categoryIds) => {
+        const denied = requireAdmin();
+        if (denied) return denied;
+        const result = await setUniversityFamilyCategories(familyId, categoryIds);
+        if (!result.ok) return result;
+        const selected = new Set(categoryIds);
+        setState((s) => ({
+          ...s,
+          categories: s.categories.map((category) => {
+            if (selected.has(category.id)) {
+              return { ...category, familyId };
+            }
+            if (category.familyId === familyId) {
+              return { ...category, familyId: null };
+            }
+            return category;
+          }),
         }));
         return { ok: true };
       },
@@ -1241,7 +1386,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       addTask: async (task) => {
         const denied = requireAdmin();
         if (denied) return denied;
-        const result = await upsertTask(task, { insert: true });
+        const result = await upsertTask(
+          isUuid(task.id) ? task : { ...task, id: crypto.randomUUID() },
+          { insert: true },
+        );
         if (!result.ok) return result;
         setState((s) =>
           ensureDailyPlan(

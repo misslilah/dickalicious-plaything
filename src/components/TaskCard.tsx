@@ -1,3 +1,4 @@
+import { categoryDisplayIcon } from '../lib/categoryIcon';
 import { getStageLabel } from '../lib/levels';
 import type { Category, Task } from '../types';
 import {
@@ -64,7 +65,7 @@ function TaskCardBody({
             className="task-card__badge"
             style={{ borderColor: category.color, color: category.color }}
           >
-            {category.icon} {category.name}
+            {categoryDisplayIcon(category.name, category.icon)} {category.name}
           </span>
         )}
         {scopeBadge && (

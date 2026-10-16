@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
+import { categoryDisplayIcon } from '../lib/categoryIcon';
 import { TierBadge } from './TierBadge';
 import type { VideoCategory } from '../types';
 
@@ -21,7 +22,7 @@ export function VideoCategoryCard({
   onLockedClick,
 }: VideoCategoryCardProps) {
   const color = category.color ?? '#c084fc';
-  const icon = category.icon ?? '🎬';
+  const icon = categoryDisplayIcon(category.name, category.icon, '🎬');
   const requiredTier = category.requiredTier ?? 'public';
   const showTierBadge = locked || (requiredTier !== 'public' && lockedVideoCount > 0);
 

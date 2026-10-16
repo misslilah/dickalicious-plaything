@@ -112,6 +112,7 @@ import {
   updateAudioPlaylistsOrder,
 } from '../lib/audioPlaylist';
 import { CategoriesManager } from '../components/admin/CategoriesManager';
+import { ClassesManager } from '../components/admin/ClassesManager';
 import { MiniGamesAdmin } from '../components/admin/MiniGamesAdmin';
 import { PunishmentsManager } from '../components/admin/PunishmentsManager';
 import { TasksManager } from '../components/admin/TasksManager';
@@ -120,6 +121,12 @@ import { InteractiveVideoAdmin } from '../components/admin/InteractiveVideoAdmin
 import { UploadProgressBar } from '../components/UploadProgressBar';
 
 const ADMIN_SECTIONS = [
+  {
+    id: 'classes' as const,
+    label: 'Classes',
+    icon: '🎓',
+    hint: 'University groups',
+  },
   {
     id: 'categories' as const,
     label: 'Categories',
@@ -203,7 +210,7 @@ export function Admin() {
       <header className="page-header">
         <h2>Admin</h2>
         <p className="muted">
-          Manage categories, tasks, rewards, punishments, videos, audio playlist, mini games, training, and users.
+          Manage classes, categories, tasks, rewards, punishments, videos, audio playlist, mini games, training, and users.
         </p>
       </header>
 
@@ -237,6 +244,7 @@ export function Admin() {
           role="region"
           aria-label={active.label}
         >
+          {section === 'classes' && <ClassesManager />}
           {section === 'categories' && <CategoriesManager />}
           {section === 'tasks' && <TasksManager />}
           {section === 'rewards' && <RewardsAdmin />}

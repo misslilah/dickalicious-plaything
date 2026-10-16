@@ -29,6 +29,22 @@ export const CATEGORY_GROUP_LABELS: Record<CategoryGroup, string> = {
   mindless: 'Mindless',
 };
 
+export const CATEGORY_GROUP_ICONS: Record<CategoryGroup, string> = {
+  all: '📚',
+  beginner: '🌱',
+  intermediate: '🔥',
+  trained: '💪',
+  mindless: '🌀',
+};
+
+/** Level groups shown in University (not the extra `all` bucket). */
+export const UNIVERSITY_CATEGORY_GROUPS: CategoryGroup[] = [
+  'beginner',
+  'intermediate',
+  'trained',
+  'mindless',
+];
+
 const TIER_GROUPS: CategoryGroup[] = [
   'beginner',
   'intermediate',

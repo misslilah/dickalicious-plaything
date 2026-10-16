@@ -408,7 +408,7 @@ export function MiniGames() {
 
   return (
     <div className={`page mini-games${playZoom ? ' mini-games--zooming' : ''}`}>
-      <header className="mini-games__header">
+      <header className="mini-games__header" data-tutorial="home-games">
         <p className="mini-games__kicker">Arcade</p>
         <h2 className="mini-games__title">Games</h2>
         <p className="muted mini-games__tagline">

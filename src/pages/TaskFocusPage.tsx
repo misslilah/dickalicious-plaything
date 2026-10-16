@@ -11,6 +11,7 @@ import { TaskMediaPlayer } from '../components/TaskMediaPlayer';
 import { useAppStore } from '../hooks/useAppStore';
 import { useTaskCompletion } from '../hooks/useTaskCompletion';
 import { isCategoryImagePreview } from '../lib/categoryImage';
+import { categoryDisplayIcon } from '../lib/categoryIcon';
 import {
   canJoinCategory,
   getCategoryTaskBlockReason,
@@ -288,7 +289,9 @@ export function TaskFocusPage() {
               className="task-focus__placeholder"
               style={{ background: `${category.color}22` }}
             >
-              <span className="task-focus__icon">{category.icon}</span>
+              <span className="task-focus__icon">
+                {categoryDisplayIcon(category.name, category.icon)}
+              </span>
             </div>
           )}
         </div>
@@ -296,7 +299,7 @@ export function TaskFocusPage() {
         <div className="task-focus__panel">
           <header className="task-focus__header">
             <p className="task-focus__category muted">
-              {category.icon} {category.name}
+              {categoryDisplayIcon(category.name, category.icon)} {category.name}
             </p>
             <h2 className="task-focus__title">{task.title}</h2>
             {recurring && task.recurrence && (

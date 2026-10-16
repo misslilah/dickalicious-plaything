@@ -12,13 +12,18 @@ import type {
   Task,
   TaskFrequency,
   TaskScope,
+  UniversityClass,
+  UniversityFamily,
   Video,
   VideoCategory,
 } from '../types';
 import { fetchBadges } from './badgeDb';
+import { categoryDisplayIcon } from './categoryIcon';
 import { getSupabase } from './supabase';
 
 export interface SharedCatalog {
+  universityClasses: UniversityClass[];
+  universityFamilies: UniversityFamily[];
   categories: Category[];
   tasks: Task[];
   rewards: Reward[];
@@ -41,6 +46,26 @@ type DbCategory = {
   required_stage: UserStage | null;
   category_group: Category['categoryGroup'] | null;
   unlock_after_category_id: string | null;
+  class_id: string | null;
+  family_id: string | null;
+};
+
+type DbUniversityFamily = {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  sort_order: number;
+};
+
+type DbUniversityClass = {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  sort_order: number;
 };
 
 type DbTask = {
@@ -145,11 +170,35 @@ function mapCategory(row: DbCategory): Category {
     name: row.name,
     description: row.description,
     color: row.color,
-    icon: row.icon,
+    icon: categoryDisplayIcon(row.name, row.icon),
     imageUrl: row.image_url ?? undefined,
     requiredStage: row.required_stage ?? null,
     categoryGroup: row.category_group ?? 'beginner',
     unlockAfterCategoryId: row.unlock_after_category_id ?? null,
+    classId: row.class_id ?? null,
+    familyId: row.family_id ?? null,
+  };
+}
+
+function mapUniversityFamily(row: DbUniversityFamily): UniversityFamily {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description ?? '',
+    icon: row.icon?.trim() || '📚',
+    color: row.color || '#c084fc',
+    sortOrder: row.sort_order ?? 0,
+  };
+}
+
+function mapUniversityClass(row: DbUniversityClass): UniversityClass {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description ?? '',
+    icon: row.icon?.trim() || '🎓',
+    color: row.color || '#c084fc',
+    sortOrder: row.sort_order ?? 0,
   };
 }
 
@@ -275,7 +324,7 @@ function mapVideoCategory(row: DbVideoCategory): VideoCategory {
     name: row.name,
     description: row.description ?? undefined,
     color: row.color ?? undefined,
-    icon: row.icon ?? undefined,
+    icon: categoryDisplayIcon(row.name, row.icon, '🎬'),
     requiredTier: row.required_tier ?? undefined,
     sortOrder: row.sort_order ?? 0,
   };
@@ -360,6 +409,8 @@ export async function fetchSharedCatalog(): Promise<
   }
 
   const [
+    classesRes,
+    familiesRes,
     categoriesRes,
     tasksRes,
     rewardsRes,
@@ -370,6 +421,8 @@ export async function fetchSharedCatalog(): Promise<
     videosRes,
     videoCategoryCountsResult,
   ] = await Promise.all([
+    supabase.from('university_classes').select('*').order('sort_order'),
+    supabase.from('university_families').select('*').order('sort_order'),
     supabase.from('categories').select('*').order('sort_order'),
     supabase.from('tasks').select('*').order('created_at'),
     supabase.from('rewards').select('*').order('created_at'),
@@ -389,7 +442,22 @@ export async function fetchSharedCatalog(): Promise<
     return { ok: false, error: videoCategoryCountsResult.error };
   }
 
+  const classesMissing = Boolean(
+    classesRes.error &&
+      /university_classes|schema cache|does not exist|PGRST205|42P01/i.test(
+        `${classesRes.error.message} ${classesRes.error.code ?? ''}`,
+      ),
+  );
+  const familiesMissing = Boolean(
+    familiesRes.error &&
+      /university_families|schema cache|does not exist|PGRST205|42P01/i.test(
+        `${familiesRes.error.message} ${familiesRes.error.code ?? ''}`,
+      ),
+  );
+
   const firstError =
+    (classesMissing ? null : classesRes.error) ??
+    (familiesMissing ? null : familiesRes.error) ??
     categoriesRes.error ??
     tasksRes.error ??
     rewardsRes.error ??
@@ -405,6 +473,12 @@ export async function fetchSharedCatalog(): Promise<
   return {
     ok: true,
     catalog: {
+      universityClasses: classesMissing
+        ? []
+        : (classesRes.data as DbUniversityClass[]).map(mapUniversityClass),
+      universityFamilies: familiesMissing
+        ? []
+        : (familiesRes.data as DbUniversityFamily[]).map(mapUniversityFamily),
       categories: (categoriesRes.data as DbCategory[]).map(mapCategory),
       tasks: (tasksRes.data as DbTask[]).map(mapTask),
       rewards: (rewardsRes.data as DbReward[]).map(mapReward),
@@ -440,6 +514,8 @@ export async function upsertCategory(
     required_stage: category.requiredStage ?? null,
     category_group: category.categoryGroup ?? 'beginner',
     unlock_after_category_id: category.unlockAfterCategoryId ?? null,
+    class_id: category.classId ?? null,
+    family_id: category.familyId ?? null,
   };
 
   if (mode === 'update') {
@@ -486,6 +562,134 @@ export async function deleteCategoryDb(
   return { ok: true };
 }
 
+export async function upsertUniversityClass(
+  item: UniversityClass,
+  mode: 'insert' | 'update',
+): Promise<{ ok: true; item: UniversityClass } | { ok: false; error: string }> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+  const row = {
+    name: item.name.trim(),
+    description: item.description ?? '',
+    icon: item.icon?.trim() || '🎓',
+    color: item.color || '#c084fc',
+    sort_order: item.sortOrder ?? 0,
+  };
+  if (mode === 'update') {
+    if (!item.id) return { ok: false, error: 'Class id is required for update.' };
+    const { data, error } = await supabase
+      .from('university_classes')
+      .update(row)
+      .eq('id', item.id)
+      .select('*')
+      .maybeSingle();
+    if (error) return { ok: false, error: error.message };
+    if (!data) return { ok: false, error: 'Class not found or update returned no row.' };
+    return { ok: true, item: mapUniversityClass(data as DbUniversityClass) };
+  }
+  const { data, error } = await supabase
+    .from('university_classes')
+    .insert(row)
+    .select('*')
+    .single();
+  if (error || !data) return { ok: false, error: error?.message ?? 'Save failed.' };
+  return { ok: true, item: mapUniversityClass(data as DbUniversityClass) };
+}
+
+export async function deleteUniversityClassDb(
+  id: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+  const { error } = await supabase.from('university_classes').delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function setUniversityClassCategories(
+  classId: string,
+  categoryIds: string[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+  const { error: clearError } = await supabase
+    .from('categories')
+    .update({ class_id: null })
+    .eq('class_id', classId);
+  if (clearError) return { ok: false, error: clearError.message };
+  if (categoryIds.length === 0) return { ok: true };
+  const { error: setError } = await supabase
+    .from('categories')
+    .update({ class_id: classId })
+    .in('id', categoryIds);
+  if (setError) return { ok: false, error: setError.message };
+  return { ok: true };
+}
+
+export async function upsertUniversityFamily(
+  item: UniversityFamily,
+  mode: 'insert' | 'update',
+): Promise<{ ok: true; item: UniversityFamily } | { ok: false; error: string }> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+  const row = {
+    name: item.name.trim(),
+    description: item.description ?? '',
+    icon: item.icon?.trim() || '📚',
+    color: item.color || '#c084fc',
+    sort_order: item.sortOrder ?? 0,
+  };
+  if (mode === 'update') {
+    if (!item.id) return { ok: false, error: 'Theme id is required for update.' };
+    const { data, error } = await supabase
+      .from('university_families')
+      .update(row)
+      .eq('id', item.id)
+      .select('*')
+      .maybeSingle();
+    if (error) return { ok: false, error: error.message };
+    if (!data) return { ok: false, error: 'Theme not found or update returned no row.' };
+    return { ok: true, item: mapUniversityFamily(data as DbUniversityFamily) };
+  }
+  const { data, error } = await supabase
+    .from('university_families')
+    .insert(row)
+    .select('*')
+    .single();
+  if (error || !data) return { ok: false, error: error?.message ?? 'Save failed.' };
+  return { ok: true, item: mapUniversityFamily(data as DbUniversityFamily) };
+}
+
+export async function deleteUniversityFamilyDb(
+  id: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+  const { error } = await supabase.from('university_families').delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function setUniversityFamilyCategories(
+  familyId: string,
+  categoryIds: string[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+  const { error: clearError } = await supabase
+    .from('categories')
+    .update({ family_id: null })
+    .eq('family_id', familyId);
+  if (clearError) return { ok: false, error: clearError.message };
+  if (categoryIds.length === 0) return { ok: true };
+  const { error: setError } = await supabase
+    .from('categories')
+    .update({ family_id: familyId })
+    .in('id', categoryIds);
+  if (setError) return { ok: false, error: setError.message };
+  return { ok: true };
+}
+
 function formatTaskSaveError(message: string, inserting: boolean): string {
   if (/cannot coerce the result to a single json object/i.test(message)) {
     return inserting
@@ -498,6 +702,13 @@ function formatTaskSaveError(message: string, inserting: boolean): string {
   return message;
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: string | undefined | null): value is string {
+  return Boolean(value && UUID_RE.test(value.trim()));
+}
+
 export async function upsertTask(
   task: Task,
   options?: { insert?: boolean },
@@ -507,8 +718,9 @@ export async function upsertTask(
 
   const taskScope = task.taskScope ?? 'category';
   const requiredPhrase = task.requiredPhrase?.trim() || null;
+  const persistId = isUuid(task.id) ? task.id.trim() : undefined;
   const row = {
-    id: task.id || undefined,
+    ...(persistId ? { id: persistId } : {}),
     task_scope: taskScope,
     category_id: taskScope === 'category' ? task.categoryId ?? null : null,
     ...(taskScope === 'custom'
@@ -549,13 +761,13 @@ export async function upsertTask(
       taskScope === 'category' ? task.recurrence ?? 'none' : 'none',
   };
 
-  const inserting = options?.insert ?? !task.id?.trim();
+  const inserting = options?.insert ?? !persistId;
   const { data, error } = inserting
     ? await supabase.from('tasks').insert(row).select().single()
     : await supabase
         .from('tasks')
         .update(row)
-        .eq('id', task.id)
+        .eq('id', persistId)
         .select()
         .maybeSingle();
 

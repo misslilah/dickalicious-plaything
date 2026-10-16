@@ -4,6 +4,11 @@ import { CategoryImagePicker } from '../components/CategoryImagePicker';
 import { CategoryTaskDetailModal } from '../components/CategoryTaskDetailModal';
 import { CategoryTaskPathCard } from '../components/CategoryTaskPathCard';
 import {
+  TaskEditorField,
+  TaskEditorModal,
+  TaskEditorSection,
+} from '../components/admin/TaskEditorModal';
+import {
   emptyTaskMediaPickerValue,
   TaskMediaPicker,
   type TaskMediaPickerValue,
@@ -28,6 +33,7 @@ import {
   isCategoryImagePreview,
   MAX_CATEGORY_IMAGE_BYTES,
 } from '../lib/categoryImage';
+import { categoryDisplayIcon } from '../lib/categoryIcon';
 import {
   getStageLabel,
   getUserStage,
@@ -43,15 +49,12 @@ import {
 } from '../lib/recurringCategoryTasks';
 import type { Task, TaskFrequency, TaskRecurrence, TaskScope } from '../types';
 import { TASK_SCOPE_OPTIONS } from '../lib/taskScope';
+import { isUuid } from '../lib/catalogDb';
 import { resolveTaskMediaForSave } from '../lib/taskMediaAdmin';
 import {
   fetchAdminProfiles,
   type AdminProfileRow,
 } from '../lib/profileDb';
-
-function newId(prefix: string): string {
-  return `${prefix}-${Date.now()}`;
-}
 
 export function CategoryDetail() {
   const { categoryId } = useParams<{ categoryId: string }>();
@@ -205,6 +208,7 @@ export function CategoryDetail() {
     () => emptyTaskMediaPickerValue(),
   );
   const [savingTask, setSavingTask] = useState(false);
+  const [taskEditorOpen, setTaskEditorOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   const selectedTask = selectedTaskId
@@ -238,8 +242,8 @@ export function CategoryDetail() {
     return (
       <div className="page">
         <p className="muted">Category not found.</p>
-        <Link to="/" className="btn btn--ghost">
-          Back to home
+        <Link to="/university" className="btn btn--ghost">
+          Back to University
         </Link>
       </div>
     );
@@ -409,8 +413,11 @@ export function CategoryDetail() {
     }
 
     setSavingTask(true);
-    const taskId = taskDraft.id || newId('task');
-    const existingTask = state.tasks.find((t) => t.id === taskId);
+    const isNew = !isUuid(taskDraft.id);
+    const taskId = isNew ? crypto.randomUUID() : taskDraft.id;
+    const existingTask = isNew
+      ? undefined
+      : state.tasks.find((t) => t.id === taskId);
     const mediaResult = await resolveTaskMediaForSave(
       taskId,
       existingTask ?? taskDraft,
@@ -437,9 +444,7 @@ export function CategoryDetail() {
         ? taskDraft.taskMediaAutoplayOnStart ?? false
         : undefined,
     };
-    const result = state.tasks.some((t) => t.id === task.id)
-      ? await updateTask(task)
-      : await addTask(task);
+    const result = isNew ? await addTask(task) : await updateTask(task);
     setSavingTask(false);
     if (!result.ok) {
       setTaskMessage(result.error);
@@ -464,12 +469,14 @@ export function CategoryDetail() {
     });
     setTaskMediaPicker(emptyTaskMediaPickerValue());
     setTaskMessage('Task saved.');
+    setTaskEditorOpen(false);
   };
 
   const removeTask = (id: string) => {
     if (!window.confirm('Delete this task?')) return;
     deleteTask(id);
     if (taskDraft.id === id) {
+      setTaskEditorOpen(false);
       setTaskDraft({
         id: '',
         title: '',
@@ -493,8 +500,15 @@ export function CategoryDetail() {
 
   return (
     <div className="page">
-      <Link to="/" className="back-link">
-        ← Home
+      <Link
+        to={
+          category.classId
+            ? `/university/class/${category.classId}`
+            : '/university'
+        }
+        className="back-link"
+      >
+        ← University
       </Link>
 
       <header className="category-detail__header">
@@ -510,7 +524,7 @@ export function CategoryDetail() {
               className="category-detail__thumb-placeholder"
               style={{ background: `${category.color}22` }}
             >
-              <span>{category.icon}</span>
+              <span>{categoryDisplayIcon(category.name, category.icon)}</span>
             </div>
           )}
         </div>
@@ -800,7 +814,37 @@ export function CategoryDetail() {
           </section>
 
           <section className="card">
-            <h2 className="section-title">Manage tasks</h2>
+            <div className="university-section-head">
+              <h2 className="section-title">Manage tasks</h2>
+              <button
+                type="button"
+                className="btn btn--primary btn--small"
+                onClick={() => {
+                  setTaskDraft({
+                    id: '',
+                    title: '',
+                    description: '',
+                    taskScope: 'category',
+                    categoryId: categoryId ?? '',
+                    assignedUserId: null,
+                    userStage: 'any',
+                    xpReward: 10,
+                    pointsReward: 0,
+                    frequency: 'daily',
+                    malusPointsOnFail: 0,
+                    sortOrder: 0,
+                    prerequisiteTaskId: null,
+                    isExamTask: false,
+                    recurrence: 'none',
+                  });
+                  setTaskMediaPicker(emptyTaskMediaPickerValue());
+                  setTaskMessage('');
+                  setTaskEditorOpen(true);
+                }}
+              >
+                New task
+              </button>
+            </div>
             {taskMessage && <p className="notice">{taskMessage}</p>}
             <ul className="edit-list">
               {categoryTasks.map((t) => (
@@ -811,6 +855,8 @@ export function CategoryDetail() {
                     onClick={() => {
                       setTaskDraft(t);
                       setTaskMediaPicker(emptyTaskMediaPickerValue());
+                      setTaskMessage('');
+                      setTaskEditorOpen(true);
                     }}
                   >
                     {getStageLabel(t.userStage ?? 'any')}: {t.title}
@@ -832,9 +878,68 @@ export function CategoryDetail() {
                 </li>
               ))}
             </ul>
-            <div className="form-grid">
-              <div className="form-grid__full">
-                <span className="muted">Task type</span>
+            <TaskEditorModal
+              open={taskEditorOpen}
+              title={taskDraft.id ? 'Edit task' : 'New task'}
+              onClose={() => setTaskEditorOpen(false)}
+              preview={
+                category ? (
+                  <CategoryTaskPathCard
+                    task={{
+                      ...taskDraft,
+                      id: taskDraft.id || '__draft__',
+                      title: taskDraft.title.trim() || 'Untitled task',
+                      taskMediaUrl: taskMediaPicker.pendingPreviewUrl
+                        ?? (taskMediaPicker.removeExisting ? undefined : taskDraft.taskMediaUrl),
+                      taskMediaType: taskMediaPicker.pendingMediaType
+                        ?? (taskMediaPicker.removeExisting ? undefined : taskDraft.taskMediaType),
+                    }}
+                    category={category}
+                    stepNumber={1}
+                    status="not_started"
+                    prerequisiteLabel={getPrerequisiteTaskLabel(
+                      {
+                        ...taskDraft,
+                        id: taskDraft.id || '__draft__',
+                      },
+                      state.tasks,
+                    )}
+                  />
+                ) : (
+                  <p className="muted">Preview updates as you edit.</p>
+                )
+              }
+              footer={
+                <>
+                  <button
+                    type="button"
+                    className="btn btn--primary"
+                    disabled={savingTask}
+                    onClick={() => void submitTask()}
+                  >
+                    {savingTask
+                      ? 'Saving…'
+                      : taskDraft.id
+                        ? 'Update task'
+                        : 'Create task'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    onClick={() => setTaskEditorOpen(false)}
+                    disabled={savingTask}
+                  >
+                    Cancel
+                  </button>
+                  {taskMessage ? <p className="notice">{taskMessage}</p> : null}
+                </>
+              }
+            >
+            <TaskEditorSection title="Content">
+              <TaskEditorField
+                label="Task type"
+                hint="Category tasks appear on this category page. Daily tasks appear on the home daily plan. Personal tasks are assigned to one user."
+              >
                 <div className="chip-row chip-row--scroll" role="group" aria-label="Task type">
                   {TASK_SCOPE_OPTIONS.map((opt) => (
                     <button
@@ -861,38 +966,49 @@ export function CategoryDetail() {
                     </button>
                   ))}
                 </div>
-              </div>
-              {taskScope === 'custom' && (
-                <select
-                  aria-label="Assigned user"
-                  value={taskDraft.assignedUserId ?? ''}
+              </TaskEditorField>
+              {taskScope === 'custom' ? (
+                <TaskEditorField label="Assigned user">
+                  <select
+                    aria-label="Assigned user"
+                    value={taskDraft.assignedUserId ?? ''}
+                    onChange={(e) =>
+                      setTaskDraft({
+                        ...taskDraft,
+                        assignedUserId: e.target.value || null,
+                      })
+                    }
+                  >
+                    <option value="">Select user…</option>
+                    {profiles.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.username} ({p.role})
+                      </option>
+                    ))}
+                  </select>
+                </TaskEditorField>
+              ) : null}
+              <TaskEditorField label="Title" htmlFor="cat-task-title">
+                <input
+                  id="cat-task-title"
+                  value={taskDraft.title}
+                  onChange={(e) => setTaskDraft({ ...taskDraft, title: e.target.value })}
+                />
+              </TaskEditorField>
+              <TaskEditorField label="Description" htmlFor="cat-task-desc">
+                <textarea
+                  id="cat-task-desc"
+                  rows={3}
+                  value={taskDraft.description}
                   onChange={(e) =>
-                    setTaskDraft({
-                      ...taskDraft,
-                      assignedUserId: e.target.value || null,
-                    })
+                    setTaskDraft({ ...taskDraft, description: e.target.value })
                   }
-                >
-                  <option value="">Select user…</option>
-                  {profiles.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.username} ({p.role})
-                    </option>
-                  ))}
-                </select>
-              )}
-              <input
-                placeholder="Title"
-                value={taskDraft.title}
-                onChange={(e) => setTaskDraft({ ...taskDraft, title: e.target.value })}
-              />
-              <input
-                placeholder="Description"
-                value={taskDraft.description}
-                onChange={(e) =>
-                  setTaskDraft({ ...taskDraft, description: e.target.value })
-                }
-              />
+                />
+              </TaskEditorField>
+            </TaskEditorSection>
+
+            <TaskEditorSection title="Rules">
+              <TaskEditorField label="User stage">
               <select
                 aria-label="User stage"
                 value={taskDraft.userStage ?? 'any'}
@@ -909,7 +1025,13 @@ export function CategoryDetail() {
                   </option>
                 ))}
               </select>
+              </TaskEditorField>
+              <TaskEditorField
+                label="XP reward"
+                htmlFor="cat-task-xp"
+              >
               <input
+                id="cat-task-xp"
                 type="number"
                 min={5}
                 aria-label="XP reward"
@@ -918,22 +1040,29 @@ export function CategoryDetail() {
                   setTaskDraft({ ...taskDraft, xpReward: Number(e.target.value) })
                 }
               />
+              </TaskEditorField>
+              <TaskEditorField
+                label="Points reward"
+                htmlFor="cat-task-points"
+                hint="Earned when the task is completed; spend in the Shop."
+              >
               <input
+                id="cat-task-points"
                 type="number"
                 min={0}
                 aria-label="Points reward"
-                placeholder="Points reward (shop)"
-                title="Earned when task is completed; spend in the Shop"
                 value={taskDraft.pointsReward ?? 0}
                 onChange={(e) =>
                   setTaskDraft({ ...taskDraft, pointsReward: Number(e.target.value) })
                 }
               />
+              </TaskEditorField>
+              <TaskEditorField label="Malus if not completed" htmlFor="cat-task-malus">
               <input
+                id="cat-task-malus"
                 type="number"
                 min={0}
                 aria-label="Malus if not completed"
-                placeholder="Malus if not completed"
                 value={taskDraft.malusPointsOnFail ?? 0}
                 onChange={(e) =>
                   setTaskDraft({
@@ -942,6 +1071,11 @@ export function CategoryDetail() {
                   })
                 }
               />
+              </TaskEditorField>
+            </TaskEditorSection>
+
+            <TaskEditorSection title="Publication">
+              <TaskEditorField label="Frequency">
               <select
                 value={taskDraft.frequency}
                 onChange={(e) =>
@@ -956,6 +1090,11 @@ export function CategoryDetail() {
                 <option value="weekly">Weekly</option>
                 <option value="once">One-time</option>
               </select>
+              </TaskEditorField>
+              <TaskEditorField
+                label="Category recurrence"
+                hint="Recurring category tasks must be accepted, then completed each day or week."
+              >
               <select
                 value={taskDraft.recurrence ?? 'none'}
                 onChange={(e) =>
@@ -965,17 +1104,18 @@ export function CategoryDetail() {
                   })
                 }
                 aria-label="Category recurrence"
-                title="Recurring category tasks must be accepted, then completed each day or week"
               >
-                <option value="none">Recurrence: None</option>
-                <option value="daily">Recurrence: Daily</option>
-                <option value="weekly">Recurrence: Weekly</option>
+                <option value="none">None</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
               </select>
+              </TaskEditorField>
+              <TaskEditorField label="Sort order" htmlFor="cat-task-sort">
               <input
+                id="cat-task-sort"
                 type="number"
                 min={0}
                 aria-label="Sort order"
-                placeholder="Sort order"
                 value={taskDraft.sortOrder ?? 0}
                 onChange={(e) =>
                   setTaskDraft({
@@ -984,8 +1124,8 @@ export function CategoryDetail() {
                   })
                 }
               />
-              <label className="form-grid__label form-grid__full">
-                Must complete first
+              </TaskEditorField>
+              <TaskEditorField label="Must complete first">
                 <select
                   aria-label="Prerequisite task"
                   value={taskDraft.prerequisiteTaskId ?? ''}
@@ -1004,24 +1144,35 @@ export function CategoryDetail() {
                     </option>
                   ))}
                 </select>
-              </label>
-              <label className="form-grid__checkbox">
-                <input
-                  type="checkbox"
-                  checked={taskDraft.isExamTask ?? false}
-                  onChange={(e) =>
-                    setTaskDraft({
-                      ...taskDraft,
-                      isExamTask: e.target.checked,
-                    })
-                  }
-                />
-                Exam task (unlocks after regular tasks)
-              </label>
+              </TaskEditorField>
+              <TaskEditorField label="Exam task">
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={taskDraft.isExamTask ?? false}
+                    onChange={(e) =>
+                      setTaskDraft({
+                        ...taskDraft,
+                        isExamTask: e.target.checked,
+                      })
+                    }
+                  />
+                  <span>Unlock only after all regular category tasks are completed</span>
+                </label>
+              </TaskEditorField>
+            </TaskEditorSection>
+
+            <TaskEditorSection title="Completion">
+              <TaskEditorField
+                label="Duration (minutes)"
+                htmlFor="cat-task-duration"
+                hint="Optional. For timed activities."
+              >
               <input
+                id="cat-task-duration"
                 type="number"
                 min={1}
-                placeholder="Duration (minutes, optional)"
+                placeholder="Optional"
                 value={taskDraft.durationMinutes ?? ''}
                 onChange={(e) =>
                   setTaskDraft({
@@ -1032,10 +1183,16 @@ export function CategoryDetail() {
                   })
                 }
               />
+              </TaskEditorField>
+              <TaskEditorField
+                label="Timer (resets on leave)"
+                hint="Countdown resets if the player leaves this page before completing."
+              >
+              <div className="form-inline">
               <input
                 type="number"
                 min={0}
-                placeholder="Timer min (resets on leave)"
+                placeholder="Min"
                 aria-label="Timer minutes"
                 title="Timer: resets if player leaves the page"
                 value={
@@ -1058,7 +1215,7 @@ export function CategoryDetail() {
                 type="number"
                 min={0}
                 max={59}
-                placeholder="Timer sec"
+                placeholder="Sec"
                 aria-label="Timer seconds"
                 value={
                   taskDraft.timerSeconds != null ? taskDraft.timerSeconds % 60 : ''
@@ -1076,10 +1233,17 @@ export function CategoryDetail() {
                   });
                 }}
               />
+              </div>
+              </TaskEditorField>
+              <TaskEditorField
+                label="Duration (persists)"
+                hint="Keeps counting after the browser is closed until it finishes or the task is completed."
+              >
+              <div className="form-inline">
               <input
                 type="number"
                 min={0}
-                placeholder="Duration min (persists)"
+                placeholder="Min"
                 aria-label="Duration minutes"
                 title="Duration: keeps counting after browser close"
                 value={
@@ -1104,7 +1268,7 @@ export function CategoryDetail() {
                 type="number"
                 min={0}
                 max={59}
-                placeholder="Duration sec"
+                placeholder="Sec"
                 aria-label="Duration seconds"
                 value={
                   taskDraft.durationSeconds != null
@@ -1124,9 +1288,17 @@ export function CategoryDetail() {
                   });
                 }}
               />
+              </div>
+              </TaskEditorField>
+              <TaskEditorField
+                label="Page URL"
+                htmlFor="cat-task-url"
+                hint="Player must open this link before completing."
+              >
               <input
+                id="cat-task-url"
                 type="url"
-                placeholder="Open URL (optional)"
+                placeholder="https://…"
                 value={taskDraft.openUrl ?? ''}
                 onChange={(e) =>
                   setTaskDraft({
@@ -1135,8 +1307,15 @@ export function CategoryDetail() {
                   })
                 }
               />
+              </TaskEditorField>
+              <TaskEditorField
+                label="Required phrase"
+                htmlFor="cat-task-phrase"
+                hint="Exact match (case-sensitive). Leading and trailing spaces are ignored."
+              >
               <input
-                placeholder="Required phrase (optional)"
+                id="cat-task-phrase"
+                placeholder="Phrase to type"
                 value={taskDraft.requiredPhrase ?? ''}
                 onChange={(e) =>
                   setTaskDraft({
@@ -1145,10 +1324,12 @@ export function CategoryDetail() {
                   })
                 }
               />
+              </TaskEditorField>
+              <TaskEditorField label="Times to write" htmlFor="cat-task-phrase-repeat">
               <input
+                id="cat-task-phrase-repeat"
                 type="number"
                 min={1}
-                placeholder="Times to write (default 1)"
                 title="Times to write phrase"
                 value={taskDraft.requiredPhraseRepeatCount ?? 1}
                 onChange={(e) =>
@@ -1158,8 +1339,13 @@ export function CategoryDetail() {
                   })
                 }
               />
-              <div className="form-grid__full">
-                <span className="muted">Task media</span>
+              </TaskEditorField>
+            </TaskEditorSection>
+
+            <TaskEditorSection
+              title="Visuals"
+              hint="Optional. Upload a video or audio file. Players can preview it before starting."
+            >
                 <TaskMediaPicker
                   compact
                   existingUrl={taskDraft.taskMediaUrl}
@@ -1185,16 +1371,8 @@ export function CategoryDetail() {
                   }}
                   onError={(message) => setTaskMessage(message)}
                 />
-              </div>
-            </div>
-            <button
-              type="button"
-              className="btn btn--primary"
-              disabled={savingTask}
-              onClick={submitTask}
-            >
-              {taskDraft.id ? 'Update task' : 'Add task'}
-            </button>
+            </TaskEditorSection>
+            </TaskEditorModal>
           </section>
 
         </>

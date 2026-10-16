@@ -7,17 +7,22 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react';
+import { CategoryTaskPathCard } from '../CategoryTaskPathCard';
 import { TaskCard } from '../TaskCard';
 import { TaskListRow } from '../TaskListRow';
+import { TaskEditorModal } from './TaskEditorModal';
+import { isUuid } from '../../lib/catalogDb';
 import { useAppStore } from '../../hooks/useAppStore';
 import {
   CATEGORY_GROUP_LABELS,
   CATEGORY_GROUP_ORDER,
   getCategoryGroup,
+  getPrerequisiteTaskLabel,
   getPrerequisiteTaskOptions,
   sortCategoryTasks,
 } from '../../lib/categoryProgression';
 import { isCategoryImagePreview } from '../../lib/categoryImage';
+import { categoryDisplayIcon } from '../../lib/categoryIcon';
 import { USER_STAGE_OPTIONS, type TaskUserStage } from '../../lib/levels';
 import {
   fetchAdminProfiles,
@@ -242,6 +247,14 @@ export function TasksManager() {
     taskScope,
   ]);
 
+  const previewCategory =
+    state.categories.find((category) => category.id === resolvedCategoryId) ?? {
+      id: resolvedCategoryId || 'preview',
+      name: 'Category',
+      icon: '📚',
+      color: '#c084fc',
+      description: '',
+    };
   const previewTask: Task = {
     ...draft,
     id: draft.id || '__draft__',
@@ -249,6 +262,10 @@ export function TasksManager() {
     taskScope,
     categoryId: taskScope === 'category' ? resolvedCategoryId : null,
     assignedUserId: taskScope === 'custom' ? draft.assignedUserId ?? null : null,
+    taskMediaUrl: taskMediaPicker.pendingPreviewUrl
+      ?? (taskMediaPicker.removeExisting ? undefined : draft.taskMediaUrl),
+    taskMediaType: taskMediaPicker.pendingMediaType
+      ?? (taskMediaPicker.removeExisting ? undefined : draft.taskMediaType),
   };
 
   const profileName = (id: string | null | undefined) =>
@@ -381,9 +398,11 @@ export function TasksManager() {
     setError('');
     setSaving(true);
 
-    const isNew = !draft.id;
-    const taskId = draft.id || crypto.randomUUID();
-    const existingTask = state.tasks.find((t) => t.id === taskId);
+    const isNew = !isUuid(draft.id);
+    const taskId = isNew ? crypto.randomUUID() : draft.id;
+    const existingTask = isNew
+      ? undefined
+      : state.tasks.find((t) => t.id === taskId);
     const mediaResult = await resolveTaskMediaForSave(
       taskId,
       existingTask ?? draft,
@@ -446,6 +465,7 @@ export function TasksManager() {
       );
       resetPicker();
     }
+    setEditorOpen(false);
     setMessage('Task deleted.');
   };
 
@@ -564,7 +584,7 @@ export function TasksManager() {
                             ) : (
                               <div className="category-card__placeholder" aria-hidden>
                                 <span className="category-card__icon">
-                                  {category.icon}
+                                  {categoryDisplayIcon(category.name, category.icon)}
                                 </span>
                               </div>
                             )}
@@ -695,19 +715,30 @@ export function TasksManager() {
             </section>
           )}
 
-          {editorOpen && (
-            <section className="card admin-tasks-editor">
-              <h3 className="section-title">
-                {draft.id ? 'Edit task' : newTaskLabel}
-              </h3>
-              <p className="muted admin-punishments-preview-label">User preview</p>
-              {taskScope === 'category' ? (
-                <TaskListRow
-                  task={previewTask}
-                  categoryId={resolvedCategoryId ?? ''}
-                  status="not_started"
-                  preview
-                />
+          <TaskEditorModal
+            open={editorOpen}
+            title={draft.id ? 'Edit task' : newTaskLabel}
+            onClose={closeEditor}
+            preview={
+              taskScope === 'category' ? (
+                <>
+                  <CategoryTaskPathCard
+                    task={previewTask}
+                    category={previewCategory}
+                    stepNumber={1}
+                    status="not_started"
+                    prerequisiteLabel={getPrerequisiteTaskLabel(
+                      previewTask,
+                      state.tasks,
+                    )}
+                  />
+                  <TaskListRow
+                    task={previewTask}
+                    categoryId={resolvedCategoryId ?? ''}
+                    status="not_started"
+                    preview
+                  />
+                </>
               ) : (
                 <TaskCard
                   task={previewTask}
@@ -718,9 +749,52 @@ export function TasksManager() {
                       : undefined
                   }
                 />
-              )}
-
-              <FormBlock title="Basics">
+              )
+            }
+            footer={
+              <>
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  onClick={() => void submit()}
+                  disabled={saving}
+                >
+                  {saving ? 'Saving…' : draft.id ? 'Save task' : 'Create task'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  onClick={() => {
+                    if (draft.id) {
+                      startNewTask();
+                    } else {
+                      closeEditor();
+                    }
+                  }}
+                  disabled={saving}
+                >
+                  {draft.id ? 'New instead' : 'Cancel'}
+                </button>
+                {draft.id ? (
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--danger-text"
+                    onClick={() => void remove(draft.id)}
+                    disabled={saving}
+                  >
+                    Delete
+                  </button>
+                ) : null}
+                {error ? (
+                  <p className="login-error" role="alert">
+                    {error}
+                  </p>
+                ) : null}
+                {message ? <p className="notice">{message}</p> : null}
+              </>
+            }
+          >
+              <FormBlock title="Content">
                 <Field
                   label="Task type"
                   hint="Category tasks appear on category pages. Daily tasks appear on the home daily plan. Personal tasks are assigned to one user."
@@ -922,7 +996,7 @@ export function TasksManager() {
               </FormBlock>
 
               {taskScope === 'category' && (
-                <FormBlock title="Category order & prerequisites">
+                <FormBlock title="Publication">
                   <p className="muted" style={{ marginTop: 0 }}>
                     Control task order within this category. Players must complete the
                     prerequisite task before this one unlocks. Exam tasks unlock only
@@ -1189,7 +1263,7 @@ export function TasksManager() {
                 </Field>
               </FormBlock>
 
-              <FormBlock title="Linked media">
+              <FormBlock title="Visuals">
                 <p className="muted" style={{ marginTop: 0 }}>
                   Optional. Player must watch or listen to the end in a popup. Closing
                   early fails the task (malus applies).
@@ -1318,7 +1392,7 @@ export function TasksManager() {
                 )}
               </FormBlock>
 
-              <FormBlock title="Task media">
+              <FormBlock title="Attached media">
                 <p className="muted" style={{ marginTop: 0 }}>
                   Optional. Upload a video or audio file for this task. Users can
                   preview attached media before starting. Check &quot;Play on
@@ -1352,40 +1426,7 @@ export function TasksManager() {
                 />
               </FormBlock>
 
-              <div className="btn-row admin-form-actions">
-                <button
-                  type="button"
-                  className="btn btn--primary"
-                  onClick={() => void submit()}
-                  disabled={saving}
-                >
-                  {draft.id ? 'Save task' : 'Create task'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn--ghost"
-                  onClick={() => {
-                    if (draft.id) {
-                      startNewTask();
-                    } else {
-                      closeEditor();
-                    }
-                  }}
-                >
-                  {draft.id ? 'New instead' : 'Cancel'}
-                </button>
-                {draft.id && (
-                  <button
-                    type="button"
-                    className="btn btn--ghost btn--danger-text"
-                    onClick={() => void remove(draft.id)}
-                  >
-                    Delete
-                  </button>
-                )}
-              </div>
-            </section>
-          )}
+          </TaskEditorModal>
         </div>
       )}
     </div>
@@ -1505,7 +1546,7 @@ function CategoryChips({
           onClick={() => onChange(c.id)}
         >
           <span className="category-chip__icon" aria-hidden="true">
-            {c.icon}
+            {categoryDisplayIcon(c.name, c.icon)}
           </span>
           <span className="category-chip__name">{c.name}</span>
         </button>

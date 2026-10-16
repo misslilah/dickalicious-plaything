@@ -13,6 +13,7 @@ import {
   MAX_CATEGORY_IMAGE_BYTES,
   resolveCategoryImageUrl,
 } from '../../lib/categoryImage';
+import { categoryDisplayIcon } from '../../lib/categoryIcon';
 import { USER_STAGE_OPTIONS } from '../../lib/levels';
 import type { Category, CategoryGroup } from '../../types';
 
@@ -31,13 +32,15 @@ function emptyCategoryDraft(group: CategoryGroup): Category {
   return {
     id: '',
     name: '',
-    icon: '✨',
+    icon: '',
     color: '#f9a8d4',
     description: '',
     imageUrl: undefined,
     requiredStage: null,
     categoryGroup: group,
     unlockAfterCategoryId: null,
+    classId: null,
+    familyId: null,
   };
 }
 
@@ -106,7 +109,7 @@ export function CategoriesManager() {
     ...draft,
     id: draft.id || '__draft__',
     name: draft.name.trim() || 'Untitled category',
-    icon: draft.icon.trim() || '✨',
+    icon: categoryDisplayIcon(draft.name.trim() || 'Untitled category', draft.icon),
   };
   const previewTaskCount = draft.id
     ? (taskCountByCategory[draft.id] ?? 0)
@@ -190,6 +193,7 @@ export function CategoriesManager() {
       ...draft,
       id: categoryId,
       name: draft.name.trim(),
+      icon: categoryDisplayIcon(draft.name.trim(), draft.icon),
       imageUrl: imageResult.url,
       categoryGroup: draft.categoryGroup ?? selectedGroup,
     };
@@ -220,8 +224,8 @@ export function CategoriesManager() {
   return (
     <div className="admin-categories">
       <p className="muted">
-        Choose a stage, then a category. Cards match Home. Click one to edit it
-        in the side panel.
+        Choose a stage, then a category. Cards match University. Click one to
+        edit it in the side panel. You can also put a category in a class.
       </p>
 
       {message && (
@@ -284,6 +288,7 @@ export function CategoriesManager() {
                   completionPercent={0}
                   completedCount={0}
                   isUnlocked
+                  picker
                   onSelect={() => selectCategory(category)}
                   selected={selectedCategoryId === category.id}
                 />
@@ -491,6 +496,56 @@ export function CategoriesManager() {
             </div>
 
             <div className="field">
+              <label htmlFor="cat-family">Theme</label>
+              <p className="muted field__hint">
+                Links this category to the same subject at other levels.
+              </p>
+              <select
+                id="cat-family"
+                aria-label="Theme"
+                value={draft.familyId ?? ''}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    familyId: e.target.value || null,
+                  })
+                }
+              >
+                <option value="">Unlinked</option>
+                {state.universityFamilies.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.icon || '📚'} {item.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="field">
+              <label htmlFor="cat-class">University class</label>
+              <p className="muted field__hint">
+                Optional. A category can belong to at most one class.
+              </p>
+              <select
+                id="cat-class"
+                aria-label="University class"
+                value={draft.classId ?? ''}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    classId: e.target.value || null,
+                  })
+                }
+              >
+                <option value="">Unclassified</option>
+                {state.universityClasses.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.icon || '🎓'} {item.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="field">
               <span>Tier group</span>
               <p className="muted field__hint">
                 Home section: All appears first; other tiers unlock
@@ -544,7 +599,7 @@ export function CategoriesManager() {
                   .filter((c) => c.id !== draft.id)
                   .map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.icon} {c.name}
+                      {categoryDisplayIcon(c.name, c.icon)} {c.name}
                     </option>
                   ))}
               </select>

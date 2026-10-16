@@ -1,7 +1,8 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { BadgeGrid } from '../components/BadgeGrid';
 import { CharacterSprite } from '../components/CharacterSprite';
+import { UserAvatar } from '../components/UserAvatar';
 import { useAppStore } from '../hooks/useAppStore';
 import {
   appearanceFromSession,
@@ -51,67 +52,6 @@ function ownPublicPreviewPath(
   if (username) return `/u/${encodeURIComponent(username)}?preview=1`;
   if (session?.userId) return `/profile/${session.userId}?view=public`;
   return '/profile?preview=1';
-}
-
-function ProfileAvatar({
-  url,
-  name,
-  editable,
-  uploading,
-  onPick,
-}: {
-  url: string | null;
-  name: string;
-  editable: boolean;
-  uploading: boolean;
-  onPick?: (file: File) => void;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const initial = (name.trim()[0] || '?').toUpperCase();
-
-  const inner = url ? (
-    <img src={url} alt="" className="profile-avatar__img" />
-  ) : (
-    <span className="profile-avatar__fallback" aria-hidden>
-      {initial}
-    </span>
-  );
-
-  if (!editable || !onPick) {
-    return (
-      <div className="profile-avatar" aria-hidden={!url}>
-        {inner}
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/jpeg,image/png,image/webp,image/gif"
-        className="sr-only"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          e.target.value = '';
-          if (file) onPick(file);
-        }}
-      />
-      <button
-        type="button"
-        className="profile-avatar profile-avatar--edit"
-        onClick={() => inputRef.current?.click()}
-        disabled={uploading}
-        aria-label="Change profile picture"
-      >
-        {inner}
-        <span className="profile-avatar__camera" aria-hidden>
-          {uploading ? '…' : '📷'}
-        </span>
-      </button>
-    </>
-  );
 }
 
 export function Profile() {
@@ -226,6 +166,9 @@ export function Profile() {
   const banner = getProfileBanner(
     isOwner ? session?.bannerId : publicProfile?.bannerId,
   );
+  const avatarFrameId = isOwner
+    ? session?.avatarFrameId
+    : publicProfile?.avatarFrameId;
   const shownBadgeIds = isOwner
     ? unlockedBadgeIds
     : publicProfile?.badgeIds ?? [];
@@ -338,9 +281,11 @@ export function Profile() {
         />
         <div className="profile-hero__body">
           <div className="profile-hero__identity">
-            <ProfileAvatar
+            <UserAvatar
               url={displayAvatar}
               name={displayName}
+              frameId={avatarFrameId}
+              size="md"
               editable={showOwnerUi && !adminUserPreview}
               uploading={avatarUploading}
               onPick={showOwnerUi ? handleAvatarPick : undefined}

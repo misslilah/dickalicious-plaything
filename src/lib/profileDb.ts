@@ -10,6 +10,12 @@ import {
   parseCharacterGender,
 } from './characterSprite';
 import {
+  AVATAR_FRAMES,
+  ownsAvatarFrame,
+  parseAvatarFrameId,
+  parseOwnedAvatarFrameIds,
+} from './avatarFrames';
+import {
   DEFAULT_BANNER_ID,
   PROFILE_BANNERS,
   ownsBanner,
@@ -20,6 +26,9 @@ import { getSupabase, isSupabaseColumnMissingError } from './supabase';
 
 export const PROFILE_SOCIAL_MIGRATION_HINT =
   'Profile social fields require supabase/migrations/097_profile_social.sql. Run it in the Supabase SQL Editor, then retry.';
+
+export const AVATAR_FRAME_MIGRATION_HINT =
+  'Avatar frames require supabase/migrations/100_avatar_frames.sql. Run it in the Supabase SQL Editor, then retry.';
 
 export const BIO_MAX_LENGTH = 280;
 export const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
@@ -431,6 +440,7 @@ export type PublicProfile = {
   avatarUrl: string | null;
   bio: string;
   bannerId: string;
+  avatarFrameId: string;
   characterGender: CharacterAppearance['gender'] | null;
   characterBreastSize: CharacterAppearance['breastSize'];
   characterPenisSize: CharacterAppearance['penisSize'];
@@ -448,6 +458,7 @@ type PublicProfileRpcRow = {
   avatar_url: string | null;
   bio: string | null;
   banner_id: string | null;
+  avatar_frame_id?: string | null;
   character_gender: string | null;
   character_breast_size: string | null;
   character_penis_size: string | null;
@@ -466,6 +477,7 @@ function mapPublicProfile(row: PublicProfileRpcRow): PublicProfile {
     avatarUrl: row.avatar_url?.trim() || null,
     bio: row.bio ?? '',
     bannerId: row.banner_id?.trim() || DEFAULT_BANNER_ID,
+    avatarFrameId: parseAvatarFrameId(row.avatar_frame_id),
     characterGender: parseCharacterGender(row.character_gender),
     characterBreastSize: parseCharacterBodySize(row.character_breast_size),
     characterPenisSize: parseCharacterBodySize(row.character_penis_size),
@@ -511,14 +523,20 @@ export async function fetchPublicProfile(
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
       trimmed,
     );
-  const query = supabase
-    .from('profiles')
-    .select(
-      'id, username, avatar_url, bio, banner_id, character_gender, character_breast_size, character_penis_size, character_equipped, last_seen_at',
-    );
-  const fallback = isUuid
-    ? await query.eq('id', trimmed).maybeSingle()
-    : await query.ilike('username', trimmed).maybeSingle();
+  const selectWithFrame =
+    'id, username, avatar_url, bio, banner_id, avatar_frame_id, character_gender, character_breast_size, character_penis_size, character_equipped, last_seen_at';
+  const selectBase =
+    'id, username, avatar_url, bio, banner_id, character_gender, character_breast_size, character_penis_size, character_equipped, last_seen_at';
+  const runFallback = (columns: string) => {
+    const query = supabase.from('profiles').select(columns);
+    return isUuid
+      ? query.eq('id', trimmed).maybeSingle()
+      : query.ilike('username', trimmed).maybeSingle();
+  };
+  let fallback = await runFallback(selectWithFrame);
+  if (fallback.error && isSupabaseColumnMissingError(fallback.error)) {
+    fallback = await runFallback(selectBase);
+  }
 
   if (fallback.error) {
     if (isSupabaseColumnMissingError(fallback.error)) {
@@ -655,6 +673,91 @@ export async function purchaseProfileBanner(
   return {
     ok: true,
     ownedBannerIds: nextOwned,
+    pointsRemaining: (data as { points: number }).points,
+  };
+}
+
+export async function updateProfileAvatarFrame(
+  userId: string,
+  frameId: string,
+  ownedFrameIds: string[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!ownsAvatarFrame(ownedFrameIds, frameId)) {
+    return { ok: false, error: 'You do not own this contour yet.' };
+  }
+
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ avatar_frame_id: frameId })
+    .eq('id', userId);
+
+  if (error) {
+    if (isSupabaseColumnMissingError(error)) {
+      return { ok: false, error: AVATAR_FRAME_MIGRATION_HINT };
+    }
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
+}
+
+export async function purchaseProfileAvatarFrame(
+  userId: string,
+  frameId: string,
+  ownedFrameIds: string[],
+  currentPoints: number,
+): Promise<
+  | { ok: true; ownedAvatarFrameIds: string[]; pointsRemaining: number }
+  | { ok: false; error: string }
+> {
+  const frame = AVATAR_FRAMES.find((item) => item.id === frameId);
+  if (!frame) return { ok: false, error: 'Contour not found.' };
+  if (ownsAvatarFrame(ownedFrameIds, frameId)) {
+    return { ok: true, ownedAvatarFrameIds: ownedFrameIds, pointsRemaining: currentPoints };
+  }
+  if (frame.pricePoints <= 0) {
+    return { ok: true, ownedAvatarFrameIds: ownedFrameIds, pointsRemaining: currentPoints };
+  }
+  if (currentPoints < frame.pricePoints) {
+    return { ok: false, error: 'Not enough points.' };
+  }
+
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, error: 'Supabase is not configured.' };
+
+  const nextPoints = currentPoints - frame.pricePoints;
+  const { data, error: pointsError } = await supabase
+    .from('user_progress')
+    .update({ points: nextPoints })
+    .eq('user_id', userId)
+    .gte('points', frame.pricePoints)
+    .select('points')
+    .maybeSingle();
+
+  if (pointsError) return { ok: false, error: pointsError.message };
+  if (!data) return { ok: false, error: 'Not enough points.' };
+
+  const nextOwned = parseOwnedAvatarFrameIds([...ownedFrameIds, frameId]);
+  const { error } = await supabase
+    .from('profiles')
+    .update({
+      owned_avatar_frame_ids: nextOwned,
+      avatar_frame_id: frameId,
+    })
+    .eq('id', userId);
+
+  if (error) {
+    if (isSupabaseColumnMissingError(error)) {
+      return { ok: false, error: AVATAR_FRAME_MIGRATION_HINT };
+    }
+    return { ok: false, error: error.message };
+  }
+
+  return {
+    ok: true,
+    ownedAvatarFrameIds: nextOwned,
     pointsRemaining: (data as { points: number }).points,
   };
 }

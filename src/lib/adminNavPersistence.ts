@@ -14,6 +14,7 @@ export const ADMIN_MINIGAMES_TAB_PARAM = 'minigamesTab';
 export const ADMIN_TRAINING_TAB_PARAM = 'trainingTab';
 
 export const ADMIN_SECTIONS = [
+  'classes',
   'categories',
   'tasks',
   'rewards',
