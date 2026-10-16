@@ -470,6 +470,45 @@ type PublicProfileRpcRow = {
   badge_ids: string[] | null;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function optionalString(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
+function optionalNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function readPublicProfileRpcRow(value: unknown): PublicProfileRpcRow | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.id !== 'string' || typeof value.username !== 'string') {
+    return null;
+  }
+  const badgeIds = Array.isArray(value.badge_ids)
+    ? value.badge_ids.filter((id): id is string => typeof id === 'string')
+    : null;
+  return {
+    id: value.id,
+    username: value.username,
+    avatar_url: optionalString(value.avatar_url),
+    bio: optionalString(value.bio),
+    banner_id: optionalString(value.banner_id),
+    avatar_frame_id: optionalString(value.avatar_frame_id),
+    character_gender: optionalString(value.character_gender),
+    character_breast_size: optionalString(value.character_breast_size),
+    character_penis_size: optionalString(value.character_penis_size),
+    character_equipped: value.character_equipped,
+    last_seen_at: optionalString(value.last_seen_at),
+    current_level: optionalNumber(value.current_level),
+    total_xp: optionalNumber(value.total_xp),
+    streak: optionalNumber(value.streak),
+    badge_ids: badgeIds,
+  };
+}
+
 function mapPublicProfile(row: PublicProfileRpcRow): PublicProfile {
   return {
     id: row.id,
@@ -501,7 +540,9 @@ export async function fetchPublicProfile(
 
   const rpc = await supabase.rpc('get_public_profile', { p_lookup: trimmed });
   if (!rpc.error) {
-    const rows = (rpc.data ?? []) as PublicProfileRpcRow[];
+    const rows = (Array.isArray(rpc.data) ? rpc.data : [])
+      .map(readPublicProfileRpcRow)
+      .filter((row): row is PublicProfileRpcRow => row !== null);
     if (rows.length === 0) return { ok: false, error: 'Profile not found.' };
     return { ok: true, profile: mapPublicProfile(rows[0]) };
   }
@@ -523,34 +564,48 @@ export async function fetchPublicProfile(
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
       trimmed,
     );
-  const selectWithFrame =
-    'id, username, avatar_url, bio, banner_id, avatar_frame_id, character_gender, character_breast_size, character_penis_size, character_equipped, last_seen_at';
-  const selectBase =
-    'id, username, avatar_url, bio, banner_id, character_gender, character_breast_size, character_penis_size, character_equipped, last_seen_at';
-  const runFallback = (columns: string) => {
-    const query = supabase.from('profiles').select(columns);
+  const runFallback = (includeFrame: boolean) => {
+    const query = includeFrame
+      ? supabase
+          .from('profiles')
+          .select(
+            'id, username, avatar_url, bio, banner_id, avatar_frame_id, character_gender, character_breast_size, character_penis_size, character_equipped, last_seen_at',
+          )
+      : supabase
+          .from('profiles')
+          .select(
+            'id, username, avatar_url, bio, banner_id, character_gender, character_breast_size, character_penis_size, character_equipped, last_seen_at',
+          );
     return isUuid
       ? query.eq('id', trimmed).maybeSingle()
       : query.ilike('username', trimmed).maybeSingle();
   };
-  let fallback = await runFallback(selectWithFrame);
-  if (fallback.error && isSupabaseColumnMissingError(fallback.error)) {
-    fallback = await runFallback(selectBase);
+  const first = await runFallback(true);
+  let error = first.error;
+  let data: unknown = first.data;
+  if (error && isSupabaseColumnMissingError(error)) {
+    const retry = await runFallback(false);
+    error = retry.error;
+    data = retry.data;
   }
 
-  if (fallback.error) {
-    if (isSupabaseColumnMissingError(fallback.error)) {
+  if (error) {
+    if (isSupabaseColumnMissingError(error)) {
       return { ok: false, error: PROFILE_SOCIAL_MIGRATION_HINT };
     }
-    return { ok: false, error: fallback.error.message };
+    return { ok: false, error: error.message };
   }
-  if (!fallback.data) return { ok: false, error: 'Profile not found.' };
+  const row = readPublicProfileRpcRow(data);
+  if (!row) return { ok: false, error: 'Profile not found.' };
 
-  const row = fallback.data as PublicProfileRpcRow;
   const badges = await supabase
     .from('user_badges')
     .select('badge_id')
     .eq('user_id', row.id);
+
+  const badgeIds = (Array.isArray(badges.data) ? badges.data : [])
+    .map((item) => (isRecord(item) ? item.badge_id : null))
+    .filter((id): id is string => typeof id === 'string');
 
   return {
     ok: true,
@@ -559,9 +614,7 @@ export async function fetchPublicProfile(
       current_level: null,
       total_xp: null,
       streak: null,
-      badge_ids: ((badges.data ?? []) as { badge_id: string }[]).map(
-        (b) => b.badge_id,
-      ),
+      badge_ids: badgeIds,
     }),
   };
 }
