@@ -61,7 +61,7 @@ export function Login() {
       setError(result.error);
       return;
     }
-    navigate('/character', { replace: true });
+    navigate('/', { replace: true });
   };
 
   const configStatus = getSupabaseConfigStatus();

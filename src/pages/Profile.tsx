@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { BadgeGrid } from '../components/BadgeGrid';
 import { CharacterSprite } from '../components/CharacterSprite';
 import { useAppStore } from '../hooks/useAppStore';
@@ -120,7 +120,6 @@ export function Profile() {
   const { state, session, effectiveSession, refreshProfile, adminUserPreview } =
     useAppStore();
   const { progress, unlockedBadgeIds } = state;
-  const navigate = useNavigate();
 
   const lookup = routeUserId || routeUsername || null;
   const isDemoPublic = isDemoPublicProfileLookup(lookup);
@@ -443,50 +442,22 @@ export function Profile() {
               Preview public profile
             </Link>
           </section>
-          <section className="card profile-character">
-            <h3 className="section-title">Character</h3>
-            {hasCharacter && appearance ? (
-              <>
-                <div className="profile-character__sprite">
-                  <CharacterSprite appearance={appearance} size="medium" />
-                </div>
-                <p className="profile-character__label">
-                  {characterSizeSummary(appearance)}
+          {hasCharacter && appearance && (
+            <section className="card profile-character">
+              <h3 className="section-title">Character</h3>
+              <div className="profile-character__sprite">
+                <CharacterSprite appearance={appearance} size="medium" />
+              </div>
+              <p className="profile-character__label">
+                {characterSizeSummary(appearance)}
+              </p>
+              {adminUserPreview && (
+                <p className="muted profile-character__preview-note">
+                  User preview — this look is local only and is not saved.
                 </p>
-                {adminUserPreview && (
-                  <p className="muted profile-character__preview-note">
-                    User preview — this look is local only and is not saved.
-                  </p>
-                )}
-                <button
-                  type="button"
-                  className="btn btn--ghost btn--block"
-                  onClick={() =>
-                    navigate('/character', { state: { from: '/profile' } })
-                  }
-                >
-                  Change appearance
-                </button>
-              </>
-            ) : (
-              <>
-                <p className="muted">
-                  {adminUserPreview
-                    ? 'No local preview character. You can try the creator without saving to your account.'
-                    : 'No character yet. Create a paper-doll body to show here.'}
-                </p>
-                <button
-                  type="button"
-                  className="btn btn--primary btn--block"
-                  onClick={() =>
-                    navigate('/character', { state: { from: '/profile' } })
-                  }
-                >
-                  Create character
-                </button>
-              </>
-            )}
-          </section>
+              )}
+            </section>
+          )}
 
           <section className="card">
             <h3 className="section-title">Description</h3>

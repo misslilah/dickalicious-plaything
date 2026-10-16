@@ -26,7 +26,6 @@ import { VideoCategoryDetail } from './pages/VideoCategoryDetail';
 import { Login } from './pages/Login';
 import { Punishments } from './pages/Punishments';
 import { Shop } from './pages/Shop';
-import { CharacterCreator } from './pages/CharacterCreator';
 import { Profile } from './pages/Profile';
 import { Settings } from './pages/Settings';
 import { Today } from './pages/Today';
@@ -64,7 +63,7 @@ const router = createBrowserRouter([
       {
         element: <ProtectedRoute />,
         children: [
-          { path: 'character', element: <CharacterCreator /> },
+          { path: 'character', element: <Navigate to="/" replace /> },
           {
             element: <Layout />,
             children: [
