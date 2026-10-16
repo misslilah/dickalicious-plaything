@@ -170,7 +170,7 @@ function ShopTile({
             : status === 'locked'
               ? 'Locked'
               : 'BUY';
-  const actionable = status === 'buy' || status === 'equip';
+  const actionable = status === 'buy' || status === 'equip' || status === 'buying';
 
   return (
     <article

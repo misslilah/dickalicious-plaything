@@ -84,6 +84,7 @@ function waitMs(ms: number): Promise<void> {
 function compactAttemptLabel(status: DailyGameAttemptStatus | undefined, loading: boolean): string {
   if (!status) return loading ? 'Loading…' : 'Daily plays';
   if (status.unlimited) return 'Unlimited';
+  if (status.limit == null) return loading ? 'Loading…' : 'Daily plays';
   if (status.limit === 0) return 'Members only';
   const left = Math.max(0, status.limit - status.used);
   return `${left}/${status.limit} left`;
@@ -116,7 +117,7 @@ function MiniGamePlayCard({
   compactLimit: string;
   onPlay: (card: HTMLElement | null, artUrl: string | null, fallback: string) => void;
 }) {
-  const cardRef = useRef<HTMLArticleElement>(null);
+  const cardRef = useRef<HTMLElement>(null);
   const fallback = GAME_ART_FALLBACK[variant];
   const artStyle: CSSProperties = {
     backgroundImage: artUrl ? `url(${artUrl})` : fallback,

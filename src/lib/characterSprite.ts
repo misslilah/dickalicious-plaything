@@ -166,14 +166,24 @@ export function isCharacterComplete(appearance: CharacterAppearance | null): boo
 }
 
 export function hasSavedCharacter(
-  session: Pick<Session, 'characterGender' | 'characterBreastSize' | 'characterPenisSize'> | null,
+  session: Pick<
+    Session,
+    'characterGender' | 'characterBreastSize' | 'characterPenisSize' | 'characterEquipped'
+  > | null,
 ): boolean {
   return isCharacterComplete(appearanceFromSession(session));
 }
 
 /** Regular users must finish the creator once. Admins and user-preview skip the gate. */
 export function needsCharacterSetup(
-  session: Pick<Session, 'role' | 'characterGender' | 'characterBreastSize' | 'characterPenisSize'> | null,
+  session: Pick<
+    Session,
+    | 'role'
+    | 'characterGender'
+    | 'characterBreastSize'
+    | 'characterPenisSize'
+    | 'characterEquipped'
+  > | null,
   adminUserPreview: boolean,
 ): boolean {
   if (!session || adminUserPreview || session.role === 'admin') return false;
