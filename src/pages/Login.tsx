@@ -61,6 +61,10 @@ export function Login() {
       setError(result.error);
       return;
     }
+    if ('pendingConfirmation' in result) {
+      setNotice(result.message);
+      return;
+    }
     navigate('/', { replace: true });
   };
 

@@ -25,6 +25,7 @@ import {
   isInvalidLoginCredentialsError,
   isSupabaseColumnMissingError,
   isSupabaseConfigured,
+  SIGNUP_CHECK_EMAIL_MESSAGE,
 } from './supabase';
 
 export interface AuthSession {
@@ -341,7 +342,9 @@ export async function signUpWithEmail(
   username: string,
   password: string,
 ): Promise<
-  { ok: true; session: AuthSession } | { ok: false; error: string }
+  | { ok: true; session: AuthSession }
+  | { ok: true; pendingConfirmation: true; message: string }
+  | { ok: false; error: string }
 > {
   if (!isSupabaseConfigured()) {
     return {
@@ -379,12 +382,24 @@ export async function signUpWithEmail(
       if (session) return { ok: true, session };
     }
 
-    if (isLocalAppEmail(trimmedEmail)) {
-      const confirmed = await confirmLocalAppSignup(trimmedEmail, data.user?.id);
-      if (!confirmed.ok) return { ok: false, error: confirmed.error };
+    // Confirm email ON: signUp succeeds with no session. Auto-login would
+    // hit GoTrue invalid_credentials (anti-enumeration for unconfirmed
+    // users) or fail username lookup, and the UI showed "Invalid username
+    // or password" instead of asking the user to confirm.
+    if (!data.session) {
+      if (isLocalAppEmail(trimmedEmail)) {
+        const confirmed = await confirmLocalAppSignup(trimmedEmail, data.user?.id);
+        if (!confirmed.ok) return { ok: false, error: confirmed.error };
+        return login(trimmedEmail, password);
+      }
+      return {
+        ok: true,
+        pendingConfirmation: true,
+        message: SIGNUP_CHECK_EMAIL_MESSAGE,
+      };
     }
 
-    return login(trimmedUsername, password);
+    return login(trimmedEmail, password);
   } catch (err) {
     return {
       ok: false,

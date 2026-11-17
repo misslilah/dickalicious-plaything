@@ -145,6 +145,10 @@ export function isSupabaseColumnMissingError(
 export const EMAIL_NOT_CONFIRMED_MESSAGE =
   'Your email is not confirmed yet. Please check your inbox and confirm your email before signing in.';
 
+/** Shown after sign-up when Confirm email is enabled and no session is returned. */
+export const SIGNUP_CHECK_EMAIL_MESSAGE =
+  'Check your email to confirm your account, then sign in.';
+
 export function formatSupabaseAuthError(
   error: { message?: string } | null | undefined,
   status: SupabaseConfigStatus = getSupabaseConfigStatus(),

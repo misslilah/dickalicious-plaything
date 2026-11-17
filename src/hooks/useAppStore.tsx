@@ -198,7 +198,11 @@ interface AppStoreValue {
     email: string,
     username: string,
     password: string,
-  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  ) => Promise<
+    | { ok: true }
+    | { ok: true; pendingConfirmation: true; message: string }
+    | { ok: false; error: string }
+  >;
   refreshProfile: () => Promise<void>;
   logout: () => Promise<void>;
   changePassword: (
@@ -649,6 +653,13 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       signUp: async (email, username, password) => {
         const result = await authSignUp(email, username, password);
         if (!result.ok) return result;
+        if ('pendingConfirmation' in result) {
+          return {
+            ok: true as const,
+            pendingConfirmation: true as const,
+            message: result.message,
+          };
+        }
         userIdRef.current = result.session.userId;
         setSession(sessionToApp(result.session));
         await loadAllData(result.session.userId);
