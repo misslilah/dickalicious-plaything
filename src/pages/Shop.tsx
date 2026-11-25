@@ -1,5 +1,11 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import {
+  ShopEmpty,
+  ShopSkeletonGrid,
+  ShopTile,
+  type TileStatus,
+} from '../components/ShopTile';
 import { TierBadge } from '../components/TierBadge';
 import { UserAvatar } from '../components/UserAvatar';
 import { useAppStore } from '../hooks/useAppStore';
@@ -9,7 +15,7 @@ import {
   ownsAvatarFrame,
   type AvatarFrame,
 } from '../lib/avatarFrames';
-import { CLOTHING_CATALOG, CLOTHING_SLOTS } from '../lib/characterSprite';
+import { rarityFromCost, type CosmeticRarity } from '../lib/cosmeticRarity';
 import {
   PROFILE_BANNERS,
   getProfileBanner,
@@ -35,35 +41,10 @@ import {
 import type { Reward, Video } from '../types';
 
 type ShopTab = 'featured' | 'banners' | 'cosmetics' | 'videos' | 'rewards';
-type ShopRarity = 'common' | 'rare' | 'epic' | 'legendary';
-type TileStatus = 'buy' | 'equip' | 'owned' | 'equipped' | 'locked' | 'buying';
+type ShopRarity = CosmeticRarity;
 
 const FEATURED_BANNER_ID = 'neon';
 const SECONDARY_FEATURED_BANNER_ID = 'void';
-
-const CLOTHING_TEASERS = [
-  {
-    id: 'teaser-top',
-    name: 'Velvet Top',
-    slot: 'top',
-    rarity: 'epic' as const,
-    art: 'linear-gradient(160deg, #3b0764 0%, #7e22ce 48%, #f0abfc 100%)',
-  },
-  {
-    id: 'teaser-bottom',
-    name: 'Nightshade Bottoms',
-    slot: 'bottom',
-    rarity: 'rare' as const,
-    art: 'linear-gradient(160deg, #082f49 0%, #0369a1 50%, #67e8f9 100%)',
-  },
-  {
-    id: 'teaser-underwear',
-    name: 'Silk Underwear',
-    slot: 'underwear',
-    rarity: 'legendary' as const,
-    art: 'linear-gradient(160deg, #422006 0%, #a16207 46%, #f5c84c 100%)',
-  },
-] as const;
 
 function isShopReward(reward: Reward): boolean {
   return !reward.autoTrigger && (reward.cost ?? 0) > 0;
@@ -73,15 +54,8 @@ function parseShopTab(raw: string | null): ShopTab {
   if (raw === 'featured' || raw === 'banners' || raw === 'videos' || raw === 'rewards') {
     return raw;
   }
-  if (raw === 'clothes' || raw === 'cosmetics') return 'cosmetics';
+  if (raw === 'cosmetics') return 'cosmetics';
   return 'featured';
-}
-
-function rarityFromCost(cost: number): ShopRarity {
-  if (cost <= 0) return 'common';
-  if (cost < 200) return 'rare';
-  if (cost < 400) return 'epic';
-  return 'legendary';
 }
 
 function rarityFromTier(tier: string): ShopRarity {
@@ -142,110 +116,6 @@ function ShopShelf({
   );
 }
 
-function ShopTile({
-  rarity,
-  size = 'standard',
-  name,
-  subtitle,
-  priceLabel,
-  artStyle,
-  icon,
-  preview,
-  ribbon,
-  status,
-  disabled,
-  onAction,
-}: {
-  rarity: ShopRarity;
-  size?: 'standard' | 'featured';
-  name: string;
-  subtitle?: ReactNode;
-  priceLabel: string;
-  artStyle?: CSSProperties;
-  icon?: string;
-  preview?: ReactNode;
-  ribbon?: string;
-  status: TileStatus;
-  disabled?: boolean;
-  onAction?: () => void;
-}) {
-  const cta =
-    status === 'buying'
-      ? 'Buying…'
-      : status === 'equip'
-        ? 'Equip'
-        : status === 'owned'
-          ? 'Owned'
-          : status === 'equipped'
-            ? 'Equipped'
-            : status === 'locked'
-              ? 'Locked'
-              : 'BUY';
-  const actionable = status === 'buy' || status === 'equip' || status === 'buying';
-
-  return (
-    <article
-      className={`item-shop-tile item-shop-tile--${rarity}${
-        size === 'featured' ? ' item-shop-tile--featured' : ''
-      }${status === 'locked' ? ' item-shop-tile--locked' : ''}${
-        preview ? ' item-shop-tile--framed' : ''
-      }`}
-    >
-      <div
-        className={`item-shop-tile__art${preview ? ' item-shop-tile__art--framed' : ''}`}
-        style={artStyle}
-      >
-        {ribbon ? <span className="item-shop-tile__ribbon">{ribbon}</span> : null}
-        <span className="item-shop-tile__rarity">{rarity}</span>
-        {preview ? (
-          <div className="item-shop-tile__preview">{preview}</div>
-        ) : icon ? (
-          <span className="item-shop-tile__icon" aria-hidden>
-            {icon}
-          </span>
-        ) : null}
-        {status === 'locked' ? (
-          <span className="item-shop-tile__lock" aria-hidden>
-            🔒
-          </span>
-        ) : null}
-      </div>
-      <div className="item-shop-tile__body">
-        <strong className="item-shop-tile__name">{name}</strong>
-        {subtitle ? <p className="item-shop-tile__sub">{subtitle}</p> : null}
-      </div>
-      <div className="item-shop-tile__bar">
-        <span className="item-shop-tile__price">
-          <span className="item-shop-tile__gem" aria-hidden>
-            ◆
-          </span>
-          {priceLabel}
-        </span>
-        {actionable ? (
-          <button
-            type="button"
-            className="btn btn--primary btn--small item-shop-tile__buy"
-            disabled={disabled || status === 'buying'}
-            onClick={onAction}
-          >
-            {cta}
-          </button>
-        ) : (
-          <span
-            className={`item-shop-tile__status${
-              status === 'equipped' || status === 'owned'
-                ? ' item-shop-tile__status--ok'
-                : ''
-            }`}
-          >
-            {cta}
-          </span>
-        )}
-      </div>
-    </article>
-  );
-}
-
 export function Shop() {
   const {
     state,
@@ -257,6 +127,7 @@ export function Shop() {
     session,
     refresh,
     refreshProfile,
+    dataLoading,
   } = useAppStore();
   const { progress, unlockedRewardIds } = state;
   const [searchParams] = useSearchParams();
@@ -490,7 +361,7 @@ export function Shop() {
     return (
       <ShopTile
         key={frame.id}
-        rarity={rarityFromCost(frame.pricePoints)}
+        rarity={frame.rarity}
         name={frame.name}
         subtitle={frame.description}
         priceLabel={frame.pricePoints > 0 ? formatPoints(frame.pricePoints) : 'Free'}
@@ -628,19 +499,6 @@ export function Shop() {
             <ShopShelf title="Daily" kicker="Always in rotation">
               <div className="item-shop-grid">
                 {dailyBanners.map((banner) => bannerTile(banner, 'standard'))}
-                <ShopTile
-                  rarity="legendary"
-                  name="Coming soon"
-                  subtitle="Character clothes drop next"
-                  priceLabel="Soon"
-                  icon="👗"
-                  artStyle={{
-                    background:
-                      'linear-gradient(160deg, #422006 0%, #9d174d 48%, #f5c84c 100%)',
-                  }}
-                  ribbon="Teaser"
-                  status="locked"
-                />
               </div>
             </ShopShelf>
           )}
@@ -677,44 +535,6 @@ export function Shop() {
               {AVATAR_FRAMES.map((frame) => frameTile(frame))}
             </div>
           </ShopShelf>
-          <ShopShelf title="Clothes" kicker="Paper-doll drip">
-            <p className="muted item-shop-shelf__copy">
-              Character clothing will use the paper-doll slots{' '}
-              {CLOTHING_SLOTS.join(', ')}. Outfits stay on your sprite once the
-              catalog drops.
-            </p>
-            {CLOTHING_CATALOG.length === 0 ? (
-              <div className="item-shop-grid">
-                {CLOTHING_TEASERS.map((item) => (
-                  <ShopTile
-                    key={item.id}
-                    rarity={item.rarity}
-                    name={item.name}
-                    subtitle={`${item.slot} · Coming soon`}
-                    priceLabel="Soon"
-                    icon="👗"
-                    artStyle={{ background: item.art }}
-                    ribbon="Locked"
-                    status="locked"
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="item-shop-grid">
-                {CLOTHING_CATALOG.map((item) => (
-                  <ShopTile
-                    key={item.id}
-                    rarity={item.paid ? 'epic' : 'common'}
-                    name={item.name}
-                    subtitle={item.slot}
-                    priceLabel={item.paid ? 'Paid' : 'Free'}
-                    icon="👗"
-                    status="locked"
-                  />
-                ))}
-              </div>
-            )}
-          </ShopShelf>
         </>
       )}
 
@@ -728,7 +548,14 @@ export function Shop() {
             >
               <p className="muted item-shop-shelf__copy">{option.description}</p>
               {option.eligibleVideos.length === 0 ? (
-                <p className="muted">No videos left in this tier.</p>
+                dataLoading && state.videos.length === 0 ? (
+                  <ShopSkeletonGrid count={3} />
+                ) : (
+                  <ShopEmpty icon="🎬" title="Nothing left in this tier">
+                    You already have access to every video here. Check back
+                    when new ones drop.
+                  </ShopEmpty>
+                )
               ) : (
                 <div className="item-shop-grid">
                   {option.eligibleVideos.map((video) =>
@@ -773,9 +600,9 @@ export function Shop() {
       {tab === 'rewards' && (
         <ShopShelf title="Rewards" kicker="Spend your grind">
           {shop.length === 0 ? (
-            <p className="muted">
-              No shop rewards yet. Admins can add items with a point cost.
-            </p>
+            <ShopEmpty icon="🎁" title="No rewards yet">
+              Admins can add items with a point cost. They will show up here.
+            </ShopEmpty>
           ) : (
             <div className="item-shop-grid">
               {shop.map((reward) => rewardTile(reward))}

@@ -1,15 +1,12 @@
 import type {
-  CharacterEquipped,
   PatreonMemberTier,
   PatreonStatus,
   Session as AppSession,
   UserRole,
 } from '../types';
 import {
-  emptyEquipped,
   parseCharacterBodySize,
   parseCharacterGender,
-  parseEquipped,
 } from './characterSprite';
 import {
   DEFAULT_AVATAR_FRAME_ID,
@@ -20,6 +17,7 @@ import { DEFAULT_BANNER_ID, parseOwnedBannerIds } from './profileBanners';
 import {
   EMAIL_NOT_CONFIRMED_MESSAGE,
   formatSupabaseAuthError,
+  getAuthEmailRedirectTo,
   getSupabase,
   INVALID_LOGIN_CREDENTIALS_MESSAGE,
   isInvalidLoginCredentialsError,
@@ -39,7 +37,6 @@ export interface AuthSession {
   characterGender: AppSession['characterGender'];
   characterBreastSize: AppSession['characterBreastSize'];
   characterPenisSize: AppSession['characterPenisSize'];
-  characterEquipped: CharacterEquipped;
   avatarUrl: string | null;
   bio: string;
   bannerId: string;
@@ -49,11 +46,11 @@ export interface AuthSession {
 }
 
 const PROFILE_SELECT_FRAMES =
-  'username, role, patreon_tier, patreon_status, patreon_user_id, character_gender, character_breast_size, character_penis_size, character_equipped, avatar_url, bio, banner_id, owned_banner_ids, avatar_frame_id, owned_avatar_frame_ids';
+  'username, role, patreon_tier, patreon_status, patreon_user_id, character_gender, character_breast_size, character_penis_size, avatar_url, bio, banner_id, owned_banner_ids, avatar_frame_id, owned_avatar_frame_ids';
 const PROFILE_SELECT_SOCIAL =
-  'username, role, patreon_tier, patreon_status, patreon_user_id, character_gender, character_breast_size, character_penis_size, character_equipped, avatar_url, bio, banner_id, owned_banner_ids';
+  'username, role, patreon_tier, patreon_status, patreon_user_id, character_gender, character_breast_size, character_penis_size, avatar_url, bio, banner_id, owned_banner_ids';
 const PROFILE_SELECT_WITH_CHARACTER =
-  'username, role, patreon_tier, patreon_status, patreon_user_id, character_gender, character_breast_size, character_penis_size, character_equipped';
+  'username, role, patreon_tier, patreon_status, patreon_user_id, character_gender, character_breast_size, character_penis_size';
 const PROFILE_SELECT_WITH_PATREON =
   'username, role, patreon_tier, patreon_status, patreon_user_id';
 const PROFILE_SELECT_BASE = 'username, role';
@@ -69,7 +66,6 @@ type ProfileRow = {
   character_gender?: string | null;
   character_breast_size?: string | null;
   character_penis_size?: string | null;
-  character_equipped?: unknown;
   avatar_url?: string | null;
   bio?: string | null;
   banner_id?: string | null;
@@ -144,7 +140,6 @@ function profileRowToSession(
     characterGender: parseCharacterGender(row.character_gender),
     characterBreastSize: parseCharacterBodySize(row.character_breast_size),
     characterPenisSize: parseCharacterBodySize(row.character_penis_size),
-    characterEquipped: parseEquipped(row.character_equipped),
     avatarUrl: row.avatar_url?.trim() || null,
     bio: row.bio ?? '',
     bannerId: row.banner_id?.trim() || DEFAULT_BANNER_ID,
@@ -188,6 +183,21 @@ async function fetchProfileRow(
   return { ok: false, error: lastError ?? 'Profile not found.' };
 }
 
+let profileRowInflight: {
+  userId: string;
+  promise: ReturnType<typeof fetchProfileRow>;
+} | null = null;
+
+function fetchProfileRowShared(userId: string) {
+  if (profileRowInflight?.userId === userId) return profileRowInflight.promise;
+  const promise = fetchProfileRow(userId);
+  profileRowInflight = { userId, promise };
+  void promise.finally(() => {
+    if (profileRowInflight?.promise === promise) profileRowInflight = null;
+  });
+  return promise;
+}
+
 export async function getCurrentSession(): Promise<AuthSession | null> {
   const supabase = getSupabase();
   if (!supabase) return null;
@@ -197,7 +207,7 @@ export async function getCurrentSession(): Promise<AuthSession | null> {
     const user = sessionData.session?.user;
     if (!user) return null;
 
-    const profile = await fetchProfileRow(user.id);
+    const profile = await fetchProfileRowShared(user.id);
     if (!profile.ok) return null;
 
     return profileRowToSession(user.id, user.email ?? '', profile.row);
@@ -217,7 +227,6 @@ export function sessionToApp(session: AuthSession): AppSession {
     characterGender: session.characterGender,
     characterBreastSize: session.characterBreastSize,
     characterPenisSize: session.characterPenisSize,
-    characterEquipped: session.characterEquipped ?? emptyEquipped(),
     avatarUrl: session.avatarUrl ?? null,
     bio: session.bio ?? '',
     bannerId: session.bannerId || DEFAULT_BANNER_ID,
@@ -370,6 +379,7 @@ export async function signUpWithEmail(
       email: trimmedEmail,
       password,
       options: {
+        emailRedirectTo: getAuthEmailRedirectTo(),
         data: { username: trimmedUsername },
       },
     });
@@ -441,6 +451,7 @@ export async function createUser(
     email,
     password,
     options: {
+      emailRedirectTo: getAuthEmailRedirectTo(),
       data: { username: trimmed },
     },
   });
@@ -468,11 +479,13 @@ export function onAuthStateChange(
   const supabase = getSupabase();
   if (!supabase) return undefined;
 
-  const { data } = supabase.auth.onAuthStateChange((_event, authSession) => {
+  const { data } = supabase.auth.onAuthStateChange((event, authSession) => {
     if (!authSession?.user) {
       callback(null);
       return;
     }
+    // Access-token refresh does not change the profile.
+    if (event === 'TOKEN_REFRESHED') return;
     void getCurrentSession()
       .then(callback)
       .catch(() => callback(null));

@@ -169,6 +169,7 @@ export function CommunityChatProvider({ children }: { children: ReactNode }) {
     username: session?.username,
     canPost,
     isAdmin,
+    enabled: surfaceOpen && isChannelView(activeView),
   });
 
   const adminDmMode = isAdmin ? (isAdminThread ? 'thread' : 'inbox') : 'own';

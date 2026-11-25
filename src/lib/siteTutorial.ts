@@ -84,7 +84,7 @@ export const SITE_TUTORIAL_STEPS: SiteTutorialStep[] = [
   {
     id: 'announcements',
     title: 'Announcements',
-    body: 'Once a session, or when the day changes, this popup catches you up. Close it with Got it.',
+    body: 'When Dickalicious posts something new, this popup catches you up once. Close it with Got it — it stays in Community chat.',
     route: '/',
     targets: ['home-announcements'],
     placement: 'bottom',

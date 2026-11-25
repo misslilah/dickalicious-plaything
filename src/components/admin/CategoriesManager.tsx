@@ -14,8 +14,22 @@ import {
   resolveCategoryImageUrl,
 } from '../../lib/categoryImage';
 import { categoryDisplayIcon } from '../../lib/categoryIcon';
+import { AdminStepSwitcher, type AdminGuideStep } from './AdminGuidedForm';
 import { USER_STAGE_OPTIONS } from '../../lib/levels';
 import type { Category, CategoryGroup } from '../../types';
+
+const CATEGORY_GUIDE_STEPS: AdminGuideStep[] = [
+  {
+    id: 'look',
+    label: 'Look',
+    hint: 'Name, icon, color, and the sentence players read. The card on the left updates live.',
+  },
+  {
+    id: 'access',
+    label: 'Access',
+    hint: 'Theme, class, tier, unlock rules, minimum stage, and the card image.',
+  },
+];
 
 const CATEGORY_COLORS = [
   '#f9a8d4',
@@ -58,6 +72,7 @@ export function CategoriesManager() {
   const [error, setError] = useState('');
   const [imageMessage, setImageMessage] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [guideStepId, setGuideStepId] = useState('look');
   const [saving, setSaving] = useState(false);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const pickerRef = useRef<HTMLElement>(null);
@@ -130,6 +145,7 @@ export function CategoriesManager() {
     setError('');
     setImageMessage('');
     setErrors({});
+    setGuideStepId('look');
     setSelectedCategoryId(null);
     setEditorOpen(false);
     setDraft(emptyCategoryDraft(group));
@@ -140,6 +156,7 @@ export function CategoriesManager() {
     setSelectedGroup(getCategoryGroup(category));
     setDraft(category);
     setErrors({});
+    setGuideStepId('look');
     setImageMessage('');
     setError('');
     setMessage('');
@@ -150,6 +167,7 @@ export function CategoriesManager() {
     setSelectedCategoryId(null);
     setDraft(emptyCategoryDraft(selectedGroup));
     setErrors({});
+    setGuideStepId('look');
     setImageMessage('');
     setError('');
     setMessage('');
@@ -161,6 +179,7 @@ export function CategoriesManager() {
     setEditorOpen(false);
     setDraft(emptyCategoryDraft(selectedGroup));
     setErrors({});
+    setGuideStepId('look');
     setImageMessage('');
     setError('');
     setMessage('');
@@ -174,7 +193,11 @@ export function CategoriesManager() {
   };
 
   const submit = async () => {
-    if (!validate()) return;
+    if (!validate()) {
+      setGuideStepId('look');
+      setError('Name is required.');
+      return;
+    }
     setSaving(true);
     setMessage('');
     setError('');
@@ -187,6 +210,7 @@ export function CategoriesManager() {
     if (!imageResult.ok) {
       setSaving(false);
       setImageMessage(imageResult.error);
+      setGuideStepId('access');
       return;
     }
     const cat: Category = {
@@ -411,6 +435,13 @@ export function CategoriesManager() {
               {draft.id ? 'Edit category' : 'New category'}
             </h3>
 
+            <AdminStepSwitcher
+              steps={CATEGORY_GUIDE_STEPS}
+              stepId={guideStepId}
+              onStepId={setGuideStepId}
+            >
+            {guideStepId === 'look' && (
+            <>
             <div className={`field${errors.name ? ' field--error' : ''}`}>
               <label htmlFor="cat-name">
                 <span>
@@ -494,7 +525,11 @@ export function CategoriesManager() {
                 }
               />
             </div>
+            </>
+            )}
 
+            {guideStepId === 'access' && (
+            <>
             <div className="field">
               <label htmlFor="cat-family">Theme</label>
               <p className="muted field__hint">
@@ -674,6 +709,9 @@ export function CategoriesManager() {
                 onFileError={setImageMessage}
               />
             </div>
+            </>
+            )}
+            </AdminStepSwitcher>
 
             <div className="btn-row admin-form-actions">
               <button

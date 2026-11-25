@@ -179,6 +179,41 @@ export async function fetchAdminDirectThread(
   };
 }
 
+/** Same unread window as the admin inbox list, without downloading message bodies. */
+export async function countUnreadAdminInboxMessages(): Promise<
+  { ok: true; count: number } | { ok: false; error: string }
+> {
+  if (!isSupabaseConfigured()) {
+    return { ok: false, error: 'Supabase is not configured.' };
+  }
+  const supabase = getSupabase();
+  if (!supabase) {
+    return { ok: false, error: 'Supabase is not configured.' };
+  }
+
+  const { data, error } = await supabase
+    .from('admin_direct_messages')
+    .select('from_admin, read_at')
+    .order('created_at', { ascending: true })
+    .limit(ADMIN_DM_PAGE_SIZE);
+
+  if (error) {
+    if (/admin_direct_messages|schema cache/i.test(error.message)) {
+      return { ok: false, error: ADMIN_DM_MIGRATION_HINT };
+    }
+    if (/row-level security|policy/i.test(error.message)) {
+      return { ok: false, error: 'Admin inbox access required.' };
+    }
+    return { ok: false, error: error.message };
+  }
+
+  const count = (
+    (data ?? []) as { from_admin?: boolean | null; read_at?: string | null }[]
+  ).filter((row) => row.from_admin !== true && !row.read_at).length;
+
+  return { ok: true, count };
+}
+
 export async function fetchAdminDirectInbox(): Promise<
   { ok: true; messages: AdminDirectMessage[] } | { ok: false; error: string }
 > {

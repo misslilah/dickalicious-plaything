@@ -1,4 +1,3 @@
-import { emptyEquipped } from './characterSprite';
 import type { PublicProfile } from './profileDb';
 
 /** Reserved id — not a UUID, so it cannot match a real profiles row. */
@@ -38,7 +37,6 @@ export function getDemoPublicProfile(badgeIds: string[] = []): PublicProfile {
     characterGender: 'female',
     characterBreastSize: 'medium',
     characterPenisSize: null,
-    characterEquipped: emptyEquipped(),
     lastSeenAt: null,
     currentLevel: 8,
     totalXp: 420,

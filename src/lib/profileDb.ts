@@ -3,9 +3,7 @@ import { isCommunityAdmin } from './adminDirectMessages';
 import { getCurrentSession, usernameToEmail } from './auth';
 import {
   CHARACTER_MIGRATION_HINT,
-  emptyEquipped,
   isCharacterComplete,
-  parseEquipped,
   parseCharacterBodySize,
   parseCharacterGender,
 } from './characterSprite';
@@ -131,11 +129,31 @@ function adminProfileListTierRank(profile: Pick<AdminProfileRow, 'patreonTier'>)
   return profile.patreonTier ? tierRank(profile.patreonTier) : 0;
 }
 
+/** Case-insensitive match on username, email, or profile id. */
+export function matchesAdminUserSearch(
+  profile: Pick<AdminProfileRow, 'id' | 'username' | 'email'>,
+  search: string,
+): boolean {
+  const q = search.trim().toLowerCase();
+  if (!q) return true;
+  const email = (profile.email ?? '').toLowerCase();
+  const displayEmail = displayAdminUserEmail(profile).toLowerCase();
+  return (
+    profile.username.toLowerCase().includes(q) ||
+    email.includes(q) ||
+    displayEmail.includes(q) ||
+    profile.id.toLowerCase().includes(q)
+  );
+}
+
 export function filterAndSortAdminProfiles(
   profiles: AdminProfileRow[],
   filter: AdminUserTierFilter,
+  search = '',
 ): AdminProfileRow[] {
-  const filtered = profiles.filter((p) => matchesAdminUserTierFilter(p, filter));
+  const filtered = profiles.filter(
+    (p) => matchesAdminUserTierFilter(p, filter) && matchesAdminUserSearch(p, search),
+  );
   return [...filtered].sort((a, b) => {
     const rankDiff = adminProfileListTierRank(a) - adminProfileListTierRank(b);
     if (rankDiff !== 0) return rankDiff;
@@ -421,7 +439,6 @@ export async function updateProfileCharacter(
         appearance.gender === 'female' ? appearance.breastSize : null,
       character_penis_size:
         appearance.gender === 'male' ? appearance.penisSize : null,
-      character_equipped: appearance.equipped ?? emptyEquipped(),
     })
     .eq('id', userId);
 
@@ -444,7 +461,6 @@ export type PublicProfile = {
   characterGender: CharacterAppearance['gender'] | null;
   characterBreastSize: CharacterAppearance['breastSize'];
   characterPenisSize: CharacterAppearance['penisSize'];
-  characterEquipped: CharacterAppearance['equipped'];
   lastSeenAt: string | null;
   currentLevel: number | null;
   totalXp: number | null;
@@ -462,7 +478,6 @@ type PublicProfileRpcRow = {
   character_gender: string | null;
   character_breast_size: string | null;
   character_penis_size: string | null;
-  character_equipped: unknown;
   last_seen_at: string | null;
   current_level: number | null;
   total_xp: number | null;
@@ -500,7 +515,6 @@ function readPublicProfileRpcRow(value: unknown): PublicProfileRpcRow | null {
     character_gender: optionalString(value.character_gender),
     character_breast_size: optionalString(value.character_breast_size),
     character_penis_size: optionalString(value.character_penis_size),
-    character_equipped: value.character_equipped,
     last_seen_at: optionalString(value.last_seen_at),
     current_level: optionalNumber(value.current_level),
     total_xp: optionalNumber(value.total_xp),
@@ -520,7 +534,6 @@ function mapPublicProfile(row: PublicProfileRpcRow): PublicProfile {
     characterGender: parseCharacterGender(row.character_gender),
     characterBreastSize: parseCharacterBodySize(row.character_breast_size),
     characterPenisSize: parseCharacterBodySize(row.character_penis_size),
-    characterEquipped: parseEquipped(row.character_equipped),
     lastSeenAt: row.last_seen_at,
     currentLevel: row.current_level,
     totalXp: row.total_xp,
@@ -569,12 +582,12 @@ export async function fetchPublicProfile(
       ? supabase
           .from('profiles')
           .select(
-            'id, username, avatar_url, bio, banner_id, avatar_frame_id, character_gender, character_breast_size, character_penis_size, character_equipped, last_seen_at',
+            'id, username, avatar_url, bio, banner_id, avatar_frame_id, character_gender, character_breast_size, character_penis_size, last_seen_at',
           )
       : supabase
           .from('profiles')
           .select(
-            'id, username, avatar_url, bio, banner_id, character_gender, character_breast_size, character_penis_size, character_equipped, last_seen_at',
+            'id, username, avatar_url, bio, banner_id, character_gender, character_breast_size, character_penis_size, last_seen_at',
           );
     return isUuid
       ? query.eq('id', trimmed).maybeSingle()

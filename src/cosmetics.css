@@ -1,0 +1,360 @@
+/*
+ * Cosmetics: rarity tiers and shop cards (banners, contours, videos, rewards).
+ * Same violet/pink palette as index.css. Gradients are smooth same-hue ramps
+ * (no hard stops), and every animation is switched off for reduced motion.
+ * Selectors are prefixed with .item-shop / .cos- so they win over the older
+ * flat overrides in index.css without touching it.
+ */
+
+/* ───────────── rarity tokens ───────────── */
+
+.cos-rarity-common {
+  --cos-rarity: #cbd5e1;
+  --cos-rarity-soft: rgba(203, 213, 225, 0.14);
+  --cos-rarity-glow: rgba(203, 213, 225, 0);
+}
+
+.cos-rarity-rare {
+  --cos-rarity: #38bdf8;
+  --cos-rarity-soft: rgba(56, 189, 248, 0.16);
+  --cos-rarity-glow: rgba(56, 189, 248, 0.2);
+}
+
+.cos-rarity-epic {
+  --cos-rarity: #e879f9;
+  --cos-rarity-soft: rgba(232, 121, 249, 0.18);
+  --cos-rarity-glow: rgba(232, 121, 249, 0.3);
+}
+
+.cos-rarity-legendary {
+  --cos-rarity: #f5c84c;
+  --cos-rarity-soft: rgba(245, 200, 76, 0.18);
+  --cos-rarity-glow: rgba(245, 200, 76, 0.34);
+}
+
+/* ───────────── chips ───────────── */
+
+.cos-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.14rem 0.5rem 0.14rem 0.42rem;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cos-chip--rarity {
+  color: var(--cos-rarity);
+  background: color-mix(in srgb, #12081c 72%, var(--cos-rarity) 14%);
+  border: 1px solid color-mix(in srgb, var(--cos-rarity) 46%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+.cos-chip__gem {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 1px;
+  transform: rotate(45deg);
+  background: var(--cos-rarity);
+  box-shadow: 0 0 6px var(--cos-rarity-glow);
+}
+
+.cos-chip--rarity.cos-rarity-legendary {
+  color: #ffe9a6;
+  background: linear-gradient(135deg, rgba(120, 78, 10, 0.55), rgba(26, 12, 34, 0.82));
+  border-color: rgba(245, 200, 76, 0.62);
+}
+
+.cos-chip--state {
+  color: #052e16;
+  background: #4ade80;
+  letter-spacing: 0.1em;
+}
+
+.cos-chip--owned {
+  color: #e9d5ff;
+  background: rgba(168, 85, 247, 0.34);
+  border: 1px solid rgba(216, 180, 254, 0.42);
+}
+
+/* ───────────── shop tile ───────────── */
+
+.item-shop .item-shop-tile {
+  --rarity: var(--cos-rarity, #cbd5e1);
+  --rarity-glow: var(--cos-rarity-glow, rgba(203, 213, 225, 0));
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--cos-rarity, #cbd5e1) 38%, transparent);
+  background: var(--bg-card);
+  box-shadow:
+    0 6px 18px rgba(5, 0, 12, 0.34),
+    0 0 22px var(--cos-rarity-glow, transparent);
+}
+
+.item-shop .item-shop-tile:hover {
+  border-color: color-mix(in srgb, var(--cos-rarity, #cbd5e1) 64%, transparent);
+  box-shadow:
+    0 14px 28px rgba(5, 0, 12, 0.42),
+    0 0 30px var(--cos-rarity-glow, transparent);
+}
+
+.item-shop .item-shop-tile--common {
+  border-color: rgba(203, 213, 225, 0.2);
+}
+
+.item-shop .item-shop-tile--epic {
+  border-color: rgba(232, 121, 249, 0.52);
+}
+
+.item-shop .item-shop-tile--legendary {
+  border: 1.5px solid transparent;
+  background:
+    linear-gradient(var(--bg-card), var(--bg-card)) padding-box,
+    linear-gradient(140deg, #fff0b3 0%, #f5c84c 36%, #b8801f 68%, #f5c84c 100%) border-box;
+}
+
+.item-shop .item-shop-tile--legendary:hover {
+  border-color: transparent;
+}
+
+.item-shop .item-shop-tile--equipped {
+  box-shadow:
+    0 6px 18px rgba(5, 0, 12, 0.34),
+    0 0 22px var(--cos-rarity-glow, transparent),
+    inset 0 0 0 1px rgba(74, 222, 128, 0.5);
+}
+
+.item-shop .item-shop-tile__art {
+  min-height: 7.2rem;
+  isolation: isolate;
+}
+
+/* Soft vignette so the art never ends in a hard line above the body. */
+.item-shop .item-shop-tile__art::before {
+  height: 38%;
+  z-index: 1;
+  background: linear-gradient(180deg, transparent, rgba(14, 6, 22, 0.78));
+}
+
+/* Rarity labels: chip top-left, ribbon top-right, state badge bottom-left. */
+.item-shop .item-shop-tile__rarity {
+  top: 0.5rem;
+  left: 0.5rem;
+  right: auto;
+  z-index: 3;
+  text-shadow: none;
+}
+
+.item-shop .item-shop-tile__ribbon {
+  top: 0.5rem;
+  left: auto;
+  right: 0.5rem;
+  z-index: 3;
+  background: linear-gradient(135deg, #ffd1ef, #ff6ec7);
+  box-shadow: none;
+}
+
+.item-shop .item-shop-tile__state {
+  position: absolute;
+  left: 0.5rem;
+  bottom: 0.5rem;
+  z-index: 3;
+}
+
+.item-shop .item-shop-tile__icon,
+.item-shop .item-shop-tile__preview {
+  z-index: 2;
+}
+
+.item-shop .item-shop-tile__body {
+  padding: 0.6rem 0.7rem 0.4rem;
+}
+
+.item-shop .item-shop-tile__name {
+  letter-spacing: 0.01em;
+}
+
+.item-shop .item-shop-tile__bar {
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0.5rem 0.6rem 0.65rem;
+  border-top: 1px solid color-mix(in srgb, var(--cos-rarity, #cbd5e1) 20%, transparent);
+  background: linear-gradient(180deg, rgba(255, 110, 199, 0.04), rgba(8, 3, 14, 0.34));
+}
+
+.item-shop .item-shop-tile__price {
+  gap: 0.34rem;
+  padding: 0.18rem 0.55rem 0.18rem 0.32rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  background: rgba(255, 194, 234, 0.08);
+  border: 1px solid rgba(255, 194, 234, 0.2);
+}
+
+.item-shop .item-shop-tile__price--free {
+  color: #bbf7d0;
+  background: rgba(74, 222, 128, 0.1);
+  border-color: rgba(74, 222, 128, 0.3);
+}
+
+.item-shop .item-shop-tile__gem {
+  display: grid;
+  place-items: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 50%;
+  font-size: 0.55rem;
+  color: #1a0a22;
+  background: linear-gradient(135deg, #ffd1ef, #ff6ec7);
+}
+
+.item-shop .item-shop-tile__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
+/* ───────────── rarity shine (epic / legendary only) ───────────── */
+
+.item-shop .item-shop-tile--epic .item-shop-tile__art::after,
+.item-shop .item-shop-tile--legendary .item-shop-tile__art::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background-size: 260% 100%;
+  background-repeat: no-repeat;
+  background-position: 160% 0;
+  animation: cos-shine 7.5s ease-in-out infinite;
+}
+
+.item-shop .item-shop-tile--epic .item-shop-tile__art::after {
+  background-image: linear-gradient(
+    115deg,
+    rgba(250, 200, 255, 0) 38%,
+    rgba(250, 200, 255, 0.16) 50%,
+    rgba(250, 200, 255, 0) 62%
+  );
+}
+
+.item-shop .item-shop-tile--legendary .item-shop-tile__art::after {
+  background-image: linear-gradient(
+    115deg,
+    rgba(255, 240, 190, 0) 34%,
+    rgba(255, 240, 190, 0.26) 50%,
+    rgba(255, 240, 190, 0) 66%
+  );
+  animation-duration: 6s;
+}
+
+.item-shop .item-shop-tile--legendary .cos-chip--rarity {
+  animation: cos-chip-glow 4.5s ease-in-out infinite alternate;
+}
+
+@keyframes cos-shine {
+  0%,
+  45% {
+    background-position: 160% 0;
+  }
+  100% {
+    background-position: -60% 0;
+  }
+}
+
+@keyframes cos-chip-glow {
+  from {
+    box-shadow: 0 0 0 rgba(245, 200, 76, 0);
+  }
+  to {
+    box-shadow: 0 0 12px rgba(245, 200, 76, 0.4);
+  }
+}
+
+/* ───────────── empty + loading states ───────────── */
+
+.shop-empty {
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+  padding: 1.6rem 1rem;
+  text-align: center;
+  border-radius: 16px;
+  border: 1px dashed rgba(216, 180, 254, 0.28);
+  background: rgba(38, 18, 68, 0.28);
+}
+
+.shop-empty__icon {
+  font-size: 1.7rem;
+  opacity: 0.85;
+}
+
+.shop-empty__title {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.shop-empty__text {
+  margin: 0;
+  max-width: 24rem;
+  font-size: 0.8rem;
+}
+
+.shop-skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.shop-skeleton {
+  min-height: 15rem;
+  border-radius: 16px;
+  border: 1px solid rgba(216, 180, 254, 0.14);
+  background-color: #1a0d2b;
+  background-image: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0) 30%,
+    rgba(232, 121, 249, 0.1) 50%,
+    rgba(255, 255, 255, 0) 70%
+  );
+  background-size: 260% 100%;
+  background-repeat: no-repeat;
+  animation: cos-skeleton 1.8s ease-in-out infinite;
+}
+
+@keyframes cos-skeleton {
+  from {
+    background-position: 160% 0;
+  }
+  to {
+    background-position: -60% 0;
+  }
+}
+
+@media (min-width: 640px) {
+  .shop-skeleton-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* ───────────── reduced motion ───────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .item-shop .item-shop-tile--epic .item-shop-tile__art::after,
+  .item-shop .item-shop-tile--legendary .item-shop-tile__art::after,
+  .item-shop .item-shop-tile--legendary .cos-chip--rarity,
+  .shop-skeleton {
+    animation: none;
+  }
+
+  .item-shop .item-shop-tile--epic .item-shop-tile__art::after,
+  .item-shop .item-shop-tile--legendary .item-shop-tile__art::after {
+    display: none;
+  }
+}

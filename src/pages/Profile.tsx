@@ -35,7 +35,6 @@ function appearanceFromPublic(profile: PublicProfile): CharacterAppearance | nul
     gender: profile.characterGender,
     breastSize: profile.characterBreastSize,
     penisSize: profile.characterPenisSize,
-    equipped: profile.characterEquipped,
   };
 }
 

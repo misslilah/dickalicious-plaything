@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommunityChannel } from '../lib/communityChannels';
-import { fetchAdminDirectInbox } from '../lib/adminDirectMessages';
+import { countUnreadAdminInboxMessages } from '../lib/adminDirectMessages';
+import { useDocumentVisible } from './useDocumentVisible';
 import { countUnreadUserDirectMessages } from '../lib/userDirectMessages';
 import {
   COMMUNITY_UNREAD_CHANNEL_VIEWS,
@@ -56,6 +57,7 @@ export function useCommunityChatUnread({
   activeViewRef.current = activeView;
   adminThreadUserIdRef.current = adminThreadUserId;
   userDmPeerIdRef.current = userDmPeerId;
+  const documentVisible = useDocumentVisible();
 
   const advanceAdminDmToast = useCallback(() => {
     if (toastTimerRef.current != null) {
@@ -153,11 +155,9 @@ export function useCommunityChatUnread({
     }
 
     if (isAdmin) {
-      const inboxResult = await fetchAdminDirectInbox();
+      const inboxResult = await countUnreadAdminInboxMessages();
       if (inboxResult.ok) {
-        next['admin-contact'] = inboxResult.messages.filter(
-          (msg) => !msg.fromAdmin && !msg.readAt,
-        ).length;
+        next['admin-contact'] = inboxResult.count;
       }
     }
 
@@ -167,8 +167,9 @@ export function useCommunityChatUnread({
   }, [isAdmin, userId]);
 
   useEffect(() => {
+    if (!documentVisible) return;
     void refreshUnreadCounts();
-  }, [refreshUnreadCounts]);
+  }, [documentVisible, refreshUnreadCounts]);
 
   useEffect(() => {
     if (!userId || !open) return;
@@ -185,7 +186,7 @@ export function useCommunityChatUnread({
   }, [activeView, isAdmin, open, userId]);
 
   useEffect(() => {
-    if (!userId || !isSupabaseConfigured()) return;
+    if (!documentVisible || !userId || !isSupabaseConfigured()) return;
 
     const supabase = getSupabase();
     if (!supabase) return;
@@ -353,14 +354,19 @@ export function useCommunityChatUnread({
     channelRef.subscribe();
 
     return () => {
+      void supabase.removeChannel(channelRef);
+    };
+  }, [documentVisible, incrementUnread, isAdmin, isViewActive, queueAdminDmToast, userId]);
+
+  useEffect(() => {
+    return () => {
       if (toastTimerRef.current != null) {
         window.clearTimeout(toastTimerRef.current);
         toastTimerRef.current = null;
       }
       toastQueueRef.current = [];
-      void supabase.removeChannel(channelRef);
     };
-  }, [incrementUnread, isAdmin, isViewActive, queueAdminDmToast, userId]);
+  }, []);
 
   const totalUnread = Object.values(unreadByView).reduce((sum, count) => sum + count, 0);
 

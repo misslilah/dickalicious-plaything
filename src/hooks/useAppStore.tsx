@@ -321,6 +321,60 @@ function mergeCatalogIntoState(base: AppState, catalog: SharedCatalog): AppState
   };
 }
 
+type LoadedUserData =
+  | { ok: true; state: AppState }
+  | { ok: false; error: string };
+
+const persistedUserLoads = new WeakSet<LoadedUserData>();
+
+let userDataInflight: { userId: string; promise: Promise<LoadedUserData> } | null = null;
+
+async function fetchLoadedUserData(userId: string): Promise<LoadedUserData> {
+  const [catalogResult, progressResult, membersResult, badgesResult, purchasedResult, recurringResult] =
+    await Promise.all([
+      fetchSharedCatalog(),
+      fetchUserProgress(userId),
+      fetchCategoryMembers(userId),
+      fetchUserBadgeIds(userId),
+      fetchPurchasedVideoIds(userId),
+      fetchRecurringCategoryTaskData(userId),
+    ]);
+
+  if (!catalogResult.ok) return { ok: false, error: catalogResult.error };
+  if (!progressResult.ok) return { ok: false, error: progressResult.error };
+  if (!membersResult.ok) return { ok: false, error: membersResult.error };
+  if (!badgesResult.ok) return { ok: false, error: badgesResult.error };
+  if (!purchasedResult.ok) return { ok: false, error: purchasedResult.error };
+  if (!recurringResult.ok) return { ok: false, error: recurringResult.error };
+
+  let merged = mergeCatalogIntoState(progressResult.state, catalogResult.catalog);
+  merged = {
+    ...merged,
+    joinedCategoryIds: membersResult.categoryIds,
+    categoryMemberProgress: membersResult.progress,
+    unlockedBadgeIds: badgesResult.badgeIds,
+    purchasedVideoIds: purchasedResult.videoIds,
+    acceptedRecurringTaskIds: recurringResult.acceptedTaskIds,
+    recurringTaskCompletions: recurringResult.completions,
+  };
+  merged = processDayRollover(merged, userId);
+  merged = ensureDailyPlan(merged, undefined, userId);
+  return { ok: true, state: merged };
+}
+
+function loadUserDataShared(userId: string): Promise<LoadedUserData> {
+  if (userDataInflight?.userId === userId) return userDataInflight.promise;
+  const promise = fetchLoadedUserData(userId).catch((err: unknown): LoadedUserData => ({
+    ok: false,
+    error: err instanceof Error ? err.message : 'Failed to load app data from Supabase.',
+  }));
+  userDataInflight = { userId, promise };
+  void promise.finally(() => {
+    if (userDataInflight?.promise === promise) userDataInflight = null;
+  });
+  return promise;
+}
+
 export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState>(() => {
     const base = createInitialState();
@@ -476,95 +530,43 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const loadAllData = useCallback(async (userId: string) => {
     setDataLoading(true);
     setDataError(null);
-
-    try {
-      const [catalogResult, progressResult, membersResult, badgesResult, purchasedResult, recurringResult] =
-        await Promise.all([
-          fetchSharedCatalog(),
-          fetchUserProgress(userId),
-          fetchCategoryMembers(userId),
-          fetchUserBadgeIds(userId),
-          fetchPurchasedVideoIds(userId),
-          fetchRecurringCategoryTaskData(userId),
-        ]);
-
-      if (!catalogResult.ok) {
-        setDataError(catalogResult.error);
-        return;
-      }
-      if (!progressResult.ok) {
-        setDataError(progressResult.error);
-        return;
-      }
-      if (!membersResult.ok) {
-        setDataError(membersResult.error);
-        return;
-      }
-      if (!badgesResult.ok) {
-        setDataError(badgesResult.error);
-        return;
-      }
-      if (!purchasedResult.ok) {
-        setDataError(purchasedResult.error);
-        return;
-      }
-      if (!recurringResult.ok) {
-        setDataError(recurringResult.error);
-        return;
-      }
-
-      let merged = mergeCatalogIntoState(progressResult.state, catalogResult.catalog);
-      merged = {
-        ...merged,
-        joinedCategoryIds: membersResult.categoryIds,
-        categoryMemberProgress: membersResult.progress,
-        unlockedBadgeIds: badgesResult.badgeIds,
-        purchasedVideoIds: purchasedResult.videoIds,
-        acceptedRecurringTaskIds: recurringResult.acceptedTaskIds,
-        recurringTaskCompletions: recurringResult.completions,
-      };
-      merged = processDayRollover(merged, userId);
-      merged = ensureDailyPlan(merged, undefined, userId);
-      setState(merged);
-      void persistUserProgress(merged);
-      void refreshDailyTaskCompletionStatus();
-    } catch (err) {
-      setDataError(
-        err instanceof Error ? err.message : 'Failed to load app data from Supabase.',
-      );
-    } finally {
+    const result = await loadUserDataShared(userId);
+    if (userIdRef.current !== userId) {
       setDataLoading(false);
+      return;
     }
+    if (!result.ok) {
+      setDataError(result.error);
+      setDataLoading(false);
+      return;
+    }
+    setState(result.state);
+    if (!persistedUserLoads.has(result)) {
+      persistedUserLoads.add(result);
+      void persistUserProgress(result.state);
+      void refreshDailyTaskCompletionStatus();
+    }
+    setDataLoading(false);
   }, [persistUserProgress, refreshDailyTaskCompletionStatus]);
 
   useEffect(() => {
-    void (async () => {
-      try {
-        if (!isSupabaseConfigured()) {
-          setAuthReady(true);
-          return;
-        }
-        const current = await getCurrentSession();
-        if (current) {
-          userIdRef.current = current.userId;
-          setSession(sessionToApp(current));
-          await loadAllData(current.userId);
-        }
-      } catch (err) {
-        setDataError(
-          err instanceof Error ? err.message : 'Failed to initialize the app.',
-        );
-      } finally {
-        setAuthReady(true);
-      }
-    })();
+    if (!isSupabaseConfigured()) {
+      setAuthReady(true);
+      return;
+    }
+
+    let cancelled = false;
+    let sawAuthEvent = false;
 
     const unsub = onAuthStateChange((authSession) => {
+      if (cancelled) return;
+      sawAuthEvent = true;
       if (!authSession) {
         userIdRef.current = null;
         setSession(null);
         setDailyTaskCompletionStatus(null);
         setState(createInitialState());
+        setAuthReady(true);
         return;
       }
       const priorUserId = userIdRef.current;
@@ -572,11 +574,42 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       setSession(sessionToApp(authSession));
       // Token refresh / duplicate auth events must not remount the app (e.g. fullscreen).
       if (priorUserId !== authSession.userId) {
-        void loadAllData(authSession.userId);
+        void loadAllData(authSession.userId).finally(() => {
+          if (!cancelled) setAuthReady(true);
+        });
+        return;
       }
+      setAuthReady(true);
     });
 
-    return () => unsub?.();
+    const fallbackTimer = window.setTimeout(() => {
+      if (cancelled || sawAuthEvent) return;
+      void (async () => {
+        try {
+          const current = await getCurrentSession();
+          if (cancelled || sawAuthEvent) return;
+          if (current) {
+            userIdRef.current = current.userId;
+            setSession(sessionToApp(current));
+            await loadAllData(current.userId);
+          }
+        } catch (err) {
+          if (!cancelled) {
+            setDataError(
+              err instanceof Error ? err.message : 'Failed to initialize the app.',
+            );
+          }
+        } finally {
+          if (!cancelled && !sawAuthEvent) setAuthReady(true);
+        }
+      })();
+    }, 2500);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(fallbackTimer);
+      unsub?.();
+    };
   }, [loadAllData]);
 
   const refresh = useCallback(async () => {

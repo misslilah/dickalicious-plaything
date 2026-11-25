@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CommunityChannel } from '../lib/communityChannels';
+import { useDocumentVisible } from './useDocumentVisible';
 import {
   COMMUNITY_SEND_COOLDOWN_MS,
   adminClearCommunityMessages,
@@ -17,6 +18,8 @@ type UseCommunityChatArgs = {
   username: string | undefined;
   canPost: boolean;
   isAdmin?: boolean;
+  /** Fetch and subscribe only while this channel is on screen. */
+  enabled?: boolean;
 };
 
 function applyHeartChange(
@@ -45,40 +48,53 @@ export function useCommunityChat({
   username,
   canPost,
   isAdmin = false,
+  enabled = true,
 }: UseCommunityChatArgs) {
+  const documentVisible = useDocumentVisible();
+  const live = enabled && documentVisible;
   const [messages, setMessages] = useState<CommunityMessage[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
   const [actionError, setActionError] = useState('');
   const lastSentAtRef = useRef(0);
   const userIdRef = useRef(userId);
+  const loadedKeyRef = useRef<string | null>(null);
   userIdRef.current = userId;
 
   const refresh = useCallback(async () => {
+    const key = `${userId ?? ''}:${channel}`;
     if (!userId) {
       setMessages([]);
       setLoading(false);
+      loadedKeyRef.current = key;
       return;
     }
-    setLoading(true);
+    const quiet = loadedKeyRef.current === key;
+    if (!quiet) setLoading(true);
     setError('');
     const result = await fetchCommunityMessages(channel, userId);
     if (result.ok) {
       setMessages(result.messages);
+      loadedKeyRef.current = key;
     } else {
       setError(result.error);
-      setMessages([]);
+      if (!quiet) setMessages([]);
     }
     setLoading(false);
   }, [channel, userId]);
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
+    if (!documentVisible) return;
     void refresh();
-  }, [refresh]);
+  }, [documentVisible, enabled, refresh]);
 
   useEffect(() => {
-    if (!userId || !isSupabaseConfigured()) return;
+    if (!live || !userId || !isSupabaseConfigured()) return;
 
     const supabase = getSupabase();
     if (!supabase) return;
@@ -189,7 +205,7 @@ export function useCommunityChat({
     return () => {
       void supabase.removeChannel(channelRef);
     };
-  }, [channel, userId]);
+  }, [channel, live, userId]);
 
   const send = useCallback(
     async (body: string) => {

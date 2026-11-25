@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import {
   useAdminSection,
@@ -28,15 +28,16 @@ import {
 } from '../lib/badgeImage';
 import { formatBadgeRequirementSummary } from '../lib/badgeRequirementFormat';
 import {
-  formatPatreonAutoSyncSkippedMessage,
   formatPatreonLastSynced,
   formatPatreonSyncSummary,
-  markAdminPatreonBatchSyncSucceeded,
   patreonStatusLabel,
-  patreonSyncStatusMessage,
-  runAdminPatreonAutoSync,
+  subscribeAdminPatreonBatchSynced,
   syncPatreonMembers,
 } from '../lib/patreonSync';
+import {
+  useAdminPatreonSession,
+  type AdminPatreonSyncValue,
+} from '../hooks/useAdminPatreonSession';
 import {
   ADMIN_LIST_USERS_MIGRATION_HINT,
   ADMIN_USER_TIER_FILTER_OPTIONS,
@@ -126,68 +127,103 @@ const ADMIN_SECTIONS = [
     label: 'Classes',
     icon: '🎓',
     hint: 'University groups',
+    blurb: 'Group categories into university classes players can browse.',
   },
   {
     id: 'categories' as const,
     label: 'Categories',
     icon: '📁',
-    hint: 'Icons, colors, images',
+    hint: 'Look and access',
+    blurb:
+      'Shape the card first, then decide who can join. The preview updates as you type.',
   },
   {
     id: 'tasks' as const,
     label: 'Tasks',
     icon: '✓',
-    hint: 'Daily, category, personal',
+    hint: 'Guided create',
+    blurb:
+      'Build a task one step at a time — identity, stakes, gates, finish line, then media. Every existing field is still here.',
   },
   {
     id: 'rewards' as const,
     label: 'Rewards',
     icon: '🏆',
-    hint: 'Shop & badges',
+    hint: 'Shop and badges',
+    blurb: 'Shop rewards and profile badges. Search the list, then edit in the card beside it.',
   },
   {
     id: 'punishments' as const,
     label: 'Punishments',
     icon: '⚡',
-    hint: 'Categories & templates',
+    hint: 'Catalog',
+    blurb:
+      'Categories and punishments listed together. Each row shows severity, points, duration, and rules. Edit in the panel beside the list.',
   },
   {
     id: 'users' as const,
     label: 'Users',
     icon: '👤',
-    hint: 'New accounts',
+    hint: 'Search and accounts',
+    blurb:
+      'Search by username, email, or id. Tier edits, new accounts, and maintenance tools each have their own card.',
+  },
+  {
+    id: 'patreon' as const,
+    label: 'Patreon',
+    icon: '♡',
+    hint: 'Member sync',
+    blurb:
+      'Refresh every linked patron from here. Opening Admin syncs them — you do not need to open each user.',
   },
   {
     id: 'videos' as const,
     label: 'Videos',
     icon: '🎬',
-    hint: 'Categories & uploads',
+    hint: 'Categories and uploads',
+    blurb: 'Video categories, uploads, and interactive videos.',
   },
   {
     id: 'gifbank' as const,
     label: 'GIF bank',
     icon: '🖼️',
     hint: 'Background GIFs',
+    blurb: 'Background GIFs and how often they appear.',
   },
   {
     id: 'audio' as const,
     label: 'Audio playlist',
     icon: '🎧',
-    hint: 'Multiple sequential playlists',
+    hint: 'Playlists',
+    blurb: 'Sequential audio playlists and who can hear them.',
   },
   {
     id: 'minigames' as const,
     label: 'Mini games',
     icon: '🎮',
     hint: 'Game settings',
+    blurb: 'Flash cards, follow-instinct, and puzzle settings.',
   },
   {
     id: 'training' as const,
     label: 'Training',
     icon: '📚',
-    hint: 'Tasks & proof photos',
+    hint: 'Tasks and proofs',
+    blurb: 'Training tasks, proof photos, and throne checks.',
   },
 ];
+
+const ADMIN_NAV_GROUPS: { label: string; ids: (typeof ADMIN_SECTIONS)[number]['id'][] }[] = [
+  {
+    label: 'Library',
+    ids: ['classes', 'categories', 'tasks', 'punishments', 'rewards'],
+  },
+  { label: 'People', ids: ['users', 'patreon'] },
+  { label: 'Media', ids: ['videos', 'gifbank', 'audio'] },
+  { label: 'Play', ids: ['minigames', 'training'] },
+];
+
+const AdminPatreonSyncContext = createContext<AdminPatreonSyncValue | null>(null);
 
 const CATEGORY_COLORS = [
   '#f9a8d4',
@@ -204,66 +240,152 @@ export function Admin() {
   useRestoreAdminNavFromStorage();
   const [section, setSection] = useAdminSection();
   const active = ADMIN_SECTIONS.find((s) => s.id === section)!;
+  const patreonSync = useAdminPatreonSession();
 
   return (
-    <div className="page page--admin">
-      <header className="page-header">
-        <h2>Admin</h2>
-        <p className="muted">
-          Manage classes, categories, tasks, rewards, punishments, videos, audio playlist, mini games, training, and users.
-        </p>
-      </header>
+    <AdminPatreonSyncContext.Provider value={patreonSync}>
+      <div className="page page--admin">
+        <header className="page-header">
+          <h2>Admin</h2>
+          <p className="muted">
+            One section at a time. The menu stays on the left so you always know where you are.
+          </p>
+        </header>
 
-      <div className="admin-layout">
-        <nav className="admin-nav" aria-label="Admin sections">
-          {ADMIN_SECTIONS.map(({ id, label, icon, hint }) => (
-            <button
-              key={id}
-              type="button"
-              className={
-                section === id
-                  ? 'admin-nav-card admin-nav-card--active'
-                  : 'admin-nav-card'
-              }
-              aria-current={section === id ? 'page' : undefined}
-              onClick={() => setSection(id)}
-            >
-              <span className="admin-nav-card__icon" aria-hidden="true">
-                {icon}
-              </span>
-              <span className="admin-nav-card__body">
-                <span className="admin-nav-card__label">{label}</span>
-                <span className="admin-nav-card__hint">{hint}</span>
-              </span>
-            </button>
-          ))}
-        </nav>
+        <PatreonSyncStatus sync={patreonSync} compact />
 
-        <div
-          className="admin-content"
-          role="region"
-          aria-label={active.label}
-        >
-          {section === 'classes' && <ClassesManager />}
-          {section === 'categories' && <CategoriesManager />}
-          {section === 'tasks' && <TasksManager />}
-          {section === 'rewards' && <RewardsAdmin />}
-          {section === 'punishments' && <PunishmentsManager />}
-          {section === 'users' && <UserAdmin />}
-          {section === 'videos' && <VideosAdmin />}
-          {section === 'gifbank' && <GifBankAdmin />}
-          {section === 'audio' && <AudioPlaylistAdmin />}
-          {section === 'minigames' && <MiniGamesAdmin />}
-          {section === 'training' && <TrainingAdmin />}
+        <div className="admin-layout">
+          <nav className="admin-nav" aria-label="Admin sections">
+            {ADMIN_NAV_GROUPS.map((group) => (
+              <div key={group.label} className="admin-nav-group">
+                <p className="admin-nav-group__label">{group.label}</p>
+                {group.ids.map((id) => {
+                  const item = ADMIN_SECTIONS.find((sectionItem) => sectionItem.id === id)!;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={
+                        section === item.id
+                          ? 'admin-nav-card admin-nav-card--active'
+                          : 'admin-nav-card'
+                      }
+                      aria-current={section === item.id ? 'page' : undefined}
+                      onClick={() => setSection(item.id)}
+                    >
+                      <span className="admin-nav-card__icon" aria-hidden="true">
+                        {item.icon}
+                      </span>
+                      <span className="admin-nav-card__body">
+                        <span className="admin-nav-card__label">{item.label}</span>
+                        <span className="admin-nav-card__hint">{item.hint}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </nav>
+
+          <div className="admin-content" role="region" aria-label={active.label}>
+            <header className="admin-section-head">
+              <h3>{active.label}</h3>
+              <p className="muted">{active.blurb}</p>
+            </header>
+            {section === 'classes' && <ClassesManager />}
+            {section === 'categories' && <CategoriesManager />}
+            {section === 'tasks' && <TasksManager />}
+            {section === 'rewards' && <RewardsAdmin />}
+            {section === 'punishments' && <PunishmentsManager />}
+            {section === 'users' && <UserAdmin />}
+            {section === 'patreon' && <PatreonAdmin />}
+            {section === 'videos' && <VideosAdmin />}
+            {section === 'gifbank' && <GifBankAdmin />}
+            {section === 'audio' && <AudioPlaylistAdmin />}
+            {section === 'minigames' && <MiniGamesAdmin />}
+            {section === 'training' && <TrainingAdmin />}
+          </div>
+        </div>
+
+        <div className="btn-row">
+          <Link to="/" className="btn btn--ghost btn--block">
+            Back to app
+          </Link>
         </div>
       </div>
+    </AdminPatreonSyncContext.Provider>
+  );
+}
 
-      <div className="btn-row">
-        <Link to="/" className="btn btn--ghost btn--block">
-          Back to app
-        </Link>
+function PatreonSyncStatus({
+  sync,
+  compact = false,
+}: {
+  sync: AdminPatreonSyncValue;
+  compact?: boolean;
+}) {
+  const last = sync.lastSyncedAt
+    ? formatPatreonLastSynced(sync.lastSyncedAt)
+    : 'Never';
+
+  return (
+    <div
+      className={compact ? 'admin-sync-bar' : 'admin-sync-panel'}
+      aria-live="polite"
+    >
+      <div className="admin-sync-bar__copy">
+        <p className="admin-sync-bar__title">{compact ? 'Patreon sync' : 'Sync status'}</p>
+        <p className="muted">Last sync: {last}</p>
       </div>
+      <button
+        type="button"
+        className="btn btn--primary"
+        onClick={sync.syncNow}
+        disabled={sync.phase === 'syncing'}
+      >
+        {sync.phase === 'syncing' ? 'Syncing…' : 'Sync now'}
+      </button>
+      {sync.phase === 'syncing' && sync.message ? (
+        <p className="muted admin-sync-bar__status" role="status">
+          {sync.message}
+        </p>
+      ) : null}
+      {sync.phase === 'success' && sync.message ? (
+        <p className="notice admin-sync-bar__status" role="status">
+          {sync.message}
+        </p>
+      ) : null}
+      {sync.phase === 'error' ? (
+        <p className="login-error admin-sync-bar__status" role="alert">
+          {sync.error}
+        </p>
+      ) : null}
+      {sync.phase === 'unconfigured' ? (
+        <p className="login-error admin-sync-bar__status" role="alert">
+          {sync.configHint}
+        </p>
+      ) : null}
     </div>
+  );
+}
+
+function PatreonAdmin() {
+  const sync = useContext(AdminPatreonSyncContext);
+  if (!sync) return null;
+
+  return (
+    <section className="card admin-patreon">
+      <h3 className="section-title">Linked members</h3>
+      <p className="muted">
+        This calls the existing patreon-sync-members function for every linked account.
+        It runs when Admin opens, then every 5 minutes while this page stays open.
+        A server cron is not started from the browser — close Admin and sync pauses until the next visit.
+      </p>
+      <PatreonSyncStatus sync={sync} />
+      <p className="muted">
+        Per-user checks stay on Users. Use Sync now anytime you want a fresh pull.
+      </p>
+    </section>
   );
 }
 
@@ -282,6 +404,7 @@ function AdminListCard({
   intro,
   search,
   onSearchChange,
+  searchPlaceholder = 'Search…',
   filter,
   children,
 }: {
@@ -290,6 +413,7 @@ function AdminListCard({
   intro?: string;
   search: string;
   onSearchChange: (v: string) => void;
+  searchPlaceholder?: string;
   filter?: ReactNode;
   children: ReactNode;
 }) {
@@ -307,7 +431,7 @@ function AdminListCard({
           <span className="visually-hidden">Search {title.toLowerCase()}</span>
           <input
             type="search"
-            placeholder="Search…"
+            placeholder={searchPlaceholder}
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             aria-label={`Search ${title.toLowerCase()}`}
@@ -1546,11 +1670,12 @@ function UserAdmin() {
   const [editTier, setEditTier] = useState<PatreonMemberTier | ''>('');
   const [editStatus, setEditStatus] = useState<PatreonStatus>('none');
   const [tierFilter, setTierFilter] = useState<AdminUserTierFilter>('all');
+  const [userQuery, setUserQuery] = useState('');
+  const [userPane, setUserPane] = useState<'account' | 'create' | 'tools'>('account');
   const [syncLoading, setSyncLoading] = useState(false);
-  const [syncUserId, setSyncUserId] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState('');
   const [syncError, setSyncError] = useState('');
-  const [syncConfigHint, setSyncConfigHint] = useState('');
+  const patreonSync = useContext(AdminPatreonSyncContext);
   const [malusResetMessage, setMalusResetMessage] = useState('');
   const [malusResetLoading, setMalusResetLoading] = useState(false);
   const [allMalusResetMessage, setAllMalusResetMessage] = useState('');
@@ -1571,8 +1696,8 @@ function UserAdmin() {
 
   const tierCounts = useMemo(() => countAdminProfilesByTier(profiles), [profiles]);
   const displayedProfiles = useMemo(
-    () => filterAndSortAdminProfiles(profiles, tierFilter),
-    [profiles, tierFilter],
+    () => filterAndSortAdminProfiles(profiles, tierFilter, userQuery),
+    [profiles, tierFilter, userQuery],
   );
   const tierFilterOptions = useMemo(
     () =>
@@ -1604,63 +1729,20 @@ function UserAdmin() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-
-    void (async () => {
-      const outcome = await runAdminPatreonAutoSync(() => {
-        if (cancelled) return;
-        setSyncError('');
-        setSyncMessage('Syncing Patreon…');
-        setSyncLoading(true);
-        setSyncUserId(null);
-      });
-      if (cancelled) return;
-
-      setSyncLoading(false);
-      setSyncUserId(null);
-
-      if (outcome.kind === 'unconfigured') {
-        setSyncConfigHint(patreonSyncStatusMessage(outcome.probe) ?? '');
-        setSyncMessage('');
-        return;
-      }
-
-      setSyncConfigHint('');
-
-      if (outcome.kind === 'skipped') {
-        setSyncMessage(formatPatreonAutoSyncSkippedMessage(outcome.lastSyncedAt));
-        return;
-      }
-
-      if (outcome.kind === 'failed') {
-        setSyncError(outcome.result.error);
-        setSyncMessage('');
-        return;
-      }
-
-      setSyncMessage(formatPatreonSyncSummary(outcome.result));
+    return subscribeAdminPatreonBatchSynced(() => {
       void loadProfiles();
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    });
   }, []);
 
-  const runPatreonSync = async (userId?: string | null) => {
+  const runPatreonSync = async (userId: string) => {
     setSyncError('');
     setSyncMessage('');
     setSyncLoading(true);
-    setSyncUserId(userId?.trim() || null);
     const result = await syncPatreonMembers(userId);
     setSyncLoading(false);
-    setSyncUserId(null);
     if (!result.ok) {
       setSyncError(result.error);
       return;
-    }
-    if (!userId?.trim()) {
-      markAdminPatreonBatchSyncSucceeded();
     }
     setSyncMessage(formatPatreonSyncSummary(result));
     void loadProfiles();
@@ -1686,6 +1768,7 @@ function UserAdmin() {
     setEditStatus(row.patreonStatus);
     setTierMessage('');
     setMalusResetMessage('');
+    setUserPane('account');
   };
 
   const resetUserMalus = async () => {
@@ -1791,9 +1874,10 @@ function UserAdmin() {
     <AdminListCard
       title="Users & Patreon tiers"
       count={displayedProfiles.length}
-      intro="Webhooks apply Patreon membership changes in realtime. Opening this page also reconciles linked accounts automatically (at most once every 20 minutes). Use Sync Patreon tiers to force a refresh. Active status is required for tier-gated access."
-      search=""
-      onSearchChange={() => {}}
+      intro="Type to filter this list. Matches username, email, and id, ignoring case. Patreon membership refreshes from the bar above while Admin is open."
+      search={userQuery}
+      onSearchChange={setUserQuery}
+      searchPlaceholder="Username, email, or id"
       filter={
         <>
           <ChipSelect
@@ -1810,18 +1894,10 @@ function UserAdmin() {
             <button
               type="button"
               className="btn btn--secondary"
-              disabled={syncLoading || linkedProfileCount === 0}
-              onClick={() => void runPatreonSync()}
+              disabled={patreonSync?.phase === 'syncing' || linkedProfileCount === 0}
+              onClick={() => patreonSync?.syncNow()}
             >
-              {syncLoading && !syncUserId ? 'Syncing Patreon…' : 'Sync Patreon tiers'}
-            </button>
-            <button
-              type="button"
-              className="btn btn--secondary"
-              disabled={allMalusResetLoading || usersWithMalusCount === 0}
-              onClick={() => void resetAllMalus()}
-            >
-              {allMalusResetLoading ? 'Resetting all malus…' : 'Reset all malus'}
+              {patreonSync?.phase === 'syncing' ? 'Syncing…' : 'Sync now'}
             </button>
             <span className="muted">
               {linkedProfileCount} linked account{linkedProfileCount === 1 ? '' : 's'}
@@ -1830,10 +1906,8 @@ function UserAdmin() {
                 : ''}
             </span>
           </div>
-          <StatusMessage message={syncConfigHint} />
           <StatusMessage message={syncError} variant="err" />
           <StatusMessage message={syncMessage} />
-          <StatusMessage message={allMalusResetMessage} />
         </>
       }
     >
@@ -1844,7 +1918,16 @@ function UserAdmin() {
         <AdminEmpty title="No users" hint="Create a user below or in Supabase Auth." />
       )}
       {!profilesLoading && profiles.length > 0 && displayedProfiles.length === 0 && (
-        <AdminEmpty title="No matches" hint="Try a different tier filter." />
+        <AdminEmpty
+          title="No matches"
+          hint={
+            userQuery.trim()
+              ? `Nothing matches “${userQuery.trim()}”${
+                  tierFilter !== 'all' ? ' in this tier' : ''
+                }. Search checks username, email, and id.`
+              : 'Try a different tier filter.'
+          }
+        />
       )}
       <ul className="admin-library">
         {displayedProfiles.map((p) => (
@@ -1872,14 +1955,57 @@ function UserAdmin() {
   );
 
   const form = (
-    <>
-      <DebugGrantAdmin />
+    <div className="admin-users__side">
+      <div className="admin-subnav" role="tablist" aria-label="User tools">
+        {(
+          [
+            ['account', 'Selected user'],
+            ['create', 'New user'],
+            ['tools', 'Tools'],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={userPane === id}
+            className={
+              userPane === id
+                ? 'admin-minigames-tab admin-minigames-tab--active'
+                : 'admin-minigames-tab'
+            }
+            onClick={() => setUserPane(id)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {userPane === 'tools' && <DebugGrantAdmin />}
+      {userPane === 'tools' && (
+        <section className="card">
+          <h3 className="section-title">Malus for everyone</h3>
+          <p className="muted">
+            Clears malus points on every account. Individual resets stay on the selected user.
+          </p>
+          <div className="btn-row">
+            <button
+              type="button"
+              className="btn btn--secondary"
+              disabled={allMalusResetLoading || usersWithMalusCount === 0}
+              onClick={() => void resetAllMalus()}
+            >
+              {allMalusResetLoading ? 'Resetting all malus…' : 'Reset all malus'}
+            </button>
+          </div>
+          <StatusMessage message={allMalusResetMessage} />
+        </section>
+      )}
+      {userPane === 'account' && (
       <section className="card">
         <h3 className="section-title">Manual Patreon tier</h3>
         <p className="muted">
           Override a user&apos;s tier manually when Patreon sync is unavailable or for
-          special cases. Webhooks and auto-sync on this page keep linked accounts
-          current; use Sync Patreon tiers above to pull live membership now.
+          special cases. The Patreon bar syncs every linked account while Admin is open.
         </p>
         <StatusMessage message={tierMessage} />
         {!selectedUserId ? (
@@ -1949,7 +2075,9 @@ function UserAdmin() {
           </>
         )}
       </section>
+      )}
 
+      {userPane === 'tools' && (
       <section className="card">
         <h3 className="section-title">Reset all site progress</h3>
         <p className="muted">
@@ -2002,7 +2130,9 @@ function UserAdmin() {
         </div>
         <StatusMessage message={siteResetMessage} />
       </section>
+      )}
 
+      {userPane === 'create' && (
       <section className="card">
         <h3 className="section-title">New user</h3>
         <p className="muted">
@@ -2050,10 +2180,16 @@ function UserAdmin() {
           }}
         />
       </section>
-    </>
+      )}
+    </div>
   );
 
-  return <AdminSection list={list} form={form} />;
+  return (
+    <div className="admin-users">
+      {list}
+      {form}
+    </div>
+  );
 }
 
 function emptyVideoCategoryDraft(): VideoCategory {

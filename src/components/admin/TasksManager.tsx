@@ -46,6 +46,7 @@ import {
   TaskMediaPicker,
   type TaskMediaPickerValue,
 } from './TaskMediaPicker';
+import { AdminStepSwitcher, type AdminGuideStep } from './AdminGuidedForm';
 
 const SCOPE_TABS: { value: TaskScope; label: string }[] = [
   { value: 'daily', label: 'Daily' },
@@ -102,21 +103,29 @@ export function TasksManager() {
   const [error, setError] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [profiles, setProfiles] = useState<AdminProfileRow[]>([]);
+  const [profilesReady, setProfilesReady] = useState(false);
   const [audioLibrary, setAudioLibrary] = useState<AudioPlaylistItem[]>([]);
   const [videoMediaSearch, setVideoMediaSearch] = useState('');
   const [taskMediaPicker, setTaskMediaPicker] = useState<TaskMediaPickerValue>(
     () => emptyTaskMediaPickerValue(),
   );
   const [saving, setSaving] = useState(false);
+  const [guideStepId, setGuideStepId] = useState('identity');
   const workspaceRef = useRef<HTMLDivElement>(null);
   const categoriesRef = useRef<HTMLElement>(null);
 
+  const profilesRequestedRef = useRef(false);
   useEffect(() => {
+    const needsProfiles = filterScope === 'custom' || draft.taskScope === 'custom';
+    if (!needsProfiles || profilesRequestedRef.current) return;
+    profilesRequestedRef.current = true;
     void (async () => {
       const result = await fetchAdminProfiles();
       if (result.ok) setProfiles(result.profiles);
+      else profilesRequestedRef.current = false;
+      setProfilesReady(true);
     })();
-  }, []);
+  }, [draft.taskScope, filterScope]);
 
   useEffect(() => {
     if ((draft.linkedMediaType ?? 'none') !== 'audio') return;
@@ -136,6 +145,43 @@ export function TasksManager() {
 
   const taskScope = draft.taskScope ?? 'category';
   const linkedMediaType = draft.linkedMediaType ?? 'none';
+  const taskGuideSteps = useMemo(() => {
+    const steps: AdminGuideStep[] = [
+      {
+        id: 'identity',
+        label: 'Identity',
+        hint: 'Name it and choose where players will find it.',
+      },
+      {
+        id: 'stakes',
+        label: 'Stakes',
+        hint: 'XP, points, malus, stage, and how often it returns.',
+      },
+    ];
+    if (taskScope === 'category') {
+      steps.push({
+        id: 'gates',
+        label: 'Gates',
+        hint: 'Order, prerequisites, exams, and category recurrence.',
+      });
+    }
+    steps.push(
+      {
+        id: 'finish',
+        label: 'Finish line',
+        hint: 'Timer, a phrase to type, or a page they must open.',
+      },
+      {
+        id: 'media',
+        label: 'Media',
+        hint: 'Optional linked video or audio, plus a file on the task itself.',
+      },
+    );
+    return steps;
+  }, [taskScope]);
+  const guideStep = taskGuideSteps.some((step) => step.id === guideStepId)
+    ? guideStepId
+    : 'identity';
 
   const selectedCategory =
     state.categories.find((c) => c.id === selectedCategoryId) ?? null;
@@ -334,6 +380,7 @@ export function TasksManager() {
     setMessage('');
     setError('');
     setErrors({});
+    setGuideStepId('identity');
     resetPicker();
     setDraft(
       emptyTaskDraft(
@@ -348,6 +395,7 @@ export function TasksManager() {
     setMessage('');
     setError('');
     setErrors({});
+    setGuideStepId('identity');
     resetPicker();
     setDraft(task);
     setEditorOpen(true);
@@ -393,7 +441,15 @@ export function TasksManager() {
   };
 
   const submit = async () => {
-    if (!validate()) return;
+    if (!validate()) {
+      const identityProblem =
+        !draft.title.trim() ||
+        (taskScope === 'category' && !resolvedCategoryId) ||
+        (taskScope === 'custom' && !draft.assignedUserId);
+      setGuideStepId(identityProblem ? 'identity' : 'media');
+      setError('Fix the highlighted step before saving.');
+      return;
+    }
     setMessage('');
     setError('');
     setSaving(true);
@@ -411,6 +467,7 @@ export function TasksManager() {
     if (!mediaResult.ok) {
       setSaving(false);
       setError(mediaResult.error);
+      setGuideStepId('media');
       return;
     }
 
@@ -794,6 +851,12 @@ export function TasksManager() {
               </>
             }
           >
+              <AdminStepSwitcher
+                steps={taskGuideSteps}
+                stepId={guideStep}
+                onStepId={setGuideStepId}
+              >
+              {guideStep === 'identity' && (
               <FormBlock title="Content">
                 <Field
                   label="Task type"
@@ -878,9 +941,9 @@ export function TasksManager() {
                     error={errors.assignedUserId}
                     hint="This task appears only on that user's home daily plan."
                   >
-                    {profiles.length === 0 ? (
+                    {profilesReady && profiles.length === 0 ? (
                       <p className="muted">No users found.</p>
-                    ) : (
+                    ) : profiles.length > 0 ? (
                       <ChipSelect
                         label="Assigned user"
                         scroll
@@ -896,11 +959,13 @@ export function TasksManager() {
                           }
                         }}
                       />
-                    )}
+                    ) : null}
                   </Field>
                 )}
               </FormBlock>
+              )}
 
+              {guideStep === 'stakes' && (
               <FormBlock title="Rules">
                 <Field
                   label="User stage"
@@ -994,8 +1059,9 @@ export function TasksManager() {
                   />
                 </Field>
               </FormBlock>
+              )}
 
-              {taskScope === 'category' && (
+              {guideStep === 'gates' && taskScope === 'category' && (
                 <FormBlock title="Publication">
                   <p className="muted" style={{ marginTop: 0 }}>
                     Control task order within this category. Players must complete the
@@ -1096,6 +1162,7 @@ export function TasksManager() {
                 </FormBlock>
               )}
 
+              {guideStep === 'finish' && (
               <FormBlock title="Completion requirements">
                 <p className="muted" style={{ marginTop: 0 }}>
                   Optional. Players must satisfy all configured requirements before
@@ -1262,7 +1329,10 @@ export function TasksManager() {
                   />
                 </Field>
               </FormBlock>
+              )}
 
+              {guideStep === 'media' && (
+              <>
               <FormBlock title="Visuals">
                 <p className="muted" style={{ marginTop: 0 }}>
                   Optional. Player must watch or listen to the end in a popup. Closing
@@ -1425,6 +1495,9 @@ export function TasksManager() {
                   onError={(msg) => setError(msg)}
                 />
               </FormBlock>
+              </>
+              )}
+              </AdminStepSwitcher>
 
           </TaskEditorModal>
         </div>

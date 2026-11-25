@@ -1,0 +1,246 @@
+/*
+ * Avatar contours: layout of the SVG art layers, face finish, rarity motion
+ * and the shop preview stage. Artwork itself lives in AvatarContourFx.tsx.
+ *
+ * Motion rules
+ *  - Only transform / opacity are animated (compositor friendly). Every
+ *    animated layer is its own <svg>, so nothing repaints per frame.
+ *  - Animations exist only on .user-avatar--animated (md / lg). Tiny avatars
+ *    (xs / sm, under ~40px) are static and skip the animated layers entirely.
+ *  - Everything sits inside prefers-reduced-motion: no-preference, so reduced
+ *    motion users get the still artwork.
+ */
+
+/* ───────────── art layers ───────────── */
+
+.user-avatar__fx {
+  --fx-size: calc(var(--avatar-size) * 1.58);
+  position: absolute;
+  width: var(--fx-size);
+  height: var(--fx-size);
+  left: calc(50% - var(--fx-size) / 2);
+  top: calc(50% - var(--fx-size) / 2);
+  pointer-events: none;
+  overflow: visible;
+}
+
+.user-avatar__fx--back {
+  z-index: 1;
+}
+
+.user-avatar__fx--front {
+  z-index: 3;
+}
+
+/* Light sweeps stay invisible unless the motion rules below enable them. */
+.uac-shine,
+.uac-shine-legend {
+  opacity: 0;
+}
+
+/* ───────────── photo finish inside a contour ───────────── */
+
+.user-avatar--framed .user-avatar__face {
+  border-width: 1.5px;
+  border-color: rgba(22, 9, 36, 0.9);
+  background: linear-gradient(145deg, #5b2a86 0%, #8e4bc4 55%, #c084fc 100%);
+  box-shadow: 0 2px 8px rgba(8, 2, 16, 0.5);
+}
+
+/* Inner shadow + hairline rim, so the photo seats into the ring. */
+.user-avatar--framed .user-avatar__face::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    inset 0 3px 8px rgba(8, 2, 16, 0.38),
+    inset 0 -2px 6px rgba(8, 2, 16, 0.2);
+}
+
+.user-avatar--framed .profile-avatar__camera {
+  z-index: 1;
+}
+
+.user-avatar--xs .profile-avatar,
+.user-avatar--xs.user-avatar--framed .user-avatar__face {
+  border-width: 1.5px;
+}
+
+.user-avatar--xs .profile-avatar__fallback {
+  font-size: 0.68rem;
+}
+
+.user-avatar--xs .profile-avatar {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.user-avatar--xs .user-avatar__face::after,
+.user-avatar--sm .user-avatar__face::after {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+/* ───────────── rarity motion (md / lg only, never for reduced motion) ───────────── */
+
+@media (prefers-reduced-motion: no-preference) {
+  .user-avatar--animated .uac-breathe,
+  .user-avatar--animated .uac-breathe-fast,
+  .user-avatar--animated .uac-bob,
+  .user-avatar--animated .uac-flicker-a,
+  .user-avatar--animated .uac-flicker-b,
+  .user-avatar--animated .uac-flicker-c,
+  .user-avatar--animated .uac-flutter-l,
+  .user-avatar--animated .uac-flutter-r,
+  .user-avatar--animated .uac-shine,
+  .user-avatar--animated .uac-shine-legend {
+    will-change: transform, opacity;
+  }
+
+  /* Rare + epic glow: slow breathing. */
+  .user-avatar--animated .uac-breathe {
+    animation: uac-breathe 4.8s ease-in-out infinite alternate;
+  }
+
+  .user-avatar--animated .uac-breathe-fast {
+    animation: uac-breathe 2.4s ease-in-out infinite alternate;
+  }
+
+  /* Epic: slow shimmer sweep around the ring. */
+  .user-avatar--animated .uac-shine {
+    animation: uac-shine 9s ease-in-out infinite;
+  }
+
+  /* Legendary: brighter, slightly quicker sweep. */
+  .user-avatar--animated .uac-shine-legend {
+    animation: uac-shine 6.4s ease-in-out infinite;
+  }
+
+  .user-avatar--animated .uac-bob {
+    animation: uac-bob 3.4s ease-in-out infinite alternate;
+  }
+
+  .user-avatar--animated .uac-flicker-a {
+    animation: uac-flicker 1.1s ease-in-out infinite alternate;
+  }
+
+  .user-avatar--animated .uac-flicker-b {
+    animation: uac-flicker 0.82s ease-in-out -0.3s infinite alternate;
+  }
+
+  .user-avatar--animated .uac-flicker-c {
+    animation: uac-flicker 0.64s ease-in-out -0.5s infinite alternate;
+  }
+
+  .user-avatar--animated .uac-flutter-l {
+    transform-origin: 23% 46%;
+    animation: uac-flutter-l 5.2s ease-in-out infinite alternate;
+  }
+
+  .user-avatar--animated .uac-flutter-r {
+    transform-origin: 77% 46%;
+    animation: uac-flutter-r 5.2s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes uac-breathe {
+  from {
+    opacity: 0.58;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* One pass around the ring, then rest (no endless spinning). */
+@keyframes uac-shine {
+  0% {
+    opacity: 0;
+    transform: rotate(0deg);
+  }
+  8% {
+    opacity: 1;
+  }
+  38% {
+    opacity: 1;
+  }
+  46% {
+    opacity: 0;
+    transform: rotate(290deg);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(290deg);
+  }
+}
+
+@keyframes uac-bob {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-1.3%);
+  }
+}
+
+@keyframes uac-flicker {
+  from {
+    opacity: 0.82;
+    transform: scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes uac-flutter-l {
+  from {
+    transform: rotate(1.6deg);
+  }
+  to {
+    transform: rotate(-2.6deg);
+  }
+}
+
+@keyframes uac-flutter-r {
+  from {
+    transform: rotate(-1.6deg);
+  }
+  to {
+    transform: rotate(2.6deg);
+  }
+}
+
+/* ───────────── shop: contour cards ───────────── */
+
+.item-shop .item-shop-tile__art--framed {
+  min-height: 9.8rem;
+  padding: 1.9rem 0.2rem 1.1rem;
+}
+
+.item-shop .item-shop-tile__art--framed .item-shop-tile__preview {
+  z-index: 2;
+}
+
+/* Soft rarity-tinted pedestal under the sample avatar. */
+.item-shop .item-shop-tile__art--framed .item-shop-tile__preview::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -0.2rem;
+  z-index: -1;
+  width: 7rem;
+  height: 1.1rem;
+  margin-left: -3.5rem;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in srgb, var(--cos-rarity, #cbd5e1) 30%, transparent) 0%,
+    color-mix(in srgb, var(--cos-rarity, #cbd5e1) 12%, transparent) 42%,
+    transparent 72%
+  );
+}

@@ -77,7 +77,6 @@ export function maskSessionForUserPreview(session: Session): Session {
     characterGender: null,
     characterBreastSize: null,
     characterPenisSize: null,
-    characterEquipped: {},
   };
 }
 

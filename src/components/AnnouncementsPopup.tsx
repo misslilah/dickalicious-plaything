@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAppStore } from '../hooks/useAppStore';
 import {
+  latestAnnouncementCursor,
   markAnnouncementsPopupSeen,
   shouldShowAnnouncementsPopup,
+  type AnnouncementCursor,
 } from '../lib/announcementsPopup';
 import {
   fetchCommunityMessages,
@@ -42,14 +44,20 @@ export function AnnouncementsPopup() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [messages, setMessages] = useState<CommunityMessage[]>([]);
+  const latestRef = useRef<AnnouncementCursor | null>(null);
+  const requestGenRef = useRef(0);
   const isAdminRoute = pathname.startsWith('/admin');
+  const userId = session?.userId;
 
   const close = useCallback(() => {
-    markAnnouncementsPopupSeen();
+    if (userId && latestRef.current) {
+      markAnnouncementsPopupSeen(userId, latestRef.current);
+    }
     setOpen(false);
-  }, []);
+  }, [userId]);
 
-  const tryOpen = useCallback(() => {
+  const tryOpen = useCallback(async () => {
+    if (!userId) return;
     if (isAdminRoute) return;
     if (!isSiteTutorialDone() || isSiteTutorialOpen()) return;
     if (
@@ -59,18 +67,42 @@ export function AnnouncementsPopup() {
     ) {
       return;
     }
-    if (!shouldShowAnnouncementsPopup()) return;
+
+    const gen = ++requestGenRef.current;
+    setLoading(true);
+    setError('');
+    const result = await fetchCommunityMessages('announcements', userId);
+    if (gen !== requestGenRef.current) return;
+    setLoading(false);
+    if (!result.ok) {
+      setError('');
+      return;
+    }
+
+    const latest = latestAnnouncementCursor(result.messages);
+    if (!shouldShowAnnouncementsPopup(userId, latest)) return;
+    if (!latest) return;
+
+    latestRef.current = latest;
+    setMessages([...result.messages].reverse().slice(0, MAX_ITEMS));
     setOpen(true);
-  }, [isAdminRoute]);
+  }, [isAdminRoute, userId]);
 
   useEffect(() => {
-    const timer = window.setTimeout(tryOpen, 520);
-    return () => window.clearTimeout(timer);
+    const timer = window.setTimeout(() => {
+      void tryOpen();
+    }, 520);
+    return () => {
+      requestGenRef.current += 1;
+      window.clearTimeout(timer);
+    };
   }, [tryOpen]);
 
   useEffect(() => {
     const onDone = () => {
-      window.setTimeout(tryOpen, 360);
+      window.setTimeout(() => {
+        void tryOpen();
+      }, 360);
     };
     const onRequest = () => {
       if (open) setOpen(false);
@@ -84,30 +116,6 @@ export function AnnouncementsPopup() {
       window.removeEventListener(SITE_TUTORIAL_REQUEST_EVENT, onRequest);
     };
   }, [open, tryOpen]);
-
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    setLoading(true);
-    setError('');
-    void (async () => {
-      const result = await fetchCommunityMessages(
-        'announcements',
-        session?.userId,
-      );
-      if (cancelled) return;
-      setLoading(false);
-      if (!result.ok) {
-        setError(result.error);
-        setMessages([]);
-        return;
-      }
-      setMessages([...result.messages].reverse().slice(0, MAX_ITEMS));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [open, session?.userId]);
 
   useEffect(() => {
     if (!open) return;

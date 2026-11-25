@@ -1,3 +1,4 @@
+import { lazy, Suspense, type ComponentType } from 'react';
 import {
   createBrowserRouter,
   Navigate,
@@ -16,29 +17,82 @@ import { VideoPlaybackProvider } from './contexts/VideoPlaybackContext';
 import { VideoPlayerProvider } from './contexts/VideoPlayerProvider';
 import { VideoPlaylistPlaybackProvider } from './contexts/VideoPlaylistPlaybackContext';
 import { XpToastProvider } from './contexts/XpToastContext';
-import { Admin } from './pages/Admin';
-import { CategoryDetail } from './pages/CategoryDetail';
-import { TaskFocusPage } from './pages/TaskFocusPage';
 import { Dashboard } from './pages/Dashboard';
-import { Videos } from './pages/Videos';
-import { Training } from './pages/Training';
-import { VideoCategoryDetail } from './pages/VideoCategoryDetail';
 import { Login } from './pages/Login';
-import { Punishments } from './pages/Punishments';
-import { UniversityClasses, UniversityLayout } from './pages/University';
-import { UniversityClassDetail } from './pages/UniversityClassDetail';
-import { UniversityThemeDetail } from './pages/UniversityThemeDetail';
-import { Shop } from './pages/Shop';
-import { Profile } from './pages/Profile';
-import { Settings } from './pages/Settings';
-import { Today } from './pages/Today';
-import { MiniGames } from './pages/MiniGames';
-import { Community } from './pages/Community';
-import { FlashWordGamePage } from './pages/FlashWordGamePage';
-import { InteractiveVideos } from './pages/InteractiveVideos';
-import { InteractiveVideoPlay } from './pages/InteractiveVideoPlay';
-import { VideoPlaylistPlay } from './pages/VideoPlaylistPlay';
 import { AgeGate } from './components/AgeGate';
+
+function RouteFallback() {
+  return (
+    <div className="page">
+      <p className="muted">Loading…</p>
+    </div>
+  );
+}
+
+function lazyPage(
+  loader: () => Promise<Record<string, unknown>>,
+  exportName: string,
+) {
+  const Page = lazy(async () => {
+    const module = await loader();
+    const component = module[exportName];
+    if (typeof component !== 'function') {
+      throw new Error(`Missing page export: ${exportName}`);
+    }
+    return { default: component as ComponentType };
+  });
+
+  return function LazyPage() {
+    return (
+      <Suspense fallback={<RouteFallback />}>
+        <Page />
+      </Suspense>
+    );
+  };
+}
+
+const Admin = lazyPage(() => import('./pages/Admin'), 'Admin');
+const CategoryDetail = lazyPage(() => import('./pages/CategoryDetail'), 'CategoryDetail');
+const TaskFocusPage = lazyPage(() => import('./pages/TaskFocusPage'), 'TaskFocusPage');
+const Videos = lazyPage(() => import('./pages/Videos'), 'Videos');
+const Training = lazyPage(() => import('./pages/Training'), 'Training');
+const VideoCategoryDetail = lazyPage(
+  () => import('./pages/VideoCategoryDetail'),
+  'VideoCategoryDetail',
+);
+const Punishments = lazyPage(() => import('./pages/Punishments'), 'Punishments');
+const UniversityLayout = lazyPage(() => import('./pages/University'), 'UniversityLayout');
+const UniversityClasses = lazyPage(() => import('./pages/University'), 'UniversityClasses');
+const UniversityClassDetail = lazyPage(
+  () => import('./pages/UniversityClassDetail'),
+  'UniversityClassDetail',
+);
+const UniversityThemeDetail = lazyPage(
+  () => import('./pages/UniversityThemeDetail'),
+  'UniversityThemeDetail',
+);
+const Shop = lazyPage(() => import('./pages/Shop'), 'Shop');
+const Profile = lazyPage(() => import('./pages/Profile'), 'Profile');
+const Settings = lazyPage(() => import('./pages/Settings'), 'Settings');
+const Today = lazyPage(() => import('./pages/Today'), 'Today');
+const MiniGames = lazyPage(() => import('./pages/MiniGames'), 'MiniGames');
+const Community = lazyPage(() => import('./pages/Community'), 'Community');
+const FlashWordGamePage = lazyPage(
+  () => import('./pages/FlashWordGamePage'),
+  'FlashWordGamePage',
+);
+const InteractiveVideos = lazyPage(
+  () => import('./pages/InteractiveVideos'),
+  'InteractiveVideos',
+);
+const InteractiveVideoPlay = lazyPage(
+  () => import('./pages/InteractiveVideoPlay'),
+  'InteractiveVideoPlay',
+);
+const VideoPlaylistPlay = lazyPage(
+  () => import('./pages/VideoPlaylistPlay'),
+  'VideoPlaylistPlay',
+);
 function AppChrome() {
   const { state } = useAppStore();
   const showBubbles = areBubblesEnabled(state.settings);

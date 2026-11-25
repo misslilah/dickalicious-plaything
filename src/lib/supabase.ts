@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 const rawUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+const PRODUCTION_SITE_URL = 'https://dickalicious-play.pro';
 
 export type SupabaseKeyKind = 'legacy-jwt' | 'publishable' | 'invalid';
 
@@ -88,6 +89,23 @@ export function getSupabaseConfigStatus(): SupabaseConfigStatus {
 
 export function isSupabaseConfigured(): boolean {
   return getSupabaseConfigStatus().configured;
+}
+
+function withTrailingSlash(url: string): string {
+  return url.endsWith('/') ? url : `${url}/`;
+}
+
+/**
+ * Redirect target embedded in signup / invite / magic-link emails.
+ * Browser uses the current origin so localhost and production both work.
+ */
+export function getAuthEmailRedirectTo(): string {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return withTrailingSlash(window.location.origin);
+  }
+  const fromEnv = trimEnv(import.meta.env.VITE_SITE_URL as string | undefined);
+  if (fromEnv) return withTrailingSlash(fromEnv.replace(/\/+$/, ''));
+  return withTrailingSlash(PRODUCTION_SITE_URL);
 }
 
 let client: SupabaseClient | null = null;

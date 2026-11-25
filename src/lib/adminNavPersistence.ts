@@ -20,6 +20,7 @@ export const ADMIN_SECTIONS = [
   'rewards',
   'punishments',
   'users',
+  'patreon',
   'videos',
   'gifbank',
   'audio',

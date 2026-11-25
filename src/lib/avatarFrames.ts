@@ -1,15 +1,20 @@
 /** Equipable avatar frames (contours around the circular profile photo). */
 
+import type { CosmeticRarity } from './cosmeticRarity';
+
 export const DEFAULT_AVATAR_FRAME_ID = 'none';
 
 export type AvatarFrameId =
   | 'none'
-  | 'crown'
-  | 'mercury'
-  | 'flame'
-  | 'halo'
+  | 'amethyst'
   | 'neon'
-  | 'thorns';
+  | 'halo'
+  | 'mercury'
+  | 'thorns'
+  | 'aurora'
+  | 'crown'
+  | 'flame'
+  | 'wings';
 
 export type AvatarFrame = {
   id: AvatarFrameId;
@@ -17,65 +22,96 @@ export type AvatarFrame = {
   description: string;
   /** 0 = always owned. Paid frames spend task points. */
   pricePoints: number;
+  /** Drives the artwork tier and the shop card treatment. */
+  rarity: CosmeticRarity;
+  /** Shop card backdrop behind the sample avatar (smooth, same-hue). */
   previewGradient: string;
 };
 
+const backdrop = (glow: string, base = '#1d0e30', edge = '#120a1f') =>
+  `radial-gradient(circle at 50% 46%, ${glow} 0%, transparent 64%), linear-gradient(165deg, ${base} 0%, ${edge} 100%)`;
+
+/** Ordered by rarity, then price (this is the order shown in the shop). */
 export const AVATAR_FRAMES: AvatarFrame[] = [
   {
     id: 'none',
     name: 'None',
     description: 'Bare photo. No contour.',
     pricePoints: 0,
-    previewGradient:
-      'linear-gradient(145deg, #2a163a 0%, #1c1028 55%, #3b1248 100%)',
+    rarity: 'common',
+    previewGradient: backdrop('rgba(168, 120, 220, 0.2)'),
   },
   {
-    id: 'crown',
-    name: 'Gilded Crown',
-    description: 'A small gold crown resting on the circle.',
-    pricePoints: 320,
-    previewGradient:
-      'linear-gradient(160deg, #422006 0%, #a16207 42%, #f5c84c 78%, #fff7d6 100%)',
-  },
-  {
-    id: 'mercury',
-    name: 'Liquid Silver',
-    description: 'A white mercury ring that flows around the photo.',
-    pricePoints: 260,
-    previewGradient:
-      'linear-gradient(145deg, #0f172a 0%, #64748b 48%, #e2e8f0 78%, #ffffff 100%)',
-  },
-  {
-    id: 'flame',
-    name: 'Ember Ring',
-    description: 'Soft flames licking the edge of the circle.',
-    pricePoints: 360,
-    previewGradient:
-      'linear-gradient(165deg, #431407 0%, #c2410c 40%, #f97316 70%, #fde047 100%)',
-  },
-  {
-    id: 'halo',
-    name: 'Gilded Halo',
-    description: 'A quiet gold halo sitting behind the photo.',
-    pricePoints: 220,
-    previewGradient:
-      'linear-gradient(140deg, #1c1008 0%, #854d0e 45%, #f5c84c 78%, #fef9c3 100%)',
+    id: 'amethyst',
+    name: 'Amethyst Ring',
+    description: 'A clean, polished violet ring. Simple and sharp.',
+    pricePoints: 90,
+    rarity: 'common',
+    previewGradient: backdrop('rgba(192, 132, 252, 0.34)'),
   },
   {
     id: 'neon',
     name: 'Neon Pulse',
-    description: 'Pink and cyan glow hugging the circle.',
+    description: 'Twin pink and cyan neon tubes with a soft breathing glow.',
     pricePoints: 180,
-    previewGradient:
-      'linear-gradient(125deg, #083344 0%, #0e7490 36%, #e879f9 70%, #22d3ee 100%)',
+    rarity: 'rare',
+    previewGradient: backdrop('rgba(232, 121, 249, 0.36)', '#1b0c33', '#0f0a24'),
+  },
+  {
+    id: 'halo',
+    name: 'Gilded Halo',
+    description: 'A polished gold ring with a fine outer line and a glint.',
+    pricePoints: 220,
+    rarity: 'rare',
+    previewGradient: backdrop('rgba(245, 200, 76, 0.3)', '#241227', '#140b1c'),
+  },
+  {
+    id: 'mercury',
+    name: 'Liquid Silver',
+    description: 'A chrome ring with beads of mercury clinging to the rim.',
+    pricePoints: 260,
+    rarity: 'rare',
+    previewGradient: backdrop('rgba(203, 213, 225, 0.28)', '#1c1235', '#100c22'),
   },
   {
     id: 'thorns',
     name: 'Thorn Ring',
-    description: 'Dark thorns wrapping the rim — sharp, not loud.',
+    description: 'Dark emerald thorns with a slow glint — sharp, not loud.',
     pricePoints: 280,
-    previewGradient:
-      'linear-gradient(150deg, #052e16 0%, #14532d 42%, #86efac 78%, #ecfccb 100%)',
+    rarity: 'epic',
+    previewGradient: backdrop('rgba(74, 222, 128, 0.24)', '#16122d', '#0d0b1c'),
+  },
+  {
+    id: 'aurora',
+    name: 'Violet Aurora',
+    description: 'A jeweled aurora ring with diamond studs and a shimmer.',
+    pricePoints: 300,
+    rarity: 'epic',
+    previewGradient: backdrop('rgba(232, 121, 249, 0.38)', '#25103f', '#130a24'),
+  },
+  {
+    id: 'crown',
+    name: 'Gilded Crown',
+    description: 'A jeweled gold crown on an engraved gold ring.',
+    pricePoints: 320,
+    rarity: 'legendary',
+    previewGradient: backdrop('rgba(245, 200, 76, 0.4)', '#2a1330', '#150a1e'),
+  },
+  {
+    id: 'flame',
+    name: 'Ember Ring',
+    description: 'A living ring of layered flames licking the edge.',
+    pricePoints: 360,
+    rarity: 'legendary',
+    previewGradient: backdrop('rgba(249, 115, 22, 0.38)', '#2a1128', '#150a1c'),
+  },
+  {
+    id: 'wings',
+    name: 'Seraph Wings',
+    description: 'Pearl-and-gold feathered wings on a radiant ring.',
+    pricePoints: 520,
+    rarity: 'legendary',
+    previewGradient: backdrop('rgba(253, 224, 140, 0.42)', '#2a1536', '#150a22'),
   },
 ];
 

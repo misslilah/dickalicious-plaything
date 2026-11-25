@@ -43,7 +43,7 @@ export function Dashboard() {
     loading: lockCardsLoading,
     error: lockCardsError,
     refresh: refreshLockCards,
-  } = useAdminLockCards(isAdmin);
+  } = useAdminLockCards(isAdmin && onlineOpen);
   const { progress } = state;
   const plan = getTodayPlan(state);
   const stats = homePlanCompletionStats(state, plan, session?.userId ?? null);

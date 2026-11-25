@@ -210,6 +210,12 @@ export const ADMIN_PATREON_LAST_SYNC_STORAGE_KEY = 'admin-patreon-last-sync';
 /** Skip Admin → Users auto-sync when a successful batch sync ran within this window. */
 export const ADMIN_PATREON_AUTO_SYNC_THROTTLE_MS = 20 * 60 * 1000;
 
+/** While Admin stays mounted, batch-sync linked members on this interval. */
+export const ADMIN_PATREON_SESSION_INTERVAL_MS = 5 * 60 * 1000;
+
+/** Ignore a second automatic batch sync this soon after a success (React Strict Mode). */
+const ADMIN_PATREON_MOUNT_DEDUPE_MS = 4 * 1000;
+
 export type AdminPatreonAutoSyncOutcome =
   | { kind: 'unconfigured'; probe: PatreonSyncProbeResult }
   | { kind: 'skipped'; lastSyncedAt: number }
@@ -222,6 +228,16 @@ function readLastSuccessfulPatreonSyncAt(): number | null {
     if (!raw) return null;
     const timestamp = Date.parse(raw);
     return Number.isNaN(timestamp) ? null : timestamp;
+  } catch {
+    return null;
+  }
+}
+
+export function readAdminPatreonLastSyncIso(): string | null {
+  try {
+    const raw = localStorage.getItem(ADMIN_PATREON_LAST_SYNC_STORAGE_KEY);
+    if (!raw || Number.isNaN(Date.parse(raw))) return null;
+    return raw;
   } catch {
     return null;
   }
@@ -292,6 +308,63 @@ export function runAdminPatreonAutoSync(
     if (adminPatreonAutoSyncInFlight === pending) {
       adminPatreonAutoSyncInFlight = null;
     }
+  });
+  return pending;
+}
+
+type PatreonBatchListener = (result: Extract<PatreonSyncResult, { ok: true }>) => void;
+const patreonBatchListeners = new Set<PatreonBatchListener>();
+
+export function subscribeAdminPatreonBatchSynced(
+  listener: PatreonBatchListener,
+): () => void {
+  patreonBatchListeners.add(listener);
+  return () => {
+    patreonBatchListeners.delete(listener);
+  };
+}
+
+let patreonBatchInFlight: Promise<PatreonSyncResult> | null = null;
+let patreonBatchRecentOk: {
+  at: number;
+  result: Extract<PatreonSyncResult, { ok: true }>;
+} | null = null;
+
+/**
+ * Batch-sync every linked member through the existing patreon-sync-members function.
+ * `force` skips the short duplicate window used when Admin mounts twice in development.
+ */
+export function syncAllPatreonMembersDeduped(options?: {
+  force?: boolean;
+}): Promise<PatreonSyncResult> {
+  if (patreonBatchInFlight) return patreonBatchInFlight;
+  if (
+    !options?.force &&
+    patreonBatchRecentOk &&
+    Date.now() - patreonBatchRecentOk.at < ADMIN_PATREON_MOUNT_DEDUPE_MS
+  ) {
+    return Promise.resolve(patreonBatchRecentOk.result);
+  }
+
+  const pending = (async () => {
+    const result = await syncPatreonMembers();
+    if (result.ok) {
+      markAdminPatreonBatchSyncSucceeded();
+      patreonBatchRecentOk = { at: Date.now(), result };
+      for (const listener of patreonBatchListeners) {
+        try {
+          listener(result);
+        } catch {
+          /* listener errors must not break sync */
+        }
+      }
+    }
+    return result;
+  })();
+
+  patreonBatchInFlight = pending;
+  void pending.finally(() => {
+    if (patreonBatchInFlight === pending) patreonBatchInFlight = null;
   });
   return pending;
 }
